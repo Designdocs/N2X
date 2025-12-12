@@ -1,4 +1,4 @@
-# N2X
+# N2X - 自用备份
 
 ## 软件安装
 
@@ -6,10 +6,4 @@
 
 ```
 wget -N https://raw.githubusercontent.com/Designdocs/N2X-script/main/install.sh && bash install.sh
-```
-
-## 构建
-``` bash
-# 通过-tags选项指定要编译的内核
-GOEXPERIMENT=jsonv2 go build -v -o build_assets/N2X -tags "sing xray hysteria2 with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" -trimpath -ldflags "-X 'github.com/Designdocs/N2X/cmd.version=$version' -s -w -buildid="
 ```
