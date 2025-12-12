@@ -8,4 +8,31 @@ updates:
   - package-ecosystem: "gomod" # See documentation for possible values
     directory: "/" # Location of package manifests
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    groups:
+      core-deps:
+        patterns:
+          - "github.com/xtls/xray-core"
+          - "github.com/wyx2685/xray-core"
+          - "github.com/sagernet/sing-box"
+          - "github.com/wyx2685/sing-box_mod"
+          - "github.com/sagernet/sing*"
+          - "github.com/apernet/hysteria*"
+          - "github.com/apernet/quic-go"
+          - "github.com/go-acme/lego"
+      other-deps:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "github.com/xtls/xray-core"
+          - "github.com/wyx2685/xray-core"
+          - "github.com/sagernet/sing-box"
+          - "github.com/wyx2685/sing-box_mod"
+          - "github.com/sagernet/sing*"
+          - "github.com/apernet/hysteria*"
+          - "github.com/apernet/quic-go"
+          - "github.com/go-acme/lego"

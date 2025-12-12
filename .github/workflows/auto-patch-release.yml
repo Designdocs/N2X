@@ -1,0 +1,64 @@
+name: Auto Patch Release
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: >
+      github.event.pull_request.merged == true &&
+      (
+        github.event.pull_request.user.login == 'dependabot[bot]' ||
+        contains(github.event.pull_request.labels.*.name, 'auto-patch-release') ||
+        contains(github.event.pull_request.labels.*.name, 'dependencies')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute next patch version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest_tag="$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)"
+          if [[ -z "$latest_tag" ]]; then
+            latest_tag="v0.0.0"
+          fi
+          base="${latest_tag#v}"
+          IFS='.' read -r major minor patch <<<"$base"
+          major="${major:-0}"
+          minor="${minor:-0}"
+          patch="${patch:-0}"
+          patch=$((patch + 1))
+          version="v${major}.${minor}.${patch}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_ENV"
+          echo "Latest tag: $latest_tag -> New tag: $version"
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git rev-parse "refs/tags/$version" >/dev/null 2>&1; then
+            echo "Tag $version already exists, skipping."
+            exit 0
+          fi
+          git tag -a "$version" -m "$version"
+          git push origin "refs/tags/$version"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.version }}
+          name: ${{ env.version }}
+          generate_release_notes: true
