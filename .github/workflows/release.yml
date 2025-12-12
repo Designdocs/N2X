@@ -2,6 +2,11 @@ name: Build and Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. v0.5.0). Leave empty to bump patch by 0.0.1 from latest tag."
+        required: false
+        default: ""
   push:
     branches:
       - main
@@ -98,6 +103,9 @@ jobs:
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - name: Show workflow information
         id: get_filename
         run: |
@@ -117,8 +125,31 @@ jobs:
         if: ${{ github.event_name == 'release' }}
         run: |
           echo "version=$(echo $GITHUB_REF | cut -d / -f 3)" >> $GITHUB_ENV
-      - name: Get other version
-        if: ${{ github.event_name != 'release' }}
+      - name: Get workflow_dispatch version
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          input_version="${{ inputs.version }}"
+          if [[ -n "$input_version" ]]; then
+            version="$input_version"
+          else
+            latest_tag="$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)"
+            if [[ -z "$latest_tag" ]]; then
+              latest_tag="v0.0.0"
+            fi
+            base="${latest_tag#v}"
+            IFS='.' read -r major minor patch <<<"$base"
+            major="${major:-0}"
+            minor="${minor:-0}"
+            patch="${patch:-0}"
+            patch=$((patch + 1))
+            version="v${major}.${minor}.${patch}"
+          fi
+          echo "version=$version" >> "$GITHUB_ENV"
+          echo "Resolved version: $version"
+      - name: Get sha version
+        if: ${{ github.event_name != 'release' && github.event_name != 'workflow_dispatch' }}
         run: |
           echo "version=${{ github.sha }}" >> $GITHUB_ENV
       - name: Build N2X
