@@ -12,12 +12,12 @@
     },
     {
       "name": "sing-box",
-      "module": "github.com/sagernet/sing-box",
-      "upstream": "https://github.com/SagerNet/sing-box",
+      "module": "github.com/wyx2685/sing-box_mod",
+      "upstream": "https://github.com/wyx2685/sing-box_mod",
       "strategy": "tag",
       "ref": "latest",
       "group": "core",
-      "notes": "If you must stay on wyx2685/sing-box_mod, set module to that fork and ref to desired tag/commit."
+      "notes": "Track latest sing-box_mod tags to keep AnyTLS/sing features current."
     },
     {
       "name": "hysteria2",
@@ -29,4 +29,3 @@
     }
   ]
 }
-
