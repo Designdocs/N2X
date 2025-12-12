@@ -47,7 +47,7 @@ A V2board node server based on multi core, modified from XrayR.
 ### 一键安装
 
 ```
-wget -N https://raw.githubusercontent.com/Designdocs/N2X-script/master/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/Designdocs/N2X-script/main/install.sh && bash install.sh
 ```
 
 ### 手动安装

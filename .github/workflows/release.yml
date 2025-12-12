@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - master
-      - dev_new
+      - main
     paths:
       - "**/*.go"
       - "go.mod"

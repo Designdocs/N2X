@@ -6,7 +6,7 @@ on:
     types: [published]
   pull_request:
     branches:
-      - 'dev_new'
+      - 'main'
 
 env:
   REGISTRY: ghcr.io

@@ -17,7 +17,7 @@ var (
 		Short: "Update N2X version",
 		Run: func(_ *cobra.Command, _ []string) {
 			exec.RunCommandStd("bash",
-				"<(curl -Ls https://raw.githubusercontents.com/InazumaV/N2X-script/master/install.sh)",
+				"<(curl -Ls https://raw.githubusercontent.com/Designdocs/N2X-script/main/install.sh)",
 				targetVersion)
 		},
 		Args: cobra.NoArgs,
