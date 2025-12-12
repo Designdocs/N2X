@@ -25,6 +25,10 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
 
   build:
@@ -199,6 +203,7 @@ jobs:
           mv build_assets N2X-$ASSET_NAME
       - name: Upload files to Artifacts
         uses: actions/upload-artifact@v4
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         with:
           name: N2X-${{ steps.get_filename.outputs.ASSET_NAME }}
           path: |
