@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "name": "xray-core",
+      "module": "github.com/xtls/xray-core",
+      "upstream": "https://github.com/xtls/xray-core",
+      "strategy": "tag",
+      "ref": "latest",
+      "group": "core",
+      "notes": "Replace currently points to wyx2685/xray-core; update ref to a specific tag or keep latest."
+    },
+    {
+      "name": "sing-box",
+      "module": "github.com/sagernet/sing-box",
+      "upstream": "https://github.com/SagerNet/sing-box",
+      "strategy": "tag",
+      "ref": "latest",
+      "group": "core",
+      "notes": "If you must stay on wyx2685/sing-box_mod, set module to that fork and ref to desired tag/commit."
+    },
+    {
+      "name": "hysteria2",
+      "module": "github.com/apernet/hysteria/core/v2",
+      "upstream": "https://github.com/apernet/hysteria",
+      "strategy": "tag",
+      "ref": "latest",
+      "group": "core"
+    }
+  ]
+}
+

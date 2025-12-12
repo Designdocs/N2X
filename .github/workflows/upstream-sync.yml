@@ -1,0 +1,80 @@
+name: Upstream Sync
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # every Monday 03:00 Asia/Shanghai
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+
+      - name: Update tracked upstream modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f UPSTREAMS.json ]]; then
+            echo "UPSTREAMS.json not found; skipping."
+            exit 0
+          fi
+          count="$(jq '.entries | length' UPSTREAMS.json)"
+          if [[ "$count" -eq 0 ]]; then
+            echo "No entries; skipping."
+            exit 0
+          fi
+          for i in $(seq 0 $((count-1))); do
+            name="$(jq -r ".entries[$i].name" UPSTREAMS.json)"
+            module="$(jq -r ".entries[$i].module" UPSTREAMS.json)"
+            strategy="$(jq -r ".entries[$i].strategy" UPSTREAMS.json)"
+            ref="$(jq -r ".entries[$i].ref" UPSTREAMS.json)"
+            echo "==> $name ($module) strategy=$strategy ref=$ref"
+            case "$strategy" in
+              tag|branch|commit)
+                if [[ "$ref" == "latest" ]]; then
+                  go get "$module@latest"
+                else
+                  go get "$module@$ref"
+                fi
+                ;;
+              *)
+                echo "Unknown strategy '$strategy' for $name; skipping."
+                ;;
+            esac
+          done
+          go mod tidy
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          GOEXPERIMENT=jsonv2 go test ./...
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/upstream-sync
+          delete-branch: true
+          title: "chore: upstream sync"
+          commit-message: "chore: upstream sync"
+          body: |
+            Automated upstream dependency sync based on `UPSTREAMS.json`.
+            Please review core changes carefully before merging.
+          labels: |
+            dependencies
+            auto-patch-release
+
