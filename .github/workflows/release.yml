@@ -7,6 +7,11 @@ on:
         description: "Release version (e.g. v0.5.0). Leave empty to bump patch by 0.0.1 from latest tag."
         required: false
         default: ""
+      publish_release:
+        description: "When true, create tag+GitHub Release and upload assets. When false, only build artifacts."
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -156,6 +161,27 @@ jobs:
         if: ${{ github.event_name != 'release' && github.event_name != 'workflow_dispatch' }}
         run: |
           echo "version=${{ github.sha }}" >> $GITHUB_ENV
+
+      - name: Create tag for workflow_dispatch
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true && matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags
+          if git rev-parse "refs/tags/$version" >/dev/null 2>&1; then
+            echo "Tag $version already exists, skipping tag creation."
+          else
+            git tag -a "$version" -m "$version"
+            git push origin "refs/tags/$version"
+          fi
+
+      - name: Create GitHub Release for workflow_dispatch
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true && matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.version }}
+          name: ${{ env.version }}
+          generate_release_notes: true
       - name: Build N2X
         run: |
           echo "version: $version"
@@ -210,9 +236,9 @@ jobs:
             ./N2X-${{ steps.get_filename.outputs.ASSET_NAME }}/*
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
-        if: github.event_name == 'release'
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./N2X-${{ steps.get_filename.outputs.ASSET_NAME }}.zip*
-          tag: ${{ github.ref }}
+          tag: ${{ github.event_name == 'release' && github.ref || env.version }}
           file_glob: true
