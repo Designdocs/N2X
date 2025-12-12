@@ -6,10 +6,10 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/InazumaV/V2bX/conf"
-	vCore "github.com/InazumaV/V2bX/core"
-	"github.com/InazumaV/V2bX/limiter"
-	"github.com/InazumaV/V2bX/node"
+	"github.com/Designdocs/N2X/conf"
+	vCore "github.com/Designdocs/N2X/core"
+	"github.com/Designdocs/N2X/limiter"
+	"github.com/Designdocs/N2X/node"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +21,7 @@ var (
 
 var serverCommand = cobra.Command{
 	Use:   "server",
-	Short: "Run V2bX server",
+	Short: "Run N2X server",
 	Run:   serverHandle,
 	Args:  cobra.NoArgs,
 }
@@ -29,7 +29,7 @@ var serverCommand = cobra.Command{
 func init() {
 	serverCommand.PersistentFlags().
 		StringVarP(&config, "config", "c",
-			"/etc/V2bX/config.json", "config file path")
+			"/etc/N2X/config.json", "config file path")
 	serverCommand.PersistentFlags().
 		BoolVarP(&watch, "watch", "w",
 			true, "watch file path change")
@@ -62,7 +62,7 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		log.SetOutput(f)
 	}
 	limiter.Init()
-	log.Info("Start V2bX...")
+	log.Info("Start N2X...")
 	vc, err := vCore.NewCore(c.CoresConfig)
 	if err != nil {
 		log.WithField("err", err).Error("new core failed")

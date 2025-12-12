@@ -1,8 +1,8 @@
 package hy2
 
 import (
-	"github.com/InazumaV/V2bX/conf"
-	vCore "github.com/InazumaV/V2bX/core"
+	"github.com/Designdocs/N2X/conf"
+	vCore "github.com/Designdocs/N2X/core"
 	"go.uber.org/zap"
 )
 
@@ -10,7 +10,7 @@ var _ vCore.Core = (*Hysteria2)(nil)
 
 type Hysteria2 struct {
 	Hy2nodes map[string]Hysteria2node
-	Auth     *V2bX
+	Auth     *N2X
 	Logger   *zap.Logger
 }
 
@@ -29,7 +29,7 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 	}
 	return &Hysteria2{
 		Hy2nodes: make(map[string]Hysteria2node),
-		Auth: &V2bX{
+		Auth: &N2X{
 			usersMap: make(map[string]int),
 		},
 		Logger: log,

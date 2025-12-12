@@ -15,7 +15,7 @@
         "Server": "time.apple.com",
         "ServerPort": 0
       },
-      "OriginalPath": "/etc/V2bX/sing_origin.json"
+      "OriginalPath": "/etc/N2X/sing_origin.json"
     }
   ],
   "Nodes": [
@@ -36,8 +36,8 @@
         "CertMode": "self",
         "RejectUnknownSni": false,
         "CertDomain": "example.com",
-        "CertFile": "/etc/V2bX/fullchain.cer",
-        "KeyFile": "/etc/V2bX/cert.key",
+        "CertFile": "/etc/N2X/fullchain.cer",
+        "KeyFile": "/etc/N2X/cert.key",
         "Provider": "cloudflare",
         "DNSEnv": {
           "EnvName": "env1"

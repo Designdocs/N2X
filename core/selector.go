@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/conf"
+	"github.com/Designdocs/N2X/api/panel"
+	"github.com/Designdocs/N2X/conf"
 )
 
 type Selector struct {

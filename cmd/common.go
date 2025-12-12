@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/InazumaV/V2bX/common/exec"
+	"github.com/Designdocs/N2X/common/exec"
 )
 
 const (
@@ -15,7 +15,7 @@ const (
 )
 
 func checkRunning() (bool, error) {
-	o, err := exec.RunCommandByShell("systemctl status V2bX | grep Active")
+	o, err := exec.RunCommandByShell("systemctl status N2X | grep Active")
 	if err != nil {
 		return false, err
 	}

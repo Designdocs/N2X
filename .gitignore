@@ -14,5 +14,6 @@ example/cert
 ./vscode
 output/*
 .idea/*
-newV2bX.sh
+.cache/
+newN2X.sh
 quic_singbox.sh

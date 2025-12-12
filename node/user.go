@@ -3,7 +3,7 @@ package node
 import (
 	"strconv"
 
-	"github.com/InazumaV/V2bX/api/panel"
+	"github.com/Designdocs/N2X/api/panel"
 	log "github.com/sirupsen/logrus"
 )
 

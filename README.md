@@ -1,4 +1,4 @@
-# V2bX
+# N2X
 
 [![](https://img.shields.io/badge/TgChat-UnOfficialV2Board%E4%BA%A4%E6%B5%81%E7%BE%A4-green)](https://t.me/unofficialV2board)
 [![](https://img.shields.io/badge/TgChat-YuzukiProjects%E4%BA%A4%E6%B5%81%E7%BE%A4-blue)](https://t.me/YuzukiProjects)
@@ -47,22 +47,22 @@ A V2board node server based on multi core, modified from XrayR.
 ### 一键安装
 
 ```
-wget -N https://raw.githubusercontent.com/wyx2685/V2bX-script/master/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/Designdocs/N2X-script/master/install.sh && bash install.sh
 ```
 
 ### 手动安装
 
-[手动安装教程](https://v2bx.v-50.me/v2bx/v2bx-xia-zai-he-an-zhuang/install/manual)
+[手动安装教程](https://n2x.v-50.me/n2x/n2x-xia-zai-he-an-zhuang/install/manual)
 
 ## 构建
 ``` bash
 # 通过-tags选项指定要编译的内核， 可选 xray， sing, hysteria2
-GOEXPERIMENT=jsonv2 go build -v -o build_assets/V2bX -tags "sing xray hysteria2 with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" -trimpath -ldflags "-X 'github.com/InazumaV/V2bX/cmd.version=$version' -s -w -buildid="
+GOEXPERIMENT=jsonv2 go build -v -o build_assets/N2X -tags "sing xray hysteria2 with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" -trimpath -ldflags "-X 'github.com/Designdocs/N2X/cmd.version=$version' -s -w -buildid="
 ```
 
 ## 配置文件及详细使用教程
 
-[详细使用教程](https://v2bx.v-50.me/)
+[详细使用教程](https://n2x.v-50.me/)
 
 ## 免责声明
 
@@ -86,4 +86,4 @@ GOEXPERIMENT=jsonv2 go build -v -o build_assets/V2bX -tags "sing xray hysteria2 
 
 ## Stars 增长记录
 
-[![Stargazers over time](https://starchart.cc/wyx2685/V2bX.svg)](https://starchart.cc/wyx2685/V2bX)
+[![Stargazers over time](https://starchart.cc/wyx2685/N2X.svg)](https://starchart.cc/wyx2685/N2X)

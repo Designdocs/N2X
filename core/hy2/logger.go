@@ -5,8 +5,8 @@ import (
 	"net"
 	"strings"
 
-	"github.com/InazumaV/V2bX/common/format"
-	"github.com/InazumaV/V2bX/limiter"
+	"github.com/Designdocs/N2X/common/format"
+	"github.com/Designdocs/N2X/limiter"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
