@@ -38,7 +38,7 @@ func init() {
 			true, "watch file path change")
 	serverCommand.PersistentFlags().
 		StringVarP(&envF, "env-file", "e",
-			"", "load env vars from file (KEY=VALUE), default: <config-dir>/.env if exists")
+			"", "env file path")
 	command.AddCommand(&serverCommand)
 }
 
