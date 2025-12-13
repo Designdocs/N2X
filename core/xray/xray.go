@@ -56,8 +56,8 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 
 func parseConnectionConfig(c *conf.XrayConnectionConfig) (policy *coreConf.Policy) {
 	policy = &coreConf.Policy{
-		StatsUserUplink:   true,
-		StatsUserDownlink: true,
+		StatsUserUplink:   c.StatsUserUplink,
+		StatsUserDownlink: c.StatsUserDownlink,
 		Handshake:         &c.Handshake,
 		ConnectionIdle:    &c.ConnIdle,
 		UplinkOnly:        &c.UplinkOnly,

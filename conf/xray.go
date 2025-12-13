@@ -1,11 +1,14 @@
 package conf
 
+import "encoding/json"
+
 type XrayConfig struct {
 	LogConfig          *XrayLogConfig        `json:"Log"`
 	AssetPath          string                `json:"AssetPath"`
 	DnsConfigPath      string                `json:"DnsConfigPath"`
 	RouteConfigPath    string                `json:"RouteConfigPath"`
-	ConnectionConfig   *XrayConnectionConfig `json:"XrayConnectionConfig"`
+	ConnectionConfig   *XrayConnectionConfig `json:"ConnectionConfig"`
+	LegacyConnConfig   *XrayConnectionConfig `json:"XrayConnectionConfig"`
 	InboundConfigPath  string                `json:"InboundConfigPath"`
 	OutboundConfigPath string                `json:"OutboundConfigPath"`
 }
@@ -17,11 +20,13 @@ type XrayLogConfig struct {
 }
 
 type XrayConnectionConfig struct {
-	Handshake    uint32 `json:"handshake"`
-	ConnIdle     uint32 `json:"connIdle"`
-	UplinkOnly   uint32 `json:"uplinkOnly"`
-	DownlinkOnly uint32 `json:"downlinkOnly"`
-	BufferSize   int32  `json:"bufferSize"`
+	StatsUserUplink   bool   `json:"statsUserUplink"`
+	StatsUserDownlink bool   `json:"statsUserDownlink"`
+	Handshake         uint32 `json:"handshake"`
+	ConnIdle          uint32 `json:"connIdle"`
+	UplinkOnly        uint32 `json:"uplinkOnly"`
+	DownlinkOnly      uint32 `json:"downlinkOnly"`
+	BufferSize        int32  `json:"bufferSize"`
 }
 
 func NewXrayConfig() *XrayConfig {
@@ -37,13 +42,29 @@ func NewXrayConfig() *XrayConfig {
 		OutboundConfigPath: "",
 		RouteConfigPath:    "",
 		ConnectionConfig: &XrayConnectionConfig{
-			Handshake:    4,
-			ConnIdle:     30,
-			UplinkOnly:   2,
-			DownlinkOnly: 4,
-			BufferSize:   64,
+			StatsUserUplink:   true,
+			StatsUserDownlink: true,
+			Handshake:         4,
+			ConnIdle:          30,
+			UplinkOnly:        2,
+			DownlinkOnly:      4,
+			BufferSize:        64,
 		},
 	}
+}
+
+type _XrayConfig XrayConfig
+
+func (x *XrayConfig) UnmarshalJSON(b []byte) error {
+	tmp := _XrayConfig{}
+	if err := json.Unmarshal(b, &tmp); err != nil {
+		return err
+	}
+	*x = XrayConfig(tmp)
+	if x.ConnectionConfig == nil && x.LegacyConnConfig != nil {
+		x.ConnectionConfig = x.LegacyConnConfig
+	}
+	return nil
 }
 
 type XrayOptions struct {

@@ -7,4 +7,3 @@
 ```
 wget -N https://raw.githubusercontent.com/Designdocs/N2X-script/main/install.sh && bash install.sh
 ```
-
