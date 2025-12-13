@@ -18,7 +18,8 @@ func init() {
 		CertDomain: "test.test.com",
 		Provider:   "cloudflare",
 		DNSEnv: map[string]string{
-			"CF_DNS_API_TOKEN": "123",
+			"CF_API_KEY":       "123",
+			"CLOUDFLARE_EMAIL": "you@example.com",
 		},
 		CertFile: "./cert/1.pem",
 		KeyFile:  "./cert/1.key",

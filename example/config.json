@@ -21,8 +21,8 @@
   "Nodes": [
     {
       "Core": "sing",
-      "ApiHost": "http://127.0.0.1",
-      "ApiKey": "test",
+      "ApiHost": "${N2X_API_HOST:-http://127.0.0.1}",
+      "ApiKey": "${N2X_API_KEY}",
       "NodeID": 33,
       "NodeType": "shadowsocks",
       "Timeout": 30,
@@ -35,12 +35,14 @@
       "CertConfig": {
         "CertMode": "self",
         "RejectUnknownSni": false,
-        "CertDomain": "example.com",
+        "CertDomain": "${N2X_CERT_DOMAIN:-example.com}",
         "CertFile": "/etc/N2X/fullchain.cer",
         "KeyFile": "/etc/N2X/cert.key",
-        "Provider": "cloudflare",
+        "Provider": "${N2X_CERT_PROVIDER:-cloudflare}",
+        "Email": "${N2X_CERT_EMAIL:-}",
         "DNSEnv": {
-          "EnvName": "env1"
+          "CF_API_KEY": "${CF_API_KEY:-}",
+          "CLOUDFLARE_EMAIL": "${CLOUDFLARE_EMAIL:-}"
         }
       }
     }

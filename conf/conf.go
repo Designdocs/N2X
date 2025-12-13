@@ -38,6 +38,11 @@ func (p *Conf) LoadFromPath(filePath string) error {
 		return fmt.Errorf("read config file error: %s", err)
 	}
 
+	data, err = resolveEnvPlaceholders(data)
+	if err != nil {
+		return fmt.Errorf("resolve env placeholders error: %s", err)
+	}
+
 	err = json.Unmarshal(data, p)
 	if err != nil {
 		return fmt.Errorf("unmarshal config error: %s", err)

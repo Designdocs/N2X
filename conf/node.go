@@ -35,6 +35,10 @@ type ApiConfig struct {
 
 func (n *NodeConfig) UnmarshalJSON(data []byte) (err error) {
 	rn := rawNodeConfig{}
+	data, err = resolveEnvPlaceholders(data)
+	if err != nil {
+		return err
+	}
 	err = json.Unmarshal(data, &rn)
 	if err != nil {
 		return err
@@ -62,6 +66,10 @@ func (n *NodeConfig) UnmarshalJSON(data []byte) (err error) {
 			if err != nil {
 				return fmt.Errorf("open include file error: %s", err)
 			}
+		}
+		data, err = resolveEnvPlaceholders(data)
+		if err != nil {
+			return err
 		}
 		err = json.Unmarshal(data, &rn)
 		if err != nil {

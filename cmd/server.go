@@ -3,9 +3,11 @@ package cmd
 import (
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 
+	"github.com/Designdocs/N2X/common/envfile"
 	"github.com/Designdocs/N2X/conf"
 	vCore "github.com/Designdocs/N2X/core"
 	"github.com/Designdocs/N2X/limiter"
@@ -17,6 +19,7 @@ import (
 var (
 	config string
 	watch  bool
+	envF   string
 )
 
 var serverCommand = cobra.Command{
@@ -33,11 +36,28 @@ func init() {
 	serverCommand.PersistentFlags().
 		BoolVarP(&watch, "watch", "w",
 			true, "watch file path change")
+	serverCommand.PersistentFlags().
+		StringVarP(&envF, "env-file", "e",
+			"", "load env vars from file (KEY=VALUE), default: <config-dir>/.env if exists")
 	command.AddCommand(&serverCommand)
 }
 
 func serverHandle(_ *cobra.Command, _ []string) {
 	showVersion()
+	if envF != "" {
+		if err := envfile.Load(envF, false); err != nil {
+			log.WithField("err", err).Error("Load env file failed")
+			return
+		}
+	} else {
+		defaultEnv := filepath.Join(filepath.Dir(config), ".env")
+		if _, err := os.Stat(defaultEnv); err == nil {
+			if err := envfile.Load(defaultEnv, false); err != nil {
+				log.WithField("err", err).Error("Load default env file failed")
+				return
+			}
+		}
+	}
 	c := conf.New()
 	err := c.LoadFromPath(config)
 	if err != nil {

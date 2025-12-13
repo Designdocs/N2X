@@ -17,3 +17,12 @@ output/*
 .cache/
 newN2X.sh
 quic_singbox.sh
+.env
+.env.*
+config.json
+config.*.local
+secrets.*
+*.private.json
+*.private.json5
+.gocache/
+.gopath/
