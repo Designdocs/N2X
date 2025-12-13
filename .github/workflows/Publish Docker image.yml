@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/n2x
+  IMAGE_NAME: ${{ toLower(github.repository_owner) }}/n2x
 
 jobs:
   build:
