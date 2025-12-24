@@ -12,6 +12,8 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,7 +24,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25.0"
+          go-version: "1.22.5"
 
       - name: Update tracked upstream modules
         shell: bash
@@ -77,4 +79,3 @@ jobs:
           labels: |
             dependencies
             auto-patch-release
-
