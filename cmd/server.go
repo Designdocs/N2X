@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Designdocs/N2X/common/envfile"
 	"github.com/Designdocs/N2X/conf"
@@ -71,11 +74,12 @@ func promptCreateEnv(envPath string) bool {
 			input, _ := reader.ReadString('\n')
 			input = strings.TrimSpace(input)
 			if input == "" {
-				input = item.Default
-			}
-			if item.Required && input == "" {
-				fmt.Println("该项不能为空，请重新输入。")
-				continue
+				if item.Default != "" {
+					input = item.Default
+				} else {
+					input = randomValue()
+					fmt.Printf("已自动生成随机值: %s\n", input)
+				}
 			}
 			values[item.Key] = input
 			break
@@ -95,6 +99,15 @@ func promptCreateEnv(envPath string) bool {
 
 	fmt.Printf("已创建 %s 并写入配置。\n", envPath)
 	return true
+}
+
+func randomValue() string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// 回退到时间戳式伪随机
+		return fmt.Sprintf("rand-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }
 
 var (
