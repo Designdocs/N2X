@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -38,12 +39,17 @@ func (p *Conf) LoadFromPath(filePath string) error {
 		return fmt.Errorf("read config file error: %s", err)
 	}
 
-	data, err = resolveEnvPlaceholders(data)
+	resolved, err := resolveEnvPlaceholders(data)
 	if err != nil {
-		return fmt.Errorf("resolve env placeholders error: %s", err)
+		if errors.Is(err, ErrMissingEnvVar) {
+			// fallback to raw config values when env vars are missing
+			resolved = data
+		} else {
+			return fmt.Errorf("resolve env placeholders error: %s", err)
+		}
 	}
 
-	err = json.Unmarshal(data, p)
+	err = json.Unmarshal(resolved, p)
 	if err != nil {
 		return fmt.Errorf("unmarshal config error: %s", err)
 	}

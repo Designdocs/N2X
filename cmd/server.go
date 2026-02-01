@@ -46,16 +46,16 @@ func serverHandle(_ *cobra.Command, _ []string) {
 	showVersion()
 	if envF != "" {
 		if err := envfile.Load(envF, false); err != nil {
-			log.WithField("err", err).Error("Load env file failed")
-			return
+			log.WithField("err", err).Warn("Load env file failed, fallback to config.json values")
 		}
 	} else {
 		defaultEnv := filepath.Join(filepath.Dir(config), ".env")
 		if _, err := os.Stat(defaultEnv); err == nil {
 			if err := envfile.Load(defaultEnv, false); err != nil {
-				log.WithField("err", err).Error("Load default env file failed")
-				return
+				log.WithField("err", err).Warn("Load default env file failed, fallback to config.json values")
 			}
+		} else {
+			log.WithField("path", defaultEnv).Info("Env file not found, fallback to config.json values")
 		}
 	}
 	c := conf.New()

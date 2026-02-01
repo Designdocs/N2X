@@ -2,10 +2,13 @@ package conf
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 )
+
+var ErrMissingEnvVar = errors.New("missing required env var")
 
 // resolveEnvPlaceholders replaces string values that are exactly in the form:
 //
@@ -78,5 +81,5 @@ func substEnvString(s string) (string, error) {
 	if hasDefault {
 		return defaultValue, nil
 	}
-	return "", fmt.Errorf("missing required env var: %s", varName)
+	return "", fmt.Errorf("%w: %s", ErrMissingEnvVar, varName)
 }
