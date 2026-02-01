@@ -40,7 +40,7 @@ jobs:
     strategy:
       matrix:
         # Include amd64 on all platforms.
-        goos: [windows, freebsd, linux, darwin]
+        goos: [windows, freebsd, linux, darwin, openbsd]
         goarch: [amd64, 386]
         exclude:
           # Exclude i386 on darwin.
@@ -51,11 +51,7 @@ jobs:
           - goos: darwin
             goarch: arm64
           # END MacOS ARM64
-          # BEGIN OpenBSD
-          - goos: openbsd
-            goarch: amd64
-          - goos: openbsd
-            goarch: 386
+          # BEGIN OpenBSD extra arches
           - goos: openbsd
             goarch: arm64
           - goos: openbsd
@@ -139,6 +135,30 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
+          check-latest: true
+          cache: false  # we manage cache manually to keep everything under workspace
+
+      - name: Prepare Go caches (workspace-local to avoid permission issues)
+        run: |
+          mkdir -p "${GOCACHE}" "${GOMODCACHE}"
+          chmod -R 755 "${GOCACHE}" "${GOMODCACHE}"
+
+      - name: Cache Go build cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOCACHE }}
+          key: go-build-${{ runner.os }}-${{ matrix.goos }}-${{ matrix.goarch }}-${{ matrix.goarm || 'na' }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ matrix.goos }}-${{ matrix.goarch }}-
+            go-build-${{ runner.os }}-
+
+      - name: Cache Go module cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOMODCACHE }}
+          key: go-mod-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-mod-${{ runner.os }}-
 
       - name: Get project dependencies
         run: |
