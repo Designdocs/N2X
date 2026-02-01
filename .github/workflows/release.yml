@@ -283,3 +283,4 @@ jobs:
           file: ./N2X-${{ steps.get_filename.outputs.ASSET_NAME }}.zip*
           tag: ${{ github.event_name == 'release' && github.ref || env.version }}
           file_glob: true
+          overwrite: true
