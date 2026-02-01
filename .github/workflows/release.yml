@@ -112,6 +112,7 @@ jobs:
 
     runs-on: ubuntu-latest
     env:
+      GO_VERSION: "1.23.x"
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
       GOARM: ${{ matrix.goarm }}
@@ -127,14 +128,21 @@ jobs:
       - name: Show workflow information
         id: get_filename
         run: |
-          export _NAME=$(jq ".[\"$GOOS-$GOARCH$GOARM$GOMIPS\"].friendlyName" -r < .github/build/friendly-filenames.json)
+          export _NAME=$(jq -r ".[\"$GOOS-$GOARCH$GOARM$GOMIPS\"].friendlyName // empty" < .github/build/friendly-filenames.json)
+          if [[ -z "$_NAME" ]]; then
+            if [[ "$GOOS" == "linux" && "$GOARCH" == "amd64" ]]; then
+              _NAME="linux-64"
+            else
+              _NAME="${GOOS}-${GOARCH}${GOARM}${GOMIPS}"
+            fi
+          fi
           echo "GOOS: $GOOS, GOARCH: $GOARCH, GOARM: $GOARM, GOMIPS: $GOMIPS, RELEASE_NAME: $_NAME"
           echo "ASSET_NAME=$_NAME" >> $GITHUB_OUTPUT
           echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23.x'
+          go-version: ${{ env.GO_VERSION }}
           check-latest: true
           cache: false  # we manage cache manually to keep everything under workspace
 
@@ -147,18 +155,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.GOCACHE }}
-          key: go-build-${{ runner.os }}-${{ matrix.goos }}-${{ matrix.goarch }}-${{ matrix.goarm || 'na' }}-${{ hashFiles('**/go.sum') }}
+          key: go-build-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}-${{ matrix.goarm || 'na' }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            go-build-${{ runner.os }}-${{ matrix.goos }}-${{ matrix.goarch }}-
-            go-build-${{ runner.os }}-
+            go-build-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}-
+            go-build-${{ runner.os }}-${{ env.GO_VERSION }}-
 
       - name: Cache Go module cache
         uses: actions/cache@v4
         with:
           path: ${{ env.GOMODCACHE }}
-          key: go-mod-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          key: go-mod-${{ runner.os }}-${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            go-mod-${{ runner.os }}-
+            go-mod-${{ runner.os }}-${{ env.GO_VERSION }}-
 
       - name: Get project dependencies
         run: |
