@@ -36,7 +36,7 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		client = resty.NewWithLocalAddr(&net.TCPAddr{
 			IP: net.ParseIP(c.APISendIP),
 		})
-	} else {	
+	} else {
 		client = resty.New()
 	}
 	client.SetRetryCount(3)
@@ -60,13 +60,10 @@ func New(c *conf.ApiConfig) (*Client, error) {
 	case "v2ray":
 		c.NodeType = "vmess"
 	case
+		"anytls",
 		"vmess",
 		"trojan",
 		"shadowsocks",
-		"hysteria",
-		"hysteria2",
-		"tuic",
-		"anytls",
 		"vless":
 	default:
 		return nil, fmt.Errorf("unsupported Node type: %s", c.NodeType)

@@ -30,12 +30,9 @@ type NodeInfo struct {
 
 	// origin
 	VAllss      *VAllssNode
+	AnyTls      *AnyTlsNode
 	Shadowsocks *ShadowsocksNode
 	Trojan      *TrojanNode
-	Tuic        *TuicNode
-	AnyTls      *AnyTlsNode
-	Hysteria    *HysteriaNode
-	Hysteria2   *Hysteria2Node
 	Common      *CommonNode
 }
 
@@ -112,31 +109,9 @@ type TrojanNode struct {
 	NetworkSettings json.RawMessage `json:"networkSettings"`
 }
 
-type TuicNode struct {
-	CommonNode
-	CongestionControl string `json:"congestion_control"`
-	ZeroRTTHandshake  bool   `json:"zero_rtt_handshake"`
-}
-
 type AnyTlsNode struct {
 	CommonNode
 	PaddingScheme []string `json:"padding_scheme,omitempty"`
-}
-
-type HysteriaNode struct {
-	CommonNode
-	UpMbps   int    `json:"up_mbps"`
-	DownMbps int    `json:"down_mbps"`
-	Obfs     string `json:"obfs"`
-}
-
-type Hysteria2Node struct {
-	CommonNode
-	Ignore_Client_Bandwidth bool   `json:"ignore_client_bandwidth"`
-	UpMbps                  int    `json:"up_mbps"`
-	DownMbps                int    `json:"down_mbps"`
-	ObfsType                string `json:"obfs"`
-	ObfsPassword            string `json:"obfs-password"`
 }
 
 type RawDNS struct {
@@ -226,15 +201,6 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		cm = &rsp.CommonNode
 		node.Trojan = rsp
 		node.Security = Tls
-	case "tuic":
-		rsp := &TuicNode{}
-		err = json.Unmarshal(r.Body(), rsp)
-		if err != nil {
-			return nil, fmt.Errorf("decode tuic params error: %s", err)
-		}
-		cm = &rsp.CommonNode
-		node.Tuic = rsp
-		node.Security = Tls
 	case "anytls":
 		rsp := &AnyTlsNode{}
 		err = json.Unmarshal(r.Body(), rsp)
@@ -244,24 +210,8 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		cm = &rsp.CommonNode
 		node.AnyTls = rsp
 		node.Security = Tls
-	case "hysteria":
-		rsp := &HysteriaNode{}
-		err = json.Unmarshal(r.Body(), rsp)
-		if err != nil {
-			return nil, fmt.Errorf("decode hysteria params error: %s", err)
-		}
-		cm = &rsp.CommonNode
-		node.Hysteria = rsp
-		node.Security = Tls
-	case "hysteria2":
-		rsp := &Hysteria2Node{}
-		err = json.Unmarshal(r.Body(), rsp)
-		if err != nil {
-			return nil, fmt.Errorf("decode hysteria2 params error: %s", err)
-		}
-		cm = &rsp.CommonNode
-		node.Hysteria2 = rsp
-		node.Security = Tls
+	default:
+		return nil, fmt.Errorf("unsupported node type: %s", c.NodeType)
 	}
 
 	// parse rules and dns

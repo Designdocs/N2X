@@ -5,11 +5,9 @@ import (
 )
 
 type CoreConfig struct {
-	Type            string           `json:"Type"`
-	Name            string           `json:"Name"`
-	XrayConfig      *XrayConfig      `json:"-"`
-	SingConfig      *SingConfig      `json:"-"`
-	Hysteria2Config *Hysteria2Config `json:"-"`
+	Type       string      `json:"Type"`
+	Name       string      `json:"Name"`
+	XrayConfig *XrayConfig `json:"-"`
 }
 
 type _CoreConfig CoreConfig
@@ -23,12 +21,6 @@ func (c *CoreConfig) UnmarshalJSON(b []byte) error {
 	case "xray":
 		c.XrayConfig = NewXrayConfig()
 		return json.Unmarshal(b, c.XrayConfig)
-	case "sing":
-		c.SingConfig = NewSingConfig()
-		return json.Unmarshal(b, c.SingConfig)
-	case "hysteria2":
-		c.Hysteria2Config = NewHysteria2Config()
-		return json.Unmarshal(b, c.Hysteria2Config)
 	}
 	return nil
 }

@@ -4,28 +4,11 @@
     {
       "name": "xray-core",
       "module": "github.com/xtls/xray-core",
-      "upstream": "https://github.com/xtls/xray-core",
-      "strategy": "tag",
-      "ref": "latest",
+      "upstream": "https://github.com/wyx2685/Xray-core",
+      "strategy": "commit",
+      "ref": "60b127eaedf773dc3c941645b4b9ce23659fbcb0",
       "group": "core",
-      "notes": "Replace currently points to wyx2685/xray-core; update ref to a specific tag or keep latest."
-    },
-    {
-      "name": "sing-box",
-      "module": "github.com/wyx2685/sing-box_mod",
-      "upstream": "https://github.com/wyx2685/sing-box_mod",
-      "strategy": "tag",
-      "ref": "latest",
-      "group": "core",
-      "notes": "Track latest sing-box_mod tags to keep AnyTLS/sing features current."
-    },
-    {
-      "name": "hysteria2",
-      "module": "github.com/apernet/hysteria/core/v2",
-      "upstream": "https://github.com/apernet/hysteria",
-      "strategy": "tag",
-      "ref": "latest",
-      "group": "core"
+      "notes": "Track wyx2685/Xray-core main commits and keep the replace pinned to an exact commit."
     }
   ]
 }

@@ -33,16 +33,16 @@
       "TCPFastOpen": false,
       "SniffEnabled": true,
       "CertConfig": {
-        "CertMode": "self",
+        "CertMode": "none",
         "RejectUnknownSni": false,
-        "CertDomain": "${N2X_CERT_DOMAIN:-example.com}",
+        "CertDomain": "all.example.com",
         "CertFile": "/etc/N2X/fullchain.cer",
         "KeyFile": "/etc/N2X/cert.key",
-        "Provider": "${N2X_CERT_PROVIDER:-cloudflare}",
-        "Email": "${N2X_CERT_EMAIL:-}",
+        "Email": "example@gmail.com",
+        "Provider": "cloudflare",
         "DNSEnv": {
-          "CF_API_KEY": "${CF_API_KEY:-}",
-          "CLOUDFLARE_EMAIL": "${CLOUDFLARE_EMAIL:-}"
+          "CF_API_KEY": "ExampleKEY",
+          "CLOUDFLARE_EMAIL": "example@gmail.com"
         }
       }
     }
