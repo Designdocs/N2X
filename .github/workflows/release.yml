@@ -112,7 +112,7 @@ jobs:
 
     runs-on: ubuntu-latest
     env:
-      GO_VERSION: "1.23.x"
+      GO_VERSION: "1.26.x"
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
       GOARM: ${{ matrix.goarm }}
