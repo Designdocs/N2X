@@ -167,6 +167,12 @@ func (c *Client) ReportNodeOnlineUsers(data *map[int][]string) error {
 
 // NodeStatus is the payload reported to X-Board's /UniProxy/status endpoint.
 // All totals/used values are in bytes; Cpu is a percentage in [0, 100].
+//
+// IMPORTANT: This payload is *only* delivered over HTTP. The WebSocket event
+// `node.status` is reserved for NodeMetrics — feeding the cpu/mem/swap/disk
+// shape into it would cause X-Board's NodeEventHandlers::handleNodeStatus to
+// call ServerService::updateMetrics with mismatched fields, polluting the
+// METRICS cache with zeros for uptime/goroutines/etc.
 type NodeStatus struct {
 	Cpu  float64       `json:"cpu"`
 	Mem  NodeStatusMem `json:"mem"`
@@ -179,18 +185,10 @@ type NodeStatusMem struct {
 	Used  uint64 `json:"used"`
 }
 
-// ReportNodeStatus pushes node load metrics to the panel. Matches the schema
-// validated by UniProxyController::status in X-Board (cpu/mem/swap/disk).
-// When the WebSocket driver is connected the status is delivered over WS
-// (event "node.status"); a WS failure transparently falls back to the HTTP
-// endpoint so rollback to pure HTTP is always safe.
+// ReportNodeStatus pushes the cpu/mem/swap/disk load snapshot to the panel
+// over HTTP. Matches the schema validated by UniProxyController::status in
+// X-Board — the only legacy V1 path that accepts it.
 func (c *Client) ReportNodeStatus(status *NodeStatus) error {
-	if c.wsConnected() {
-		if err := c.wsSend("node.status", status); err == nil {
-			return nil
-		}
-		// fall through to HTTP on error (logged inside wsSend)
-	}
 	const path = "/api/v1/server/UniProxy/status"
 	r, err := c.client.R().
 		SetBody(status).
@@ -198,6 +196,62 @@ func (c *Client) ReportNodeStatus(status *NodeStatus) error {
 		Post(path)
 	if err = c.checkResponse(r, path, err); err != nil {
 		return fmt.Errorf("report node status: %w", err)
+	}
+	return nil
+}
+
+// NodeMetrics mirrors the shape consumed by X-Board's
+// ServerService::updateMetrics. Every field is optional from the panel's
+// point of view (zeroes are accepted), so the agent can fill what it knows
+// and leave the rest empty without breaking validation.
+//
+// The panel surfaces these fields in the admin "节点状态" popup via the
+// `metrics` accessor on the Server model. Without this payload the popup
+// shows uptime/goroutines/users/speeds as empty placeholders even though
+// cpu/mem/disk render correctly from the LOAD_STATUS cache.
+type NodeMetrics struct {
+	Uptime            int64                  `json:"uptime"`
+	Goroutines        int                    `json:"goroutines"`
+	ActiveConnections int                    `json:"active_connections"`
+	TotalConnections  int                    `json:"total_connections"`
+	TotalUsers        int                    `json:"total_users"`
+	ActiveUsers       int                    `json:"active_users"`
+	InboundSpeed      int64                  `json:"inbound_speed"`
+	OutboundSpeed     int64                  `json:"outbound_speed"`
+	CPUPerCore        []float64              `json:"cpu_per_core"`
+	Load              []float64              `json:"load"`
+	SpeedLimiter      map[string]interface{} `json:"speed_limiter"`
+	GC                map[string]interface{} `json:"gc"`
+	API               map[string]interface{} `json:"api"`
+	WS                map[string]interface{} `json:"ws"`
+	Limits            map[string]interface{} `json:"limits"`
+	KernelStatus      bool                   `json:"kernel_status"`
+}
+
+// ReportNodeMetrics pushes the rich runtime metrics to the panel. Preferred
+// transport is the WebSocket `node.status` event because X-Board handles it
+// inline (NodeEventHandlers::handleNodeStatus → updateMetrics) — that's the
+// same path the official Xboard-Node uses to populate the admin popup.
+//
+// HTTP fallback is the V2 unified `/api/v2/server/node/report` endpoint with
+// only the `metrics` field set; the controller treats each section as
+// independent so we don't disturb traffic/alive/online/status reporting which
+// continues to flow through the existing V1 paths.
+func (c *Client) ReportNodeMetrics(metrics *NodeMetrics) error {
+	if c.wsConnected() {
+		if err := c.wsSend("node.status", metrics); err == nil {
+			return nil
+		}
+		// fall through to HTTP on error (logged inside wsSend)
+	}
+	const path = "/api/v2/server/node/report"
+	body := map[string]interface{}{"metrics": metrics}
+	r, err := c.client.R().
+		SetBody(body).
+		ForceContentType("application/json").
+		Post(path)
+	if err = c.checkResponse(r, path, err); err != nil {
+		return fmt.Errorf("report node metrics: %w", err)
 	}
 	return nil
 }

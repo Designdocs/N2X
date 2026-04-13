@@ -37,6 +37,15 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	}
 	log.WithField("tag", c.tag).Info("Start report node load status")
 	_ = c.nodeStatusReportPeriodic.Start(true)
+	// periodic rich metrics report — feeds the admin "节点状态" popup with
+	// uptime/goroutines/users/speeds. Reuses the load interval so both
+	// reports stay in sync and respect the operator-tunable cadence.
+	c.nodeMetricsReportPeriodic = &task.Task{
+		Interval: statusInterval,
+		Execute:  c.reportNodeMetricsTask,
+	}
+	log.WithField("tag", c.tag).Info("Start report node metrics")
+	_ = c.nodeMetricsReportPeriodic.Start(true)
 	if node.Security == panel.Tls {
 		switch c.CertConfig.CertMode {
 		case "none", "", "file", "self":

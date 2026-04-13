@@ -10,6 +10,17 @@ import (
 func (c *Controller) reportUserTrafficTask() (err error) {
 	userTraffic, _ := c.server.GetUserTrafficSlice(c.tag, true)
 	if len(userTraffic) > 0 {
+		// Feed running totals so the metrics task can derive rate.
+		// Updated before the network call so a panel hiccup doesn't desync
+		// the local accounting.
+		var addedUp, addedDown int64
+		for i := range userTraffic {
+			addedUp += userTraffic[i].Upload
+			addedDown += userTraffic[i].Download
+		}
+		c.totalUploadBytes.Add(addedUp)
+		c.totalDownloadBytes.Add(addedDown)
+
 		err = c.apiClient.ReportUserTraffic(userTraffic)
 		if err != nil {
 			log.WithFields(log.Fields{

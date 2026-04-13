@@ -3,6 +3,8 @@ package node
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
+	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/common/task"
@@ -27,6 +29,16 @@ type Controller struct {
 	dynamicSpeedLimitPeriodic *task.Task
 	onlineIpReportPeriodic    *task.Task
 	nodeStatusReportPeriodic  *task.Task
+	nodeMetricsReportPeriodic *task.Task
+
+	// cumulative byte counters maintained by reportUserTrafficTask and
+	// drained by reportNodeMetricsTask to derive inbound/outbound rates
+	totalUploadBytes    atomic.Int64
+	totalDownloadBytes  atomic.Int64
+	lastMetricsUpload   int64
+	lastMetricsDownload int64
+	lastMetricsAt       time.Time
+
 	*conf.Options
 }
 
@@ -118,6 +130,9 @@ func (c *Controller) Close() error {
 	}
 	if c.nodeStatusReportPeriodic != nil {
 		c.nodeStatusReportPeriodic.Close()
+	}
+	if c.nodeMetricsReportPeriodic != nil {
+		c.nodeMetricsReportPeriodic.Close()
 	}
 	err := c.server.DelNode(c.tag)
 	if err != nil {

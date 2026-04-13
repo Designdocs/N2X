@@ -1,14 +1,21 @@
 package node
 
 import (
+	"runtime"
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
 	log "github.com/sirupsen/logrus"
 )
+
+// processStartTime captures the moment the agent process began so the
+// metrics task can report a stable uptime to the panel. It is set once at
+// package initialisation; callers must never mutate it.
+var processStartTime = time.Now()
 
 // collectNodeStatus samples CPU, memory, swap, and root-disk usage. It returns
 // a populated panel.NodeStatus even when individual probes fail — missing
@@ -71,5 +78,87 @@ func (c *Controller) reportNodeStatusTask() error {
 		"mem":  status.Mem.Used,
 		"disk": status.Disk.Used,
 	}).Debug("Reported node status")
+	return nil
+}
+
+// collectNodeMetrics fills the rich runtime payload that X-Board's admin
+// popup expects. Fields we cannot cheaply observe (active_connections,
+// total_connections, gc/api/ws/limits sub-maps) are left zero — the panel
+// happily renders them as "—" rather than failing validation.
+//
+// Inbound/outbound speeds are derived from the cumulative byte counters fed
+// by reportUserTrafficTask: delta bytes / elapsed seconds since the last
+// metrics tick. The first invocation seeds the baseline and reports zero
+// rate, which matches what the official Xboard-Node does on startup.
+func (c *Controller) collectNodeMetrics() *panel.NodeMetrics {
+	metrics := &panel.NodeMetrics{
+		Uptime:       int64(time.Since(processStartTime).Seconds()),
+		Goroutines:   runtime.NumGoroutine(),
+		TotalUsers:   len(c.userList),
+		ActiveUsers:  len(c.aliveMap),
+		KernelStatus: true,
+	}
+
+	// per-core CPU snapshot — short window keeps the call non-blocking.
+	if perCore, err := cpu.Percent(500*time.Millisecond, true); err == nil {
+		metrics.CPUPerCore = perCore
+	} else {
+		log.WithField("err", err).Debug("collect per-core cpu failed")
+	}
+
+	// 1/5/15 minute load averages. Not available on every OS — gopsutil
+	// returns an error on platforms like Windows where we just leave it nil.
+	if avg, err := load.Avg(); err == nil {
+		metrics.Load = []float64{avg.Load1, avg.Load5, avg.Load15}
+	} else {
+		log.WithField("err", err).Debug("collect load avg failed")
+	}
+
+	// Derive throughput from the running totals fed by the user-traffic
+	// task. Snapshot the cumulative counters first to avoid double-counting
+	// if reportUserTrafficTask races us between reads.
+	currentUp := c.totalUploadBytes.Load()
+	currentDown := c.totalDownloadBytes.Load()
+	now := time.Now()
+	if !c.lastMetricsAt.IsZero() {
+		elapsed := now.Sub(c.lastMetricsAt).Seconds()
+		if elapsed > 0 {
+			deltaUp := currentUp - c.lastMetricsUpload
+			deltaDown := currentDown - c.lastMetricsDownload
+			if deltaUp > 0 {
+				metrics.OutboundSpeed = int64(float64(deltaUp) / elapsed)
+			}
+			if deltaDown > 0 {
+				metrics.InboundSpeed = int64(float64(deltaDown) / elapsed)
+			}
+		}
+	}
+	c.lastMetricsUpload = currentUp
+	c.lastMetricsDownload = currentDown
+	c.lastMetricsAt = now
+
+	return metrics
+}
+
+// reportNodeMetricsTask pushes the rich metrics payload to the panel and
+// keeps the popup populated. Like the status task it never propagates errors
+// so a transient panel outage cannot tear down the periodic loop.
+func (c *Controller) reportNodeMetricsTask() error {
+	metrics := c.collectNodeMetrics()
+	if err := c.apiClient.ReportNodeMetrics(metrics); err != nil {
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Info("Report node metrics failed")
+		return nil
+	}
+	log.WithFields(log.Fields{
+		"tag":         c.tag,
+		"uptime":      metrics.Uptime,
+		"goroutines":  metrics.Goroutines,
+		"total_users": metrics.TotalUsers,
+		"in_bps":      metrics.InboundSpeed,
+		"out_bps":     metrics.OutboundSpeed,
+	}).Debug("Reported node metrics")
 	return nil
 }
