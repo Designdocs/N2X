@@ -36,7 +36,67 @@ permissions:
 
 jobs:
 
+  prepare-release:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true }}
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Resolve release version
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          input_version="${{ inputs.version }}"
+          if [[ -n "$input_version" ]]; then
+            version="$input_version"
+          else
+            latest_tag="$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)"
+            if [[ -z "$latest_tag" ]]; then
+              latest_tag="v0.0.0"
+            fi
+            base="${latest_tag#v}"
+            IFS='.' read -r major minor patch <<<"$base"
+            major="${major:-0}"
+            minor="${minor:-0}"
+            patch="${patch:-0}"
+            patch=$((patch + 1))
+            version="v${major}.${minor}.${patch}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $version"
+      - name: Create tag
+        shell: bash
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git fetch --tags
+          if git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists, skipping tag creation."
+          else
+            git tag -a "$VERSION" -m "$VERSION"
+            git push origin "refs/tags/$VERSION"
+          fi
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve.outputs.version }}
+          name: ${{ steps.resolve.outputs.version }}
+          generate_release_notes: true
+
   build:
+    needs: [prepare-release]
+    if: ${{ always() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped') }}
     strategy:
       matrix:
         # Include amd64 on all platforms.
@@ -181,21 +241,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          input_version="${{ inputs.version }}"
-          if [[ -n "$input_version" ]]; then
-            version="$input_version"
-          else
-            latest_tag="$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)"
-            if [[ -z "$latest_tag" ]]; then
-              latest_tag="v0.0.0"
+          version="${{ needs.prepare-release.outputs.version }}"
+          if [[ -z "$version" ]]; then
+            # prepare-release was skipped (publish_release == false): resolve locally.
+            input_version="${{ inputs.version }}"
+            if [[ -n "$input_version" ]]; then
+              version="$input_version"
+            else
+              latest_tag="$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)"
+              if [[ -z "$latest_tag" ]]; then
+                latest_tag="v0.0.0"
+              fi
+              base="${latest_tag#v}"
+              IFS='.' read -r major minor patch <<<"$base"
+              major="${major:-0}"
+              minor="${minor:-0}"
+              patch="${patch:-0}"
+              patch=$((patch + 1))
+              version="v${major}.${minor}.${patch}"
             fi
-            base="${latest_tag#v}"
-            IFS='.' read -r major minor patch <<<"$base"
-            major="${major:-0}"
-            minor="${minor:-0}"
-            patch="${patch:-0}"
-            patch=$((patch + 1))
-            version="v${major}.${minor}.${patch}"
           fi
           echo "version=$version" >> "$GITHUB_ENV"
           echo "Resolved version: $version"
@@ -203,29 +267,6 @@ jobs:
         if: ${{ github.event_name != 'release' && github.event_name != 'workflow_dispatch' }}
         run: |
           echo "version=${{ github.sha }}" >> $GITHUB_ENV
-
-      - name: Create tag for workflow_dispatch
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true && matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git fetch --tags
-          if git rev-parse "refs/tags/$version" >/dev/null 2>&1; then
-            echo "Tag $version already exists, skipping tag creation."
-          else
-            git tag -a "$version" -m "$version"
-            git push origin "refs/tags/$version"
-          fi
-
-      - name: Create GitHub Release for workflow_dispatch
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true && matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.version }}
-          name: ${{ env.version }}
-          generate_release_notes: true
       - name: Build N2X
         run: |
           echo "version: $version"
