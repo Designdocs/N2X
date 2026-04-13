@@ -119,6 +119,7 @@ jobs:
       CGO_ENABLED: 0
       GOCACHE: ${{ github.workspace }}/.gocache
       GOMODCACHE: ${{ github.workspace }}/.gomodcache
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v4
@@ -208,6 +209,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
           git fetch --tags
           if git rev-parse "refs/tags/$version" >/dev/null 2>&1; then
             echo "Tag $version already exists, skipping tag creation."
