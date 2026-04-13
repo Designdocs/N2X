@@ -33,8 +33,11 @@ type AliveMap struct {
 // GetUserList will pull user from v2board
 func (c *Client) GetUserList() ([]UserInfo, error) {
 	const path = "/api/v1/server/UniProxy/user"
+	c.etagMu.Lock()
+	currentEtag := c.userEtag
+	c.etagMu.Unlock()
 	r, err := c.client.R().
-		SetHeader("If-None-Match", c.userEtag).
+		SetHeader("If-None-Match", currentEtag).
 		SetHeader("X-Response-Format", "msgpack").
 		SetDoNotParseResponse(true).
 		Get(path)
@@ -86,7 +89,9 @@ func (c *Client) GetUserList() ([]UserInfo, error) {
 			userlist.Users = append(userlist.Users, u)
 		}
 	}
+	c.etagMu.Lock()
 	c.userEtag = r.Header().Get("ETag")
+	c.etagMu.Unlock()
 	return userlist.Users, nil
 }
 
@@ -140,6 +145,12 @@ func (c *Client) ReportUserTraffic(userTraffic []UserTraffic) error {
 }
 
 func (c *Client) ReportNodeOnlineUsers(data *map[int][]string) error {
+	// WS path: "report.devices" with the same {uid: [ips...]} payload.
+	if c.wsConnected() {
+		if err := c.wsSend("report.devices", data); err == nil {
+			return nil
+		}
+	}
 	const path = "/api/v1/server/UniProxy/alive"
 	r, err := c.client.R().
 		SetBody(data).
@@ -170,7 +181,16 @@ type NodeStatusMem struct {
 
 // ReportNodeStatus pushes node load metrics to the panel. Matches the schema
 // validated by UniProxyController::status in X-Board (cpu/mem/swap/disk).
+// When the WebSocket driver is connected the status is delivered over WS
+// (event "node.status"); a WS failure transparently falls back to the HTTP
+// endpoint so rollback to pure HTTP is always safe.
 func (c *Client) ReportNodeStatus(status *NodeStatus) error {
+	if c.wsConnected() {
+		if err := c.wsSend("node.status", status); err == nil {
+			return nil
+		}
+		// fall through to HTTP on error (logged inside wsSend)
+	}
 	const path = "/api/v1/server/UniProxy/status"
 	r, err := c.client.R().
 		SetBody(status).

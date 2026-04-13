@@ -24,13 +24,29 @@ type rawNodeConfig struct {
 }
 
 type ApiConfig struct {
-	APIHost      string `json:"ApiHost"`
-	APISendIP    string `json:"ApiSendIP"`
-	NodeID       int    `json:"NodeID"`
-	Key          string `json:"ApiKey"`
-	NodeType     string `json:"NodeType"`
-	Timeout      int    `json:"Timeout"`
-	RuleListPath string `json:"RuleListPath"`
+	APIHost      string          `json:"ApiHost"`
+	APISendIP    string          `json:"ApiSendIP"`
+	NodeID       int             `json:"NodeID"`
+	Key          string          `json:"ApiKey"`
+	NodeType     string          `json:"NodeType"`
+	Timeout      int             `json:"Timeout"`
+	RuleListPath string          `json:"RuleListPath"`
+	WebSocket    WebSocketConfig `json:"WebSocket"`
+}
+
+// WebSocketConfig controls the optional WebSocket driver that talks to the
+// X-Board /ws/ endpoint. Default zero value keeps the driver disabled so an
+// N2X upgrade is a no-op for existing deployments; flip Enabled to true only
+// after verifying panel support.
+type WebSocketConfig struct {
+	// Enabled opts in to the WS driver. Leave false to stay on pure HTTP.
+	Enabled bool `json:"Enabled"`
+	// URL is the full ws:// or wss:// endpoint, e.g. wss://api.example.com/ws/.
+	// When empty the driver derives it from ApiHost (http -> ws, https -> wss)
+	// and appends /ws/.
+	URL string `json:"URL"`
+	// Debug enables verbose per-message logs; use while commissioning.
+	Debug bool `json:"Debug"`
 }
 
 func (n *NodeConfig) UnmarshalJSON(data []byte) (err error) {

@@ -33,12 +33,17 @@ func (n *Node) Start(nodes []conf.NodeConfig, core vCore.Core) error {
 				nodes[i].ApiConfig.NodeID,
 				err)
 		}
+		// Only start the optional WebSocket driver once the HTTP bootstrap
+		// has succeeded, so a misconfigured WS endpoint can never block
+		// the node from coming up.
+		p.StartWebSocket()
 	}
 	return nil
 }
 
 func (n *Node) Close() {
 	for _, c := range n.controllers {
+		c.apiClient.StopWebSocket()
 		err := c.Close()
 		if err != nil {
 			panic(err)

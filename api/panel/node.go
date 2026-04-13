@@ -126,9 +126,14 @@ type Rules struct {
 
 func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	const path = "/api/v1/server/UniProxy/config"
+	c.etagMu.Lock()
+	currentEtag := c.nodeEtag
+	currentHash := c.responseBodyHash
+	c.etagMu.Unlock()
+
 	r, err := c.client.
 		R().
-		SetHeader("If-None-Match", c.nodeEtag).
+		SetHeader("If-None-Match", currentEtag).
 		ForceContentType("application/json").
 		Get(path)
 
@@ -137,11 +142,13 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	}
 	hash := sha256.Sum256(r.Body())
 	newBodyHash := hex.EncodeToString(hash[:])
-	if c.responseBodyHash == newBodyHash {
+	if currentHash == newBodyHash {
 		return nil, nil
 	}
+	c.etagMu.Lock()
 	c.responseBodyHash = newBodyHash
 	c.nodeEtag = r.Header().Get("ETag")
+	c.etagMu.Unlock()
 	if err = c.checkResponse(r, path, err); err != nil {
 		return nil, err
 	}
