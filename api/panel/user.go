@@ -274,10 +274,14 @@ type NodeMetricsLimits struct {
 // inline (NodeEventHandlers::handleNodeStatus → updateMetrics) — that's the
 // same path the official Xboard-Node uses to populate the admin popup.
 //
-// HTTP fallback is the V2 unified `/api/v2/server/node/report` endpoint with
+// HTTP fallback is the V2 unified `/api/v2/server/report` endpoint with
 // only the `metrics` field set; the controller treats each section as
 // independent so we don't disturb traffic/alive/online/status reporting which
 // continues to flow through the existing V1 paths.
+//
+// Path is intentionally /api/v2/server/report — the route is registered as
+// prefix "server" + POST "report" inside the V2 route group (/api/v2).
+// An earlier version sent /node/report which 404'd against every panel.
 func (c *Client) ReportNodeMetrics(metrics *NodeMetrics) error {
 	if c.wsConnected() {
 		if err := c.wsSend("node.status", metrics); err == nil {
@@ -285,7 +289,7 @@ func (c *Client) ReportNodeMetrics(metrics *NodeMetrics) error {
 		}
 		// fall through to HTTP on error (logged inside wsSend)
 	}
-	const path = "/api/v2/server/node/report"
+	const path = "/api/v2/server/report"
 	body := map[string]interface{}{"metrics": metrics}
 	r, err := c.client.R().
 		SetBody(body).
