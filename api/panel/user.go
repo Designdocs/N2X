@@ -153,3 +153,31 @@ func (c *Client) ReportNodeOnlineUsers(data *map[int][]string) error {
 
 	return nil
 }
+
+// NodeStatus is the payload reported to X-Board's /UniProxy/status endpoint.
+// All totals/used values are in bytes; Cpu is a percentage in [0, 100].
+type NodeStatus struct {
+	Cpu  float64       `json:"cpu"`
+	Mem  NodeStatusMem `json:"mem"`
+	Swap NodeStatusMem `json:"swap"`
+	Disk NodeStatusMem `json:"disk"`
+}
+
+type NodeStatusMem struct {
+	Total uint64 `json:"total"`
+	Used  uint64 `json:"used"`
+}
+
+// ReportNodeStatus pushes node load metrics to the panel. Matches the schema
+// validated by UniProxyController::status in X-Board (cpu/mem/swap/disk).
+func (c *Client) ReportNodeStatus(status *NodeStatus) error {
+	const path = "/api/v1/server/UniProxy/status"
+	r, err := c.client.R().
+		SetBody(status).
+		ForceContentType("application/json").
+		Post(path)
+	if err = c.checkResponse(r, path, err); err != nil {
+		return fmt.Errorf("report node status: %w", err)
+	}
+	return nil
+}

@@ -26,6 +26,17 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	_ = c.nodeInfoMonitorPeriodic.Start(false)
 	log.WithField("tag", c.tag).Info("Start report node status")
 	_ = c.userReportPeriodic.Start(false)
+	// periodic node load report for X-Board /UniProxy/status endpoint
+	statusInterval := node.PushInterval
+	if statusInterval < time.Minute {
+		statusInterval = time.Minute
+	}
+	c.nodeStatusReportPeriodic = &task.Task{
+		Interval: statusInterval,
+		Execute:  c.reportNodeStatusTask,
+	}
+	log.WithField("tag", c.tag).Info("Start report node load status")
+	_ = c.nodeStatusReportPeriodic.Start(true)
 	if node.Security == panel.Tls {
 		switch c.CertConfig.CertMode {
 		case "none", "", "file", "self":

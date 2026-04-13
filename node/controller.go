@@ -26,6 +26,7 @@ type Controller struct {
 	renewCertPeriodic         *task.Task
 	dynamicSpeedLimitPeriodic *task.Task
 	onlineIpReportPeriodic    *task.Task
+	nodeStatusReportPeriodic  *task.Task
 	*conf.Options
 }
 
@@ -114,6 +115,9 @@ func (c *Controller) Close() error {
 	}
 	if c.onlineIpReportPeriodic != nil {
 		c.onlineIpReportPeriodic.Close()
+	}
+	if c.nodeStatusReportPeriodic != nil {
+		c.nodeStatusReportPeriodic.Close()
 	}
 	err := c.server.DelNode(c.tag)
 	if err != nil {
