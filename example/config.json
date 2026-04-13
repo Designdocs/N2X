@@ -26,6 +26,16 @@
       "NodeID": 33,
       "NodeType": "shadowsocks",
       "Timeout": 30,
+      // Optional X-Board WebSocket driver. Leave Enabled=false (default)
+      // to stay on pure HTTP polling. When enabled, URL is derived from
+      // ApiHost automatically (http -> ws, https -> wss, path /ws/),
+      // or set it explicitly to override. Debug=true prints every event
+      // to the log and is useful when commissioning a new panel.
+      "WebSocket": {
+        "Enabled": false,
+        "URL": "",
+        "Debug": false
+      },
       "ListenIP": "0.0.0.0",
       "SendIP": "0.0.0.0",
       "DeviceOnlineMinTraffic": 200,
