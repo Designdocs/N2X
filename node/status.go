@@ -2,6 +2,7 @@ package node
 
 import (
 	"runtime"
+	"runtime/debug"
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
@@ -108,10 +109,60 @@ func (c *Controller) collectNodeMetrics() *panel.NodeMetrics {
 
 	// 1/5/15 minute load averages. Not available on every OS — gopsutil
 	// returns an error on platforms like Windows where we just leave it nil.
+	// Field shape must match the panel frontend: it reads metrics.load.load5
+	// as a named property, *not* an array element.
 	if avg, err := load.Avg(); err == nil {
-		metrics.Load = []float64{avg.Load1, avg.Load5, avg.Load15}
+		metrics.Load = &panel.NodeMetricsLoad{
+			Load1:  avg.Load1,
+			Load5:  avg.Load5,
+			Load15: avg.Load15,
+		}
 	} else {
 		log.WithField("err", err).Debug("collect load avg failed")
+	}
+
+	// Latest GC pause for the runtime — surfaces as "(Xms)" after the ON
+	// kernel_status indicator. ReadGCStats keeps a 1-pause buffer so the
+	// most recent value is at index 0.
+	var gcStats debug.GCStats
+	gcStats.Pause = make([]time.Duration, 1)
+	debug.ReadGCStats(&gcStats)
+	if len(gcStats.Pause) > 0 && gcStats.Pause[0] > 0 {
+		metrics.GC = &panel.NodeMetricsGC{
+			LastPauseMs: float64(gcStats.Pause[0].Microseconds()) / 1000.0,
+		}
+	}
+
+	// Panel API health — counters maintained by resty middleware on the
+	// Client. Always emitted (even when both are zero) so the popup
+	// renders the row immediately after first sync.
+	apiSuccess, apiFailure := c.apiClient.APIStats()
+	metrics.API = &panel.NodeMetricsAPI{
+		Success: apiSuccess,
+		Failure: apiFailure,
+	}
+
+	// WebSocket driver state. Only emitted when the operator opted in,
+	// otherwise the panel hides the WS row entirely (intentional — keeps
+	// pure-HTTP deployments from showing a misleading "WS-ERR").
+	if c.apiClient.WebSocketEnabled() {
+		metrics.WS = &panel.NodeMetricsWS{
+			Enabled:   true,
+			Connected: c.apiClient.WebSocketConnected(),
+		}
+	}
+
+	// Active speed-limit users — drives the destructive "X Limit" row.
+	// Reading via the helper avoids exposing UserLimitInfo internals to
+	// the node package.
+	if c.limiter != nil {
+		limited := c.limiter.LimitedUserCount()
+		if limited > 0 {
+			metrics.SpeedLimiter = &panel.NodeMetricsLimiter{
+				HasLimits:    true,
+				LimitedUsers: limited,
+			}
+		}
 	}
 
 	// Derive throughput from the running totals fed by the user-traffic

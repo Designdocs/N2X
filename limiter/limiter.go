@@ -123,6 +123,30 @@ func (l *Limiter) UpdateDynamicSpeedLimit(tag, uuid string, limit int, expire ti
 	return nil
 }
 
+// LimitedUserCount walks UserLimitInfo and returns how many users currently
+// have an active speed cap — either a static SpeedLimit or an unexpired
+// dynamic limit. The metrics task uses this to populate the destructive
+// "X Limit" row in the admin popup.
+func (l *Limiter) LimitedUserCount() int {
+	now := time.Now().Unix()
+	count := 0
+	l.UserLimitInfo.Range(func(_, v any) bool {
+		u, ok := v.(*UserLimitInfo)
+		if !ok || u == nil {
+			return true
+		}
+		if u.SpeedLimit > 0 {
+			count++
+			return true
+		}
+		if u.DynamicSpeedLimit > 0 && (u.ExpireTime == 0 || u.ExpireTime > now) {
+			count++
+		}
+		return true
+	})
+	return count
+}
+
 func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool) (Bucket *ratelimit.Bucket, Reject bool) {
 	// check if ipv4 mapped ipv6
 	ip = strings.TrimPrefix(ip, "::ffff:")

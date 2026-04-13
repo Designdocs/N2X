@@ -201,31 +201,72 @@ func (c *Client) ReportNodeStatus(status *NodeStatus) error {
 }
 
 // NodeMetrics mirrors the shape consumed by X-Board's
-// ServerService::updateMetrics. Every field is optional from the panel's
-// point of view (zeroes are accepted), so the agent can fill what it knows
-// and leave the rest empty without breaking validation.
+// ServerService::updateMetrics. Each sub-struct uses the exact JSON keys
+// that the admin frontend (resources/admin) reads via dotted access — e.g.
+// `metrics.load.load5`, `metrics.api.success`, `metrics.ws.connected`. If
+// any of these are sent as arrays or unkeyed maps the popup hides the row.
 //
-// The panel surfaces these fields in the admin "节点状态" popup via the
-// `metrics` accessor on the Server model. Without this payload the popup
-// shows uptime/goroutines/users/speeds as empty placeholders even though
-// cpu/mem/disk render correctly from the LOAD_STATUS cache.
+// Every field is optional from the panel's point of view (zeroes are
+// accepted), so the agent can fill what it knows and leave the rest empty
+// without breaking validation.
 type NodeMetrics struct {
-	Uptime            int64                  `json:"uptime"`
-	Goroutines        int                    `json:"goroutines"`
-	ActiveConnections int                    `json:"active_connections"`
-	TotalConnections  int                    `json:"total_connections"`
-	TotalUsers        int                    `json:"total_users"`
-	ActiveUsers       int                    `json:"active_users"`
-	InboundSpeed      int64                  `json:"inbound_speed"`
-	OutboundSpeed     int64                  `json:"outbound_speed"`
-	CPUPerCore        []float64              `json:"cpu_per_core"`
-	Load              []float64              `json:"load"`
-	SpeedLimiter      map[string]interface{} `json:"speed_limiter"`
-	GC                map[string]interface{} `json:"gc"`
-	API               map[string]interface{} `json:"api"`
-	WS                map[string]interface{} `json:"ws"`
-	Limits            map[string]interface{} `json:"limits"`
-	KernelStatus      bool                   `json:"kernel_status"`
+	Uptime            int64               `json:"uptime"`
+	Goroutines        int                 `json:"goroutines"`
+	ActiveConnections int                 `json:"active_connections"`
+	TotalConnections  int                 `json:"total_connections"`
+	TotalUsers        int                 `json:"total_users"`
+	ActiveUsers       int                 `json:"active_users"`
+	InboundSpeed      int64               `json:"inbound_speed"`
+	OutboundSpeed     int64               `json:"outbound_speed"`
+	CPUPerCore        []float64           `json:"cpu_per_core"`
+	Load              *NodeMetricsLoad    `json:"load,omitempty"`
+	SpeedLimiter      *NodeMetricsLimiter `json:"speed_limiter,omitempty"`
+	GC                *NodeMetricsGC      `json:"gc,omitempty"`
+	API               *NodeMetricsAPI     `json:"api,omitempty"`
+	WS                *NodeMetricsWS      `json:"ws,omitempty"`
+	Limits            *NodeMetricsLimits  `json:"limits,omitempty"`
+	KernelStatus      bool                `json:"kernel_status"`
+}
+
+// NodeMetricsLoad maps to `metrics.load.{load1,load5,load15}` on the
+// frontend; the popup specifically renders `load.load5.toFixed(2)`.
+type NodeMetricsLoad struct {
+	Load1  float64 `json:"load1"`
+	Load5  float64 `json:"load5"`
+	Load15 float64 `json:"load15"`
+}
+
+// NodeMetricsAPI tracks panel-API call counters surfaced as the lightning
+// row "success/failure". The frontend pulses red when failure > 0.
+type NodeMetricsAPI struct {
+	Success int64 `json:"success"`
+	Failure int64 `json:"failure"`
+}
+
+// NodeMetricsWS reports the WebSocket driver state. The frontend only
+// renders the WS-OK/WS-ERR row when Enabled is true.
+type NodeMetricsWS struct {
+	Enabled   bool `json:"enabled"`
+	Connected bool `json:"connected"`
+}
+
+// NodeMetricsGC carries Go GC pause info. Optional — the frontend only
+// appends "(Xms)" after kernel_status when last_pause_ms is set.
+type NodeMetricsGC struct {
+	LastPauseMs float64 `json:"last_pause_ms"`
+}
+
+// NodeMetricsLimiter reports active speed-limiting state. has_limits gates
+// the destructive "X Limit" row; limited_users is the count shown.
+type NodeMetricsLimiter struct {
+	HasLimits    bool `json:"has_limits"`
+	LimitedUsers int  `json:"limited_users"`
+}
+
+// NodeMetricsLimits is the device-limit event counter. Falls back path for
+// the Limit row when speed_limiter has nothing to report.
+type NodeMetricsLimits struct {
+	DeviceLimitEvents int `json:"device_limit_events"`
 }
 
 // ReportNodeMetrics pushes the rich runtime metrics to the panel. Preferred

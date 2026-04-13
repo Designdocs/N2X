@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"encoding/json"
@@ -38,6 +39,11 @@ type Client struct {
 	wsCfg conf.WebSocketConfig
 	ws    *wsDriver
 	wsMu  sync.Mutex
+
+	// apiSuccess / apiFailure are incremented from the resty middleware so
+	// the metrics task can report panel-API health to the admin popup.
+	apiSuccess atomic.Int64
+	apiFailure atomic.Int64
 }
 
 func New(c *conf.ApiConfig) (*Client, error) {
@@ -64,6 +70,34 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		}
 	})
 	client.SetBaseURL(c.APIHost)
+	// Build the client first so we can hand its address to the success /
+	// error hooks. The closures only ever read counters via atomic helpers
+	// so capturing the pointer here is goroutine-safe.
+	cli := &Client{
+		client:    client,
+		Token:     c.Key,
+		APIHost:   c.APIHost,
+		APISendIP: c.APISendIP,
+		NodeType:  c.NodeType,
+		NodeId:    c.NodeID,
+		UserList:  &UserListBody{},
+		AliveMap:  &AliveMap{},
+		wsCfg:     c.WebSocket,
+	}
+	client.OnAfterResponse(func(_ *resty.Client, resp *resty.Response) error {
+		if resp != nil && resp.StatusCode() >= 200 && resp.StatusCode() < 400 {
+			cli.apiSuccess.Add(1)
+		} else {
+			cli.apiFailure.Add(1)
+		}
+		return nil
+	})
+	// OnError fires for transport-level failures (DNS/TLS/timeout/etc) where
+	// OnAfterResponse may not run. Increment failures here so the popup
+	// reflects connectivity issues, not just HTTP error codes.
+	client.OnError(func(_ *resty.Request, _ error) {
+		cli.apiFailure.Add(1)
+	})
 	// Check node type
 	c.NodeType = strings.ToLower(c.NodeType)
 	switch c.NodeType {
@@ -84,17 +118,26 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		"node_id":   strconv.Itoa(c.NodeID),
 		"token":     c.Key,
 	})
-	return &Client{
-		client:    client,
-		Token:     c.Key,
-		APIHost:   c.APIHost,
-		APISendIP: c.APISendIP,
-		NodeType:  c.NodeType,
-		NodeId:    c.NodeID,
-		UserList:  &UserListBody{},
-		AliveMap:  &AliveMap{},
-		wsCfg:     c.WebSocket,
-	}, nil
+	cli.NodeType = c.NodeType
+	return cli, nil
+}
+
+// APIStats returns the cumulative panel-API call counters used by the
+// metrics task. Reads are lock-free.
+func (c *Client) APIStats() (success, failure int64) {
+	return c.apiSuccess.Load(), c.apiFailure.Load()
+}
+
+// WebSocketEnabled exposes the operator-configured opt-in flag so the
+// metrics task can decide whether the popup should render the WS row.
+func (c *Client) WebSocketEnabled() bool {
+	return c.wsCfg.Enabled
+}
+
+// WebSocketConnected reports whether the WS driver currently has a live
+// session to the panel.
+func (c *Client) WebSocketConnected() bool {
+	return c.wsConnected()
 }
 
 // StartWebSocket spawns the optional WebSocket driver if WebSocket.Enabled
