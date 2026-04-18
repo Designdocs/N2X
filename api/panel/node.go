@@ -124,6 +124,18 @@ type Rules struct {
 	Protocol []string
 }
 
+var xhttpObjectLikeKeys = map[string]struct{}{
+	"downloadSettings":  {},
+	"extra":             {},
+	"headers":           {},
+	"realitySettings":   {},
+	"sockopt":           {},
+	"splithttpSettings": {},
+	"tlsSettings":       {},
+	"xhttpSettings":     {},
+	"xmux":              {},
+}
+
 func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	const path = "/api/v1/server/UniProxy/config"
 	c.etagMu.Lock()
@@ -186,6 +198,10 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		if rsp.TlsSettingsBack != nil {
 			rsp.TlsSettings = *rsp.TlsSettingsBack
 			rsp.TlsSettingsBack = nil
+		}
+		rsp.NetworkSettings, err = normalizeLegacyXHTTPSettings(rsp.Network, rsp.NetworkSettings)
+		if err != nil {
+			return nil, fmt.Errorf("normalize xhttp settings error: %s", err)
 		}
 		cm = &rsp.CommonNode
 		node.VAllss = rsp
@@ -271,6 +287,68 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	cm.BaseConfig = nil
 
 	return node, nil
+}
+
+func normalizeLegacyXHTTPSettings(network string, raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 || (network != "xhttp" && network != "splithttp") {
+		return raw, nil
+	}
+
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+
+	normalized, changed := normalizeLegacyXHTTPValue(payload)
+	if !changed {
+		return raw, nil
+	}
+
+	encoded, err := json.Marshal(normalized)
+	if err != nil {
+		return nil, err
+	}
+	return encoded, nil
+}
+
+func normalizeLegacyXHTTPValue(value any) (any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		changed := false
+		for key, child := range typed {
+			if shouldNormalizeObjectLikeArray(key, child) {
+				typed[key] = map[string]any{}
+				changed = true
+				child = typed[key]
+			}
+			normalized, childChanged := normalizeLegacyXHTTPValue(child)
+			if childChanged {
+				typed[key] = normalized
+				changed = true
+			}
+		}
+		return typed, changed
+	case []any:
+		changed := false
+		for index, child := range typed {
+			normalized, childChanged := normalizeLegacyXHTTPValue(child)
+			if childChanged {
+				typed[index] = normalized
+				changed = true
+			}
+		}
+		return typed, changed
+	default:
+		return value, false
+	}
+}
+
+func shouldNormalizeObjectLikeArray(key string, value any) bool {
+	if _, ok := xhttpObjectLikeKeys[key]; !ok {
+		return false
+	}
+	items, ok := value.([]any)
+	return ok && len(items) == 0
 }
 
 func intervalToTime(i interface{}) time.Duration {
