@@ -74,13 +74,24 @@ type VAllssNode struct {
 }
 
 type TlsSettings struct {
-	ServerName  string `json:"server_name"`
-	Dest        string `json:"dest"`
-	ServerPort  string `json:"server_port"`
-	ShortId     string `json:"short_id"`
-	PrivateKey  string `json:"private_key"`
-	Mldsa65Seed string `json:"mldsa65Seed"`
-	Xver        uint64 `json:"xver,string"`
+	ServerName    string       `json:"server_name"`
+	AllowInsecure bool         `json:"allow_insecure"`
+	Dest          string       `json:"dest"`
+	ServerPort    string       `json:"server_port"`
+	ShortId       string       `json:"short_id"`
+	PrivateKey    string       `json:"private_key"`
+	Mldsa65Seed   string       `json:"mldsa65Seed"`
+	Xver          uint64       `json:"xver,string"`
+	Ech           *ECHSettings `json:"ech"`
+}
+
+type ECHSettings struct {
+	Enabled         bool   `json:"enabled"`
+	Config          string `json:"config"`
+	QueryServerName string `json:"query_server_name"`
+	Key             string `json:"key"`
+	KeyPath         string `json:"key_path"`
+	ConfigPath      string `json:"config_path"`
 }
 
 type EncSettings struct {
@@ -107,11 +118,15 @@ type TrojanNode struct {
 	CommonNode
 	Network         string          `json:"network"`
 	NetworkSettings json.RawMessage `json:"networkSettings"`
+	TlsSettings     TlsSettings     `json:"tls_settings"`
+	TlsSettingsBack *TlsSettings    `json:"tlsSettings"`
 }
 
 type AnyTlsNode struct {
 	CommonNode
-	PaddingScheme []string `json:"padding_scheme,omitempty"`
+	TlsSettings     TlsSettings  `json:"tls_settings"`
+	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
+	PaddingScheme   []string     `json:"padding_scheme,omitempty"`
 }
 
 type RawDNS struct {
@@ -196,7 +211,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 			rsp.NetworkSettingsBack = nil
 		}
 		if rsp.TlsSettingsBack != nil {
-			rsp.TlsSettings = *rsp.TlsSettingsBack
+			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
 			rsp.TlsSettingsBack = nil
 		}
 		rsp.NetworkSettings, err = normalizeLegacyXHTTPSettings(rsp.Network, rsp.NetworkSettings)
@@ -221,6 +236,10 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode trojan params error: %s", err)
 		}
+		if rsp.TlsSettingsBack != nil {
+			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
+			rsp.TlsSettingsBack = nil
+		}
 		cm = &rsp.CommonNode
 		node.Trojan = rsp
 		node.Security = Tls
@@ -229,6 +248,10 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		err = json.Unmarshal(r.Body(), rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode anytls params error: %s", err)
+		}
+		if rsp.TlsSettingsBack != nil {
+			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
+			rsp.TlsSettingsBack = nil
 		}
 		cm = &rsp.CommonNode
 		node.AnyTls = rsp
@@ -287,6 +310,13 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	cm.BaseConfig = nil
 
 	return node, nil
+}
+
+func mergeLegacyTLSSettings(current TlsSettings, legacy *TlsSettings) TlsSettings {
+	if legacy == nil {
+		return current
+	}
+	return *legacy
 }
 
 func normalizeLegacyXHTTPSettings(network string, raw json.RawMessage) (json.RawMessage, error) {

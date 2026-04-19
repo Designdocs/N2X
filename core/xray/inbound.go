@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"strings"
@@ -95,25 +96,13 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	// Set TLS or Reality settings
 	switch nodeInfo.Security {
 	case panel.Tls:
-		// Normal tls
-		if option.CertConfig == nil {
-			return nil, errors.New("the CertConfig is not vail")
+		tlsConfig, err := buildInboundTLSConfig(option, nodeInfo)
+		if err != nil {
+			return nil, err
 		}
-		switch option.CertConfig.CertMode {
-		case "none", "":
-			break // disable
-		default:
+		if tlsConfig != nil {
 			in.StreamSetting.Security = "tls"
-			in.StreamSetting.TLSSettings = &coreConf.TLSConfig{
-				Certs: []*coreConf.TLSCertConfig{
-					{
-						CertFile:     option.CertConfig.CertFile,
-						KeyFile:      option.CertConfig.KeyFile,
-						OcspStapling: 3600,
-					},
-				},
-				RejectUnknownSNI: option.CertConfig.RejectUnknownSni,
-			}
+			in.StreamSetting.TLSSettings = tlsConfig
 		}
 	case panel.Reality:
 		// Reality
@@ -152,6 +141,101 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	}
 	in.Tag = tag
 	return in.Build()
+}
+
+func buildInboundTLSConfig(option *conf.Options, nodeInfo *panel.NodeInfo) (*coreConf.TLSConfig, error) {
+	if option.CertConfig == nil {
+		return nil, errors.New("the CertConfig is not vail")
+	}
+
+	switch option.CertConfig.CertMode {
+	case "none", "":
+		return nil, nil
+	}
+
+	tlsConfig := &coreConf.TLSConfig{
+		Certs: []*coreConf.TLSCertConfig{
+			{
+				CertFile:     option.CertConfig.CertFile,
+				KeyFile:      option.CertConfig.KeyFile,
+				OcspStapling: 3600,
+			},
+		},
+		RejectUnknownSNI: option.CertConfig.RejectUnknownSni,
+	}
+
+	echConfig, err := buildInboundECHConfig(nodeInfo)
+	if err != nil {
+		return nil, err
+	}
+	if echConfig != nil {
+		tlsConfig.ECHServerKeys = echConfig.ServerKeys
+	}
+
+	return tlsConfig, nil
+}
+
+type inboundECHConfig struct {
+	ServerKeys string
+}
+
+func buildInboundECHConfig(nodeInfo *panel.NodeInfo) (*inboundECHConfig, error) {
+	echSettings := getInboundECHSettings(nodeInfo)
+	if echSettings == nil || !echSettings.Enabled {
+		return nil, nil
+	}
+
+	serverKeys, err := normalizeECHValue(echSettings.Key, "ECH KEYS")
+	if err != nil {
+		return nil, err
+	}
+	if serverKeys == "" {
+		return nil, nil
+	}
+
+	return &inboundECHConfig{ServerKeys: serverKeys}, nil
+}
+
+func getInboundECHSettings(nodeInfo *panel.NodeInfo) *panel.ECHSettings {
+	switch nodeInfo.Type {
+	case "vmess", "vless":
+		if nodeInfo.VAllss == nil {
+			return nil
+		}
+		return nodeInfo.VAllss.TlsSettings.Ech
+	case "trojan":
+		if nodeInfo.Trojan == nil {
+			return nil
+		}
+		return nodeInfo.Trojan.TlsSettings.Ech
+	case "anytls":
+		if nodeInfo.AnyTls == nil {
+			return nil
+		}
+		return nodeInfo.AnyTls.TlsSettings.Ech
+	default:
+		return nil
+	}
+}
+
+func normalizeECHValue(value string, expectedPEMType string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	if strings.HasPrefix(trimmed, "-----BEGIN") {
+		block, _ := pem.Decode([]byte(trimmed))
+		if block == nil {
+			return "", fmt.Errorf("decode %s pem error", strings.ToLower(expectedPEMType))
+		}
+		if expectedPEMType != "" && block.Type != expectedPEMType {
+			return "", fmt.Errorf("unexpected pem block type %q", block.Type)
+		}
+		return base64.StdEncoding.EncodeToString(block.Bytes), nil
+	}
+
+	return strings.Join(strings.Fields(trimmed), ""), nil
 }
 
 func buildV2ray(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
