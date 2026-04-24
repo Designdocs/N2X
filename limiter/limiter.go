@@ -30,6 +30,7 @@ type Limiter struct {
 	UserLimitInfo *sync.Map      // Key: TagUUID value: UserLimitInfo
 	SpeedLimiter  *sync.Map      // key: TagUUID, value: *ratelimit.Bucket
 	AliveList     map[int]int    // Key: Uid, value: alive_ip
+	aliveMu       sync.RWMutex
 }
 
 type UserLimitInfo struct {
@@ -47,7 +48,7 @@ func AddLimiter(tag string, l *conf.LimitConfig, users []panel.UserInfo, aliveLi
 		UserOnlineIP:  new(sync.Map),
 		UserLimitInfo: new(sync.Map),
 		SpeedLimiter:  new(sync.Map),
-		AliveList:     aliveList,
+		AliveList:     cloneAliveList(aliveList),
 		OldUserOnline: new(sync.Map),
 	}
 	uuidmap := make(map[string]int)
@@ -93,7 +94,7 @@ func (l *Limiter) UpdateUser(tag string, added []panel.UserInfo, deleted []panel
 		l.UserOnlineIP.Delete(format.UserTag(tag, deleted[i].Uuid))
 		l.SpeedLimiter.Delete(format.UserTag(tag, deleted[i].Uuid))
 		delete(l.UUIDtoUID, deleted[i].Uuid)
-		delete(l.AliveList, deleted[i].Id)
+		l.deleteAlive(deleted[i].Id)
 	}
 	for i := range added {
 		userLimit := &UserLimitInfo{
@@ -178,7 +179,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 		// Store online user for device limit
 		newipMap := new(sync.Map)
 		newipMap.Store(ip, uid)
-		aliveIp := l.AliveList[uid]
+		aliveIp := l.aliveCount(uid)
 		// If any device is online
 		if v, loaded := l.UserOnlineIP.LoadOrStore(taguuid, newipMap); loaded {
 			oldipMap := v.(*sync.Map)
@@ -246,4 +247,32 @@ func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
 type UserIpList struct {
 	Uid    int      `json:"Uid"`
 	IpList []string `json:"Ips"`
+}
+
+func (l *Limiter) UpdateAliveList(aliveList map[int]int) {
+	l.aliveMu.Lock()
+	l.AliveList = cloneAliveList(aliveList)
+	l.aliveMu.Unlock()
+}
+
+func (l *Limiter) aliveCount(uid int) int {
+	l.aliveMu.RLock()
+	defer l.aliveMu.RUnlock()
+	return l.AliveList[uid]
+}
+
+func (l *Limiter) deleteAlive(uid int) {
+	l.aliveMu.Lock()
+	delete(l.AliveList, uid)
+	l.aliveMu.Unlock()
+}
+
+func cloneAliveList(aliveList map[int]int) map[int]int {
+	cloned := make(map[int]int, len(aliveList))
+	for uid, count := range aliveList {
+		if count > 0 {
+			cloned[uid] = count
+		}
+	}
+	return cloned
 }

@@ -3,6 +3,7 @@ package node
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,7 @@ type Controller struct {
 	traffic                   map[string]int64
 	userList                  []panel.UserInfo
 	aliveMap                  map[int]int
+	aliveMu                   sync.RWMutex
 	info                      *panel.NodeInfo
 	nodeInfoMonitorPeriodic   *task.Task
 	userReportPeriodic        *task.Task
@@ -72,6 +74,7 @@ func (c *Controller) Start() error {
 	if err != nil {
 		return fmt.Errorf("failed to get user alive list: %s", err)
 	}
+	c.aliveMap = cloneAliveMap(c.aliveMap)
 	if len(c.Options.Name) == 0 {
 		c.tag = c.buildNodeTag(node)
 	} else {
@@ -85,6 +88,7 @@ func (c *Controller) Start() error {
 		return fmt.Errorf("update rule error: %s", err)
 	}
 	c.limiter = l
+	c.apiClient.SetAliveUpdateHook(c.setAliveMap)
 	if node.Security == panel.Tls {
 		err = c.requestCert()
 		if err != nil {
@@ -112,6 +116,7 @@ func (c *Controller) Start() error {
 
 // Close implement the Close() function of the service interface
 func (c *Controller) Close() error {
+	c.apiClient.SetAliveUpdateHook(nil)
 	limiter.DeleteLimiter(c.tag)
 	if c.nodeInfoMonitorPeriodic != nil {
 		c.nodeInfoMonitorPeriodic.Close()
@@ -143,4 +148,31 @@ func (c *Controller) Close() error {
 
 func (c *Controller) buildNodeTag(node *panel.NodeInfo) string {
 	return fmt.Sprintf("[%s]-%s:%d", c.apiClient.APIHost, node.Type, node.Id)
+}
+
+func (c *Controller) setAliveMap(alive map[int]int) {
+	snapshot := cloneAliveMap(alive)
+	c.aliveMu.Lock()
+	c.aliveMap = snapshot
+	c.aliveMu.Unlock()
+
+	if c.limiter != nil {
+		c.limiter.UpdateAliveList(snapshot)
+	}
+}
+
+func (c *Controller) activeUserCount() int {
+	c.aliveMu.RLock()
+	defer c.aliveMu.RUnlock()
+	return len(c.aliveMap)
+}
+
+func cloneAliveMap(alive map[int]int) map[int]int {
+	cloned := make(map[int]int, len(alive))
+	for uid, count := range alive {
+		if uid > 0 && count > 0 {
+			cloned[uid] = count
+		}
+	}
+	return cloned
 }

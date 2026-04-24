@@ -164,6 +164,9 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		ForceContentType("application/json").
 		Get(path)
 
+	if err = c.checkResponse(r, path, err); err != nil {
+		return nil, err
+	}
 	if r.StatusCode() == 304 {
 		return nil, nil
 	}
@@ -176,9 +179,6 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	c.responseBodyHash = newBodyHash
 	c.nodeEtag = r.Header().Get("ETag")
 	c.etagMu.Unlock()
-	if err = c.checkResponse(r, path, err); err != nil {
-		return nil, err
-	}
 
 	if r != nil {
 		defer func() {

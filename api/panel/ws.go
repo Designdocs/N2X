@@ -251,7 +251,6 @@ func (d *wsDriver) runSession() error {
 	d.connMu.Lock()
 	d.conn = conn
 	d.connMu.Unlock()
-	d.connected.Store(true)
 	defer d.markDisconnectedLocked(conn)
 
 	conn.SetReadLimit(wsMaxMessageBytes)
@@ -297,6 +296,7 @@ func (d *wsDriver) handleMessage(raw []byte) error {
 
 	switch evt.Event {
 	case "auth.success":
+		d.connected.Store(true)
 		log.WithFields(d.logFields).Info("ws authenticated")
 		if d.cfg.Hooks.OnAuthSuccess != nil {
 			d.cfg.Hooks.OnAuthSuccess(d.cfg.NodeID)

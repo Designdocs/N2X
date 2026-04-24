@@ -33,6 +33,8 @@ type Client struct {
 	responseBodyHash string
 	UserList         *UserListBody
 	AliveMap         *AliveMap
+	aliveMu          sync.Mutex
+	aliveUpdate      func(map[int]int)
 
 	// wsCfg is retained so Start() can spawn the driver lazily after the
 	// owning controller has been fully constructed.
@@ -126,6 +128,14 @@ func New(c *conf.ApiConfig) (*Client, error) {
 // metrics task. Reads are lock-free.
 func (c *Client) APIStats() (success, failure int64) {
 	return c.apiSuccess.Load(), c.apiFailure.Load()
+}
+
+// SetAliveUpdateHook lets the node controller consume real-time device-state
+// pushes from the panel without making the panel package depend on limiter.
+func (c *Client) SetAliveUpdateHook(hook func(map[int]int)) {
+	c.aliveMu.Lock()
+	c.aliveUpdate = hook
+	c.aliveMu.Unlock()
 }
 
 // WebSocketEnabled exposes the operator-configured opt-in flag so the
@@ -245,24 +255,22 @@ func (c *Client) invalidateUserListCache() {
 		Debug("invalidated user list cache")
 }
 
-// onSyncDevices is a minimal sync.devices handler: for now we only log the
-// size and rely on the next HTTP /alivelist poll to pick up authoritative
-// state. Splitting real-time device handling out of HTTP is a future step.
+// onSyncDevices consumes X-Board's {users: {uid: [ip...]}} snapshot and
+// updates the alive counters used by the device limiter.
 func (c *Client) onSyncDevices(raw json.RawMessage) {
-	var payload struct {
-		Users map[string]json.RawMessage `json:"users"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	alive, err := decodeDeviceAliveMap(raw)
+	if err != nil {
 		logrus.WithError(err).
 			WithField("component", "panel-ws").
 			WithField("node_id", c.NodeId).
 			Warn("ws sync.devices decode failed")
 		return
 	}
+	c.applyAliveMap(alive)
 	logrus.WithField("component", "panel-ws").
 		WithField("node_id", c.NodeId).
-		WithField("users", len(payload.Users)).
-		Info("ws sync.devices received (HTTP poll authoritative)")
+		WithField("users", len(alive)).
+		Info("ws sync.devices applied")
 }
 
 // onAuthSuccess runs once after each successful handshake. We proactively
@@ -275,4 +283,29 @@ func (c *Client) onAuthSuccess(nodeID int) {
 			WithField("node_id", nodeID).
 			Debug("request.devices on auth.success failed")
 	}
+}
+
+func (c *Client) applyAliveMap(alive map[int]int) {
+	snapshot := copyAliveMap(alive)
+
+	c.aliveMu.Lock()
+	if c.AliveMap == nil {
+		c.AliveMap = &AliveMap{}
+	}
+	c.AliveMap.Alive = snapshot
+	hook := c.aliveUpdate
+	c.aliveMu.Unlock()
+
+	if hook != nil {
+		hook(copyAliveMap(snapshot))
+	}
+}
+
+func (c *Client) cachedAliveMap() map[int]int {
+	c.aliveMu.Lock()
+	defer c.aliveMu.Unlock()
+	if c.AliveMap == nil {
+		return map[int]int{}
+	}
+	return copyAliveMap(c.AliveMap.Alive)
 }

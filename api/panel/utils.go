@@ -18,6 +18,9 @@ func (c *Client) checkResponse(res *resty.Response, path string, err error) erro
 	if err != nil {
 		return fmt.Errorf("request %s failed: %s", c.assembleURL(path), err)
 	}
+	if res == nil {
+		return fmt.Errorf("request %s failed: empty response", c.assembleURL(path))
+	}
 	if res.StatusCode() >= 400 {
 		body := res.Body()
 		return fmt.Errorf("request %s failed: %s", c.assembleURL(path), string(body))

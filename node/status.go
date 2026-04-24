@@ -96,7 +96,7 @@ func (c *Controller) collectNodeMetrics() *panel.NodeMetrics {
 		Uptime:       int64(time.Since(processStartTime).Seconds()),
 		Goroutines:   runtime.NumGoroutine(),
 		TotalUsers:   len(c.userList),
-		ActiveUsers:  len(c.aliveMap),
+		ActiveUsers:  c.activeUserCount(),
 		KernelStatus: true,
 	}
 
