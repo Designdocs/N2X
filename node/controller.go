@@ -90,7 +90,7 @@ func (c *Controller) Start() error {
 	c.limiter = l
 	c.apiClient.SetAliveUpdateHook(c.setAliveMap)
 	if node.Security == panel.Tls {
-		err = c.requestCert()
+		err = c.requestCert(node)
 		if err != nil {
 			return fmt.Errorf("request cert error: %s", err)
 		}

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"encoding/json"
+
+	"github.com/Designdocs/N2X/conf"
 )
 
 // Security type
@@ -34,14 +36,16 @@ type NodeInfo struct {
 	Shadowsocks *ShadowsocksNode
 	Trojan      *TrojanNode
 	Common      *CommonNode
+	CertConfig  *conf.CertConfig
 }
 
 type CommonNode struct {
-	Host       string      `json:"host"`
-	ServerPort int         `json:"server_port"`
-	ServerName string      `json:"server_name"`
-	Routes     []Route     `json:"routes"`
-	BaseConfig *BaseConfig `json:"base_config"`
+	Host       string           `json:"host"`
+	ServerPort int              `json:"server_port"`
+	ServerName string           `json:"server_name"`
+	Routes     []Route          `json:"routes"`
+	BaseConfig *BaseConfig      `json:"base_config"`
+	CertConfig *conf.CertConfig `json:"cert_config"`
 }
 
 type Route struct {
@@ -303,11 +307,13 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	// set interval
 	node.PushInterval = intervalToTime(cm.BaseConfig.PushInterval)
 	node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
+	node.CertConfig = cm.CertConfig
 
 	node.Common = cm
 	// clear
 	cm.Routes = nil
 	cm.BaseConfig = nil
+	cm.CertConfig = nil
 
 	return node, nil
 }

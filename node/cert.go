@@ -11,12 +11,27 @@ import (
 	"os"
 	"time"
 
+	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/common/file"
+	"github.com/Designdocs/N2X/conf"
 	log "github.com/sirupsen/logrus"
 )
 
-func (c *Controller) renewCertTask() error {
-	l, err := NewLego(c.CertConfig)
+func (c *Controller) effectiveCertConfig(node *panel.NodeInfo) *conf.CertConfig {
+	if node != nil && node.CertConfig != nil && node.CertConfig.CertMode != "" {
+		return node.CertConfig
+	}
+	if c.Options == nil {
+		return nil
+	}
+	return c.CertConfig
+}
+
+func (c *Controller) renewCertTask(certConfig *conf.CertConfig) error {
+	if certConfig == nil {
+		return nil
+	}
+	l, err := NewLego(certConfig)
 	if err != nil {
 		log.WithField("tag", c.tag).Info("new lego error: ", err)
 		return nil
@@ -29,21 +44,26 @@ func (c *Controller) renewCertTask() error {
 	return nil
 }
 
-func (c *Controller) requestCert() error {
-	switch c.CertConfig.CertMode {
+func (c *Controller) requestCert(node *panel.NodeInfo) error {
+	certConfig := c.effectiveCertConfig(node)
+	if certConfig == nil {
+		return fmt.Errorf("cert config not exist")
+	}
+
+	switch certConfig.CertMode {
 	case "none", "":
 	case "file":
-		if c.CertConfig.CertFile == "" || c.CertConfig.KeyFile == "" {
+		if certConfig.CertFile == "" || certConfig.KeyFile == "" {
 			return fmt.Errorf("cert file path or key file path not exist")
 		}
 	case "dns", "http":
-		if c.CertConfig.CertFile == "" || c.CertConfig.KeyFile == "" {
+		if certConfig.CertFile == "" || certConfig.KeyFile == "" {
 			return fmt.Errorf("cert file path or key file path not exist")
 		}
-		if file.IsExist(c.CertConfig.CertFile) && file.IsExist(c.CertConfig.KeyFile) {
+		if file.IsExist(certConfig.CertFile) && file.IsExist(certConfig.KeyFile) {
 			return nil
 		}
-		l, err := NewLego(c.CertConfig)
+		l, err := NewLego(certConfig)
 		if err != nil {
 			return fmt.Errorf("create lego object error: %s", err)
 		}
@@ -52,21 +72,21 @@ func (c *Controller) requestCert() error {
 			return fmt.Errorf("create lego cert error: %s", err)
 		}
 	case "self":
-		if c.CertConfig.CertFile == "" || c.CertConfig.KeyFile == "" {
+		if certConfig.CertFile == "" || certConfig.KeyFile == "" {
 			return fmt.Errorf("cert file path or key file path not exist")
 		}
-		if file.IsExist(c.CertConfig.CertFile) && file.IsExist(c.CertConfig.KeyFile) {
+		if file.IsExist(certConfig.CertFile) && file.IsExist(certConfig.KeyFile) {
 			return nil
 		}
 		err := generateSelfSslCertificate(
-			c.CertConfig.CertDomain,
-			c.CertConfig.CertFile,
-			c.CertConfig.KeyFile)
+			certConfig.CertDomain,
+			certConfig.CertFile,
+			certConfig.KeyFile)
 		if err != nil {
 			return fmt.Errorf("generate self cert error: %s", err)
 		}
 	default:
-		return fmt.Errorf("unsupported certmode: %s", c.CertConfig.CertMode)
+		return fmt.Errorf("unsupported certmode: %s", certConfig.CertMode)
 	}
 	return nil
 }

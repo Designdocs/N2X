@@ -47,12 +47,19 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	log.WithField("tag", c.tag).Info("Start report node metrics")
 	_ = c.nodeMetricsReportPeriodic.Start(true)
 	if node.Security == panel.Tls {
-		switch c.CertConfig.CertMode {
+		certConfig := c.effectiveCertConfig(node)
+		certMode := ""
+		if certConfig != nil {
+			certMode = certConfig.CertMode
+		}
+		switch certMode {
 		case "none", "", "file", "self":
 		default:
 			c.renewCertPeriodic = &task.Task{
 				Interval: time.Hour * 24,
-				Execute:  c.renewCertTask,
+				Execute: func() error {
+					return c.renewCertTask(c.effectiveCertConfig(c.info))
+				},
 			}
 			log.WithField("tag", c.tag).Info("Start renew cert")
 			// delay to start renewCert
@@ -143,7 +150,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 
 		// check cert
 		if newN.Security == panel.Tls {
-			err = c.requestCert()
+			err = c.requestCert(newN)
 			if err != nil {
 				log.WithFields(log.Fields{
 					"tag": c.tag,

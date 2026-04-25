@@ -144,11 +144,12 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 }
 
 func buildInboundTLSConfig(option *conf.Options, nodeInfo *panel.NodeInfo) (*coreConf.TLSConfig, error) {
-	if option.CertConfig == nil {
+	certConfig := getInboundCertConfig(option, nodeInfo)
+	if certConfig == nil {
 		return nil, errors.New("the CertConfig is not vail")
 	}
 
-	switch option.CertConfig.CertMode {
+	switch certConfig.CertMode {
 	case "none", "":
 		return nil, nil
 	}
@@ -156,12 +157,12 @@ func buildInboundTLSConfig(option *conf.Options, nodeInfo *panel.NodeInfo) (*cor
 	tlsConfig := &coreConf.TLSConfig{
 		Certs: []*coreConf.TLSCertConfig{
 			{
-				CertFile:     option.CertConfig.CertFile,
-				KeyFile:      option.CertConfig.KeyFile,
+				CertFile:     certConfig.CertFile,
+				KeyFile:      certConfig.KeyFile,
 				OcspStapling: 3600,
 			},
 		},
-		RejectUnknownSNI: option.CertConfig.RejectUnknownSni,
+		RejectUnknownSNI: certConfig.RejectUnknownSni,
 	}
 
 	echConfig, err := buildInboundECHConfig(nodeInfo)
@@ -175,6 +176,16 @@ func buildInboundTLSConfig(option *conf.Options, nodeInfo *panel.NodeInfo) (*cor
 	return tlsConfig, nil
 }
 
+func getInboundCertConfig(option *conf.Options, nodeInfo *panel.NodeInfo) *conf.CertConfig {
+	if nodeInfo != nil && nodeInfo.CertConfig != nil && nodeInfo.CertConfig.CertMode != "" {
+		return nodeInfo.CertConfig
+	}
+	if option == nil {
+		return nil
+	}
+	return option.CertConfig
+}
+
 type inboundECHConfig struct {
 	ServerKeys string
 }
@@ -185,12 +196,22 @@ func buildInboundECHConfig(nodeInfo *panel.NodeInfo) (*inboundECHConfig, error) 
 		return nil, nil
 	}
 
+	clientConfig, err := normalizeECHValue(echSettings.Config, "ECH CONFIGS")
+	if err != nil {
+		return nil, err
+	}
 	serverKeys, err := normalizeECHValue(echSettings.Key, "ECH KEYS")
 	if err != nil {
 		return nil, err
 	}
-	if serverKeys == "" {
+
+	switch {
+	case clientConfig == "" && serverKeys == "":
 		return nil, nil
+	case clientConfig == "":
+		return nil, errors.New("ech server key requires matching client config")
+	case serverKeys == "":
+		return nil, errors.New("ech client config requires matching server key")
 	}
 
 	return &inboundECHConfig{ServerKeys: serverKeys}, nil
