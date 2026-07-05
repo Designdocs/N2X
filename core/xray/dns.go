@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	coreConf "github.com/xtls/xray-core/infra/conf"
 )
+
+const defaultDNSFallbackNoticePath = "/etc/N2X/dns_fallback.notice"
 
 func updateDNSConfig(node *panel.NodeInfo) (err error) {
 	dnsPath := os.Getenv("XRAY_DNS_PATH")
@@ -65,12 +68,15 @@ func saveDnsConfig(dns []byte, dnsPath string) (err error) {
 	if !bytes.Equal(currentData, dns) {
 		coreDnsConfig := &coreConf.DNSConfig{}
 		if err = json.Unmarshal(dns, coreDnsConfig); err != nil {
-			log.WithField("err", err).Error("Failed to unmarshal DNS config")
+			recordDNSFallbackNotice("新的 DNS 配置错误，已保留上一份配置", err)
+			log.WithField("err", err).Error("Failed to unmarshal DNS config, keeping previous DNS config")
+			return nil
 		}
 		_, err := coreDnsConfig.Build()
 		if err != nil {
-			log.WithField("err", err).Error("Failed to understand DNS config, Please check: https://xtls.github.io/config/dns.html for help")
-			return err
+			recordDNSFallbackNotice("新的 DNS 配置错误，已保留上一份配置", err)
+			log.WithField("err", err).Error("Failed to understand DNS config, keeping previous DNS config. Please check: https://xtls.github.io/config/dns.html for help")
+			return nil
 		}
 		if err = os.Truncate(dnsPath, 0); err != nil {
 			log.WithField("err", err).Error("Failed to clear XRAY DNS PATH file")
@@ -78,6 +84,38 @@ func saveDnsConfig(dns []byte, dnsPath string) (err error) {
 		if err = os.WriteFile(dnsPath, dns, 0644); err != nil {
 			log.WithField("err", err).Error("Failed to write DNS to XRAY DNS PATH file")
 		}
+		clearDNSFallbackNotice()
 	}
 	return err
+}
+
+func recordDNSFallbackNotice(message string, err error) {
+	path := dnsFallbackNoticePath()
+	if path == "" {
+		return
+	}
+	if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+		log.WithField("err", mkErr).Warn("Failed to create DNS fallback notice directory")
+		return
+	}
+	notice := message
+	if err != nil {
+		notice += ": " + err.Error()
+	}
+	if writeErr := os.WriteFile(path, []byte(notice+"\n"), 0644); writeErr != nil {
+		log.WithField("err", writeErr).Warn("Failed to write DNS fallback notice")
+	}
+}
+
+func clearDNSFallbackNotice() {
+	if err := os.Remove(dnsFallbackNoticePath()); err != nil && !os.IsNotExist(err) {
+		log.WithField("err", err).Debug("Failed to clear DNS fallback notice")
+	}
+}
+
+func dnsFallbackNoticePath() string {
+	if path := os.Getenv("N2X_DNS_FALLBACK_NOTICE_PATH"); path != "" {
+		return path
+	}
+	return defaultDNSFallbackNoticePath
 }

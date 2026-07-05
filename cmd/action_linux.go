@@ -49,6 +49,7 @@ func startHandle(_ *cobra.Command, _ []string) {
 	}
 	if r {
 		fmt.Println(Ok("N2X已运行，无需再次启动，如需重启请选择重启"))
+		printDNSFallbackWarning()
 	}
 	_, err = exec.RunCommandByShell("systemctl start N2X.service")
 	if err != nil {
@@ -67,6 +68,7 @@ func startHandle(_ *cobra.Command, _ []string) {
 		return
 	}
 	fmt.Println(Ok("N2X 启动成功，请使用 N2X log 查看运行日志"))
+	printDNSFallbackWarning()
 }
 
 func stopHandle(_ *cobra.Command, _ []string) {
@@ -108,4 +110,11 @@ func restartHandle(_ *cobra.Command, _ []string) {
 		return
 	}
 	fmt.Println(Ok("N2X重启成功"))
+	printDNSFallbackWarning()
+}
+
+func printDNSFallbackWarning() {
+	if warning := dnsFallbackWarning(); warning != "" {
+		fmt.Println(warning)
+	}
 }

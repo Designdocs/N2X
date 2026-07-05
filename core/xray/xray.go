@@ -93,7 +93,13 @@ func getCore(c *conf.XrayConfig) *core.Instance {
 	}
 	dnsConfig, err := coreDnsConfig.Build()
 	if err != nil {
-		log.WithField("err", err).Panic("Failed to understand DNS config, Please check: https://xtls.github.io/config/dns.html for help")
+		recordDNSFallbackNotice("DNS 配置错误已降级为空配置", err)
+		log.WithField("err", err).Error("Failed to understand DNS config, using default DNS options. Please check: https://xtls.github.io/config/dns.html for help")
+		coreDnsConfig = &coreConf.DNSConfig{}
+		dnsConfig, err = coreDnsConfig.Build()
+		if err != nil {
+			log.WithField("err", err).Panic("Failed to build default DNS config")
+		}
 	}
 	// Routing config
 	coreRouterConfig := &coreConf.RouterConfig{}
