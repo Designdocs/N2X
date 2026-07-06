@@ -31,6 +31,9 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	case "anytls":
 		err = buildAnyTLS(nodeInfo, in)
 		network = "tcp"
+	case "artx":
+		err = buildArtX(nodeInfo, in)
+		network = "tcp"
 	case "trojan":
 		err = buildTrojan(option, nodeInfo, in)
 		if nodeInfo.Trojan.Network != "" {
@@ -42,7 +45,7 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 		err = buildShadowsocks(option, nodeInfo, in)
 		network = "tcp"
 	default:
-		return nil, fmt.Errorf("unsupported node type: %s, only support: vmess, vless, anytls, trojan, shadowsocks", nodeInfo.Type)
+		return nil, fmt.Errorf("unsupported node type: %s, only support: vmess, vless, anytls, artx, trojan, shadowsocks", nodeInfo.Type)
 	}
 	if err != nil {
 		return nil, err
@@ -234,6 +237,11 @@ func getInboundECHSettings(nodeInfo *panel.NodeInfo) *panel.ECHSettings {
 			return nil
 		}
 		return nodeInfo.AnyTls.TlsSettings.Ech
+	case "artx":
+		if nodeInfo.ArtX == nil {
+			return nil
+		}
+		return nodeInfo.ArtX.TlsSettings.Ech
 	default:
 		return nil
 	}
@@ -400,22 +408,6 @@ func buildTrojan(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCo
 	default:
 		return errors.New("the network type is not vail")
 	}
-	return nil
-}
-
-func buildAnyTLS(nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
-	inbound.Protocol = "anytls"
-	t := coreConf.TransportProtocol("tcp")
-	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
-
-	settings := &coreConf.AnyTLSServerConfig{
-		PaddingScheme: nodeInfo.AnyTls.PaddingScheme,
-	}
-	rawSettings, err := json.Marshal(settings)
-	if err != nil {
-		return fmt.Errorf("marshal anytls settings error: %s", err)
-	}
-	inbound.Settings = (*json.RawMessage)(&rawSettings)
 	return nil
 }
 

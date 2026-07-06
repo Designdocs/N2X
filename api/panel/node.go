@@ -33,6 +33,7 @@ type NodeInfo struct {
 	// origin
 	VAllss      *VAllssNode
 	AnyTls      *AnyTlsNode
+	ArtX        *ArtXNode
 	Shadowsocks *ShadowsocksNode
 	Trojan      *TrojanNode
 	Common      *CommonNode
@@ -131,6 +132,29 @@ type AnyTlsNode struct {
 	TlsSettings     TlsSettings  `json:"tls_settings"`
 	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
 	PaddingScheme   []string     `json:"padding_scheme,omitempty"`
+}
+
+type ArtXNode struct {
+	CommonNode
+	Underlay        string       `json:"underlay"`
+	Profile         string       `json:"profile"`
+	ProfileVersion  int          `json:"profile_version"`
+	TlsSettings     TlsSettings  `json:"tls_settings"`
+	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
+	PaddingScheme   []string     `json:"padding_scheme,omitempty"`
+	Fallback        ArtXFallback `json:"fallback"`
+	Behavior        ArtXBehavior `json:"behavior"`
+}
+
+type ArtXFallback struct {
+	Enabled bool   `json:"enabled"`
+	Origin  string `json:"origin"`
+}
+
+type ArtXBehavior struct {
+	Padding       string `json:"padding"`
+	Keepalive     string `json:"keepalive"`
+	ErrorResponse string `json:"error_response"`
 }
 
 type RawDNS struct {
@@ -260,6 +284,16 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		cm = &rsp.CommonNode
 		node.AnyTls = rsp
 		node.Security = Tls
+	case "artx":
+		rsp := &ArtXNode{}
+		err = json.Unmarshal(r.Body(), rsp)
+		if err != nil {
+			return nil, fmt.Errorf("decode artx params error: %s", err)
+		}
+		normalizeArtXNode(rsp)
+		cm = &rsp.CommonNode
+		node.ArtX = rsp
+		node.Security = Tls
 	default:
 		return nil, fmt.Errorf("unsupported node type: %s", c.NodeType)
 	}
@@ -316,6 +350,22 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	cm.CertConfig = nil
 
 	return node, nil
+}
+
+func normalizeArtXNode(node *ArtXNode) {
+	if node.TlsSettingsBack != nil {
+		node.TlsSettings = mergeLegacyTLSSettings(node.TlsSettings, node.TlsSettingsBack)
+		node.TlsSettingsBack = nil
+	}
+	if strings.TrimSpace(node.Underlay) == "" {
+		node.Underlay = "anytls"
+	}
+	if strings.TrimSpace(node.Profile) == "" {
+		node.Profile = "balanced"
+	}
+	if node.ProfileVersion < 1 {
+		node.ProfileVersion = 1
+	}
 }
 
 func mergeLegacyTLSSettings(current TlsSettings, legacy *TlsSettings) TlsSettings {

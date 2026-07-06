@@ -107,6 +107,7 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		c.NodeType = "vmess"
 	case
 		"anytls",
+		"artx",
 		"vmess",
 		"trojan",
 		"shadowsocks",
