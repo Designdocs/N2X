@@ -15,7 +15,8 @@
         "Server": "time.apple.com",
         "ServerPort": 0
       },
-      "OriginalPath": "/etc/N2X/sing_origin.json"
+      "OriginalPath": "/etc/N2X/sing_origin.json",
+      "DnsConfigPath": "/etc/N2X/dns.json"
     }
   ],
   "Nodes": [
@@ -26,13 +27,8 @@
       "NodeID": 33,
       "NodeType": "shadowsocks",
       "Timeout": 30,
-      // Optional X-Board WebSocket driver. Leave Enabled=false (default)
-      // to stay on pure HTTP polling. When enabled, URL is derived from
-      // ApiHost automatically (http -> ws, https -> wss, path /ws/),
-      // or set it explicitly to override. Debug=true prints every event
-      // to the log and is useful when commissioning a new panel.
       "WebSocket": {
-        "Enabled": false,
+        "Enabled": true,
         "URL": "",
         "Debug": false
       },
@@ -40,6 +36,8 @@
       "SendIP": "0.0.0.0",
       "DeviceOnlineMinTraffic": 200,
       "MinReportTraffic": 0,
+      "EnableDNS": false,
+      "DNSType": "UseIPv4",
       "TCPFastOpen": false,
       "SniffEnabled": true,
       "CertConfig": {
