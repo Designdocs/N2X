@@ -148,3 +148,36 @@ func TestClientGetNodeInfoDefaultsArtXUnderlayAndProfile(t *testing.T) {
 		t.Fatalf("expected default profile version 1, got %d", node.ArtX.ProfileVersion)
 	}
 }
+
+func TestClientGetNodeInfoParsesArtXWireVersion(t *testing.T) {
+	client, err := New(&conf.ApiConfig{
+		APIHost:  "http://panel.test",
+		Key:      "token",
+		NodeType: "artx",
+		NodeID:   1,
+	})
+	if err != nil {
+		t.Fatalf("create panel client failed: %v", err)
+	}
+	client.client.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body := `{
+			"host": "edge.example.com",
+			"server_port": 443,
+			"server_name": "edge.example.com",
+			"underlay": "artx-wire",
+			"wire_version": 1,
+			"profile": "balanced",
+			"profile_version": 1,
+			"base_config": {"push_interval": 60, "pull_interval": 60}
+		}`
+		return textResponse(r, http.StatusOK, body), nil
+	}))
+
+	node, err := client.GetNodeInfo()
+	if err != nil {
+		t.Fatalf("get node info failed: %v", err)
+	}
+	if node.ArtX.Underlay != "artx-wire" || node.ArtX.WireVersion != 1 {
+		t.Fatalf("unexpected ArtX wire settings: %+v", node.ArtX)
+	}
+}

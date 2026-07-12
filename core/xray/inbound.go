@@ -32,7 +32,7 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 		err = buildAnyTLS(nodeInfo, in)
 		network = "tcp"
 	case "artx":
-		err = buildArtX(nodeInfo, in)
+		err = buildArtX(option, nodeInfo, in)
 		network = "tcp"
 	case "trojan":
 		err = buildTrojan(option, nodeInfo, in)
@@ -99,6 +99,9 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	// Set TLS or Reality settings
 	switch nodeInfo.Security {
 	case panel.Tls:
+		if artXWireHandlesTLS(nodeInfo) {
+			break
+		}
 		tlsConfig, err := buildInboundTLSConfig(option, nodeInfo)
 		if err != nil {
 			return nil, err

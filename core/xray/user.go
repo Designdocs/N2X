@@ -108,7 +108,7 @@ func (c *Xray) AddUsers(p *vCore.AddUsersParams) (added int, err error) {
 	case "anytls":
 		users = buildAnyTLSUsers(p.Tag, p.Users)
 	case "artx":
-		users = buildArtXUsers(p.Tag, p.Users)
+		users = buildArtXUsers(p.Tag, p.Users, p.NodeInfo)
 	case "trojan":
 		users = buildTrojanUsers(p.Tag, p.Users)
 	case "shadowsocks":

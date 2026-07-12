@@ -137,6 +137,7 @@ type AnyTlsNode struct {
 type ArtXNode struct {
 	CommonNode
 	Underlay        string       `json:"underlay"`
+	WireVersion     int          `json:"wire_version"`
 	Profile         string       `json:"profile"`
 	ProfileVersion  int          `json:"profile_version"`
 	TlsSettings     TlsSettings  `json:"tls_settings"`
