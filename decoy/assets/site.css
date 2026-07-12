@@ -1,0 +1,97 @@
+:root {
+  color: #202427;
+  background: #f2f4f5;
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+}
+
+.service-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 2rem;
+}
+
+.service-panel {
+  width: min(100%, 36rem);
+  padding: clamp(2rem, 5vw, 3.5rem);
+  border: 1px solid rgba(32, 36, 39, 0.08);
+  border-radius: 1.5rem;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 1.25rem 4rem rgba(32, 36, 39, 0.08);
+  backdrop-filter: blur(1.25rem);
+}
+
+.service-header h1 {
+  margin: 0.35rem 0 0;
+  font-size: clamp(2rem, 7vw, 3.25rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.service-label {
+  margin: 0;
+  color: #687076;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.service-message {
+  margin: 1.5rem 0 2.5rem;
+  color: #545b60;
+  line-height: 1.6;
+}
+
+.service-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: #3f4844;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.status-indicator {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #52816c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #f4f6f7;
+    background: #121415;
+  }
+
+  .service-panel {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: none;
+  }
+
+  .service-label,
+  .service-message {
+    color: #a8afb3;
+  }
+
+  .service-footer {
+    color: #d5dbd8;
+  }
+
+  .status-indicator {
+    background: #78a991;
+  }
+}
