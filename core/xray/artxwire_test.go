@@ -26,6 +26,10 @@ func TestBuildArtXWireInboundOwnsTLS(t *testing.T) {
 			Underlay:       "artx-wire",
 			WireVersion:    1,
 			ProfileVersion: 1,
+			Fallback: panel.ArtXFallback{
+				Enabled: true,
+				Origin:  "https://fallback.example.com/",
+			},
 		},
 	}
 	inbound := &coreConf.InboundDetourConfig{}
@@ -56,6 +60,9 @@ func TestBuildArtXWireInboundOwnsTLS(t *testing.T) {
 	if settings.TLSSettings == nil || len(settings.TLSSettings.Certs) != 1 {
 		t.Fatalf("expected ArtX handler TLS certificate settings, got %+v", settings.TLSSettings)
 	}
+	if settings.Fallback == nil || !settings.Fallback.Enabled || settings.Fallback.Origin != "https://fallback.example.com/" {
+		t.Fatalf("expected ArtX fallback settings, got %+v", settings.Fallback)
+	}
 }
 
 func TestBuildArtXUsersSelectsAccountByUnderlay(t *testing.T) {
@@ -84,6 +91,28 @@ func TestArtXWireTLSOwnershipDoesNotAffectAnyTLSScaffold(t *testing.T) {
 	nodeInfo := &panel.NodeInfo{ArtX: &panel.ArtXNode{Underlay: "anytls"}}
 	if artXWireHandlesTLS(nodeInfo) {
 		t.Fatal("expected AnyTLS scaffold to keep generic transport TLS")
+	}
+}
+
+func TestArtXWireBuildObservationUsesWireSpecificFields(t *testing.T) {
+	node := &panel.ArtXNode{
+		Underlay:       artXUnderlayWire,
+		ProfileVersion: 1,
+		Fallback: panel.ArtXFallback{
+			Enabled: true,
+			Origin:  artXDecoySelector,
+		},
+	}
+
+	observation := newArtXWireBuildObservation(node, true)
+	if observation.Protocol != "artx" || observation.Underlay != artXUnderlayWire {
+		t.Fatalf("unexpected ArtX wire identity: %+v", observation)
+	}
+	if observation.ProfileVersion != 1 {
+		t.Fatalf("unexpected profile version: %+v", observation)
+	}
+	if observation.FallbackMode != "installed-decoy" || !observation.FallbackAvailable {
+		t.Fatalf("unexpected fallback observation: %+v", observation)
 	}
 }
 

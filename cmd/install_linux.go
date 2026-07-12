@@ -42,6 +42,7 @@ func uninstallHandle(_ *cobra.Command, _ []string) {
 	if strings.ToLower(yes) != "y" {
 		fmt.Println("已取消卸载")
 	}
+	cleanupArtXDecoyService(exec.RunCommandByShell, os.Remove)
 	_, err := exec.RunCommandByShell("systemctl stop N2X&&systemctl disable N2X")
 	if err != nil {
 		fmt.Println(Err("exec cmd error: ", err))

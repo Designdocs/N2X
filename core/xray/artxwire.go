@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/common/format"
 	"github.com/Designdocs/N2X/conf"
+	log "github.com/sirupsen/logrus"
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
 	coreConf "github.com/xtls/xray-core/infra/conf"
@@ -28,6 +30,10 @@ func buildArtXWireInbound(option *conf.Options, nodeInfo *panel.NodeInfo, inboun
 	if tlsSettings == nil {
 		return errors.New("artx wire requires TLS certificate settings")
 	}
+	fallback, err := resolveArtXFallback(nodeInfo.ArtX.Fallback)
+	if err != nil {
+		return fmt.Errorf("resolve artx fallback: %w", err)
+	}
 
 	inbound.Protocol = "artx"
 	t := coreConf.TransportProtocol("tcp")
@@ -36,13 +42,51 @@ func buildArtXWireInbound(option *conf.Options, nodeInfo *panel.NodeInfo, inboun
 		TLSSettings:    tlsSettings,
 		WireVersion:    uint32(nodeInfo.ArtX.WireVersion),
 		ProfileVersion: uint32(nodeInfo.ArtX.ProfileVersion),
+		Fallback:       fallback,
 	}
 	rawSettings, err := json.Marshal(settings)
 	if err != nil {
 		return fmt.Errorf("marshal artx wire settings error: %s", err)
 	}
 	inbound.Settings = (*json.RawMessage)(&rawSettings)
+	logArtXWireBuildObservation(newArtXWireBuildObservation(nodeInfo.ArtX, fallback != nil))
 	return nil
+}
+
+type artXWireBuildObservation struct {
+	Protocol          string `json:"protocol"`
+	Underlay          string `json:"underlay"`
+	ProfileVersion    int    `json:"profile_version"`
+	FallbackMode      string `json:"fallback_mode"`
+	FallbackAvailable bool   `json:"fallback_available"`
+}
+
+func newArtXWireBuildObservation(node *panel.ArtXNode, fallbackAvailable bool) artXWireBuildObservation {
+	fallbackMode := "disabled"
+	if node.Fallback.Enabled {
+		fallbackMode = "https-origin"
+		if strings.TrimSpace(node.Fallback.Origin) == artXDecoySelector {
+			fallbackMode = "installed-decoy"
+		}
+	}
+
+	return artXWireBuildObservation{
+		Protocol:          "artx",
+		Underlay:          artXUnderlayWire,
+		ProfileVersion:    node.ProfileVersion,
+		FallbackMode:      fallbackMode,
+		FallbackAvailable: fallbackAvailable,
+	}
+}
+
+func logArtXWireBuildObservation(observation artXWireBuildObservation) {
+	log.WithFields(log.Fields{
+		"protocol":           observation.Protocol,
+		"underlay":           observation.Underlay,
+		"profile_version":    observation.ProfileVersion,
+		"fallback_mode":      observation.FallbackMode,
+		"fallback_available": observation.FallbackAvailable,
+	}).Info("artx wire inbound observation")
 }
 
 func artXWireHandlesTLS(nodeInfo *panel.NodeInfo) bool {
