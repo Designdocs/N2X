@@ -15,6 +15,8 @@ type Selector struct {
 	nodes sync.Map
 }
 
+var _ RuntimeStatsProvider = (*Selector)(nil)
+
 func NewSelector(c []conf.CoreConfig) (Core, error) {
 	cs := make(map[string]Core, len(c))
 	for _, t := range c {
@@ -131,6 +133,21 @@ func (s *Selector) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraf
 		return nil, errors.New("the node is not have")
 	}
 	return t.(Core).GetUserTrafficSlice(tag, reset)
+}
+
+// RuntimeStats forwards read-only protocol counters to the concrete core that
+// owns the node. Multi-core deployments otherwise hide optional capabilities
+// implemented by an individual core behind the Selector wrapper.
+func (s *Selector) RuntimeStats(tag string) RuntimeStats {
+	core, ok := s.nodes.Load(tag)
+	if !ok {
+		return RuntimeStats{}
+	}
+	provider, ok := core.(RuntimeStatsProvider)
+	if !ok {
+		return RuntimeStats{}
+	}
+	return provider.RuntimeStats(tag)
 }
 
 func (s *Selector) DelUsers(users []panel.UserInfo, tag string, info *panel.NodeInfo) error {
