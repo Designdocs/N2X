@@ -167,6 +167,16 @@ func (c *Controller) activeUserCount() int {
 	return len(c.aliveMap)
 }
 
+// activeConnectionCount samples the live online-IP count from the limiter for
+// the node metrics popup. Returns 0 before the limiter is wired so an early
+// metrics tick cannot panic.
+func (c *Controller) activeConnectionCount() int {
+	if c.limiter == nil {
+		return 0
+	}
+	return c.limiter.CountOnlineIP()
+}
+
 func cloneAliveMap(alive map[int]int) map[int]int {
 	cloned := make(map[int]int, len(alive))
 	for uid, count := range alive {

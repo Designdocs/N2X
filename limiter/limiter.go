@@ -244,6 +244,26 @@ func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
 	return &onlineUser, nil
 }
 
+// CountOnlineIP returns the number of currently tracked online IPs across all
+// users. Unlike GetOnlineDevice — which drains the tracking each traffic cycle —
+// this is a read-only peek, so the metrics task can sample the live connection
+// count on its own cadence without disturbing device-limit accounting.
+func (l *Limiter) CountOnlineIP() int {
+	count := 0
+	l.UserOnlineIP.Range(func(_, value interface{}) bool {
+		ipMap, ok := value.(*sync.Map)
+		if !ok || ipMap == nil {
+			return true
+		}
+		ipMap.Range(func(_, _ interface{}) bool {
+			count++
+			return true
+		})
+		return true
+	})
+	return count
+}
+
 type UserIpList struct {
 	Uid    int      `json:"Uid"`
 	IpList []string `json:"Ips"`

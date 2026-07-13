@@ -83,9 +83,10 @@ func (c *Controller) reportNodeStatusTask() error {
 }
 
 // collectNodeMetrics fills the rich runtime payload that X-Board's admin
-// popup expects. Fields we cannot cheaply observe (active_connections,
-// total_connections, gc/api/ws/limits sub-maps) are left zero — the panel
-// happily renders them as "—" rather than failing validation.
+// popup expects. active_connections is sampled live from the limiter's
+// online-IP tracking. Fields we still cannot cheaply observe (total_connections,
+// gc/api/ws/limits sub-maps) are left zero — the panel happily renders them as
+// "—" rather than failing validation.
 //
 // Inbound/outbound speeds are derived from the cumulative byte counters fed
 // by reportUserTrafficTask: delta bytes / elapsed seconds since the last
@@ -93,11 +94,12 @@ func (c *Controller) reportNodeStatusTask() error {
 // rate, which matches what the official Xboard-Node does on startup.
 func (c *Controller) collectNodeMetrics() *panel.NodeMetrics {
 	metrics := &panel.NodeMetrics{
-		Uptime:       int64(time.Since(processStartTime).Seconds()),
-		Goroutines:   runtime.NumGoroutine(),
-		TotalUsers:   len(c.userList),
-		ActiveUsers:  c.activeUserCount(),
-		KernelStatus: true,
+		Uptime:            int64(time.Since(processStartTime).Seconds()),
+		Goroutines:        runtime.NumGoroutine(),
+		TotalUsers:        len(c.userList),
+		ActiveUsers:       c.activeUserCount(),
+		ActiveConnections: c.activeConnectionCount(),
+		KernelStatus:      true,
 	}
 
 	// per-core CPU snapshot — short window keeps the call non-blocking.
