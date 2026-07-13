@@ -1,18 +1,19 @@
 package node
 
 import (
-	"log"
 	"os"
 	"testing"
 
 	"github.com/Designdocs/N2X/conf"
 )
 
-var l *Lego
+func newIntegrationTestLego(t *testing.T) *Lego {
+	t.Helper()
+	if os.Getenv("N2X_ACME_INTEGRATION") != "1" {
+		t.Skip("set N2X_ACME_INTEGRATION=1 to run live ACME integration tests")
+	}
 
-func init() {
-	var err error
-	l, err = NewLego(&conf.CertConfig{
+	l, err := NewLego(&conf.CertConfig{
 		CertMode:   "dns",
 		Email:      "test@test.com",
 		CertDomain: "test.test.com",
@@ -25,12 +26,13 @@ func init() {
 		KeyFile:  "./cert/1.key",
 	})
 	if err != nil {
-		log.Println(err)
-		os.Exit(1)
+		t.Fatal(err)
 	}
+	return l
 }
 
 func TestLego_CreateCertByDns(t *testing.T) {
+	l := newIntegrationTestLego(t)
 	err := l.CreateCert()
 	if err != nil {
 		t.Error(err)
@@ -38,5 +40,8 @@ func TestLego_CreateCertByDns(t *testing.T) {
 }
 
 func TestLego_RenewCert(t *testing.T) {
-	log.Println(l.RenewCert())
+	l := newIntegrationTestLego(t)
+	if err := l.RenewCert(); err != nil {
+		t.Error(err)
+	}
 }
