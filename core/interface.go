@@ -11,6 +11,26 @@ type AddUsersParams struct {
 	*panel.NodeInfo
 }
 
+// RuntimeStatsProvider exposes protocol-owned process counters without making
+// them part of the mutation-oriented Core interface.
+type RuntimeStatsProvider interface {
+	RuntimeStats(tag string) RuntimeStats
+}
+
+type RuntimeStats struct {
+	ActiveConnections uint64
+	TotalConnections  uint64
+	ArtX              *ArtXRuntimeStats
+}
+
+type ArtXRuntimeStats struct {
+	AuthenticationSuccess uint64
+	AuthenticationFailure uint64
+	ReplayRejected        uint64
+	FallbackHits          uint64
+	FallbackErrors        uint64
+}
+
 type Core interface {
 	Start() error
 	Close() error

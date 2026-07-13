@@ -1,11 +1,14 @@
 package node
 
 import (
+	"math"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
+	vCore "github.com/Designdocs/N2X/core"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/load"
@@ -101,6 +104,7 @@ func (c *Controller) collectNodeMetrics() *panel.NodeMetrics {
 		ActiveConnections: c.activeConnectionCount(),
 		KernelStatus:      true,
 	}
+	c.applyProtocolRuntimeStats(metrics)
 
 	// per-core CPU snapshot — short window keeps the call non-blocking.
 	if perCore, err := cpu.Percent(500*time.Millisecond, true); err == nil {
@@ -191,6 +195,43 @@ func (c *Controller) collectNodeMetrics() *panel.NodeMetrics {
 	c.lastMetricsAt = now
 
 	return metrics
+}
+
+func (c *Controller) applyProtocolRuntimeStats(metrics *panel.NodeMetrics) {
+	if metrics == nil || !usesNativeArtXWire(c.info) {
+		return
+	}
+	provider, ok := c.server.(vCore.RuntimeStatsProvider)
+	if !ok {
+		return
+	}
+	stats := provider.RuntimeStats(c.tag)
+	metrics.ActiveConnections = boundedMetricInt(stats.ActiveConnections)
+	metrics.TotalConnections = boundedMetricInt(stats.TotalConnections)
+	if stats.ArtX == nil {
+		return
+	}
+	metrics.ArtX = &panel.NodeMetricsArtX{
+		AuthenticationSuccess: boundedMetricInt(stats.ArtX.AuthenticationSuccess),
+		AuthenticationFailure: boundedMetricInt(stats.ArtX.AuthenticationFailure),
+		ReplayRejected:        boundedMetricInt(stats.ArtX.ReplayRejected),
+		FallbackHits:          boundedMetricInt(stats.ArtX.FallbackHits),
+		FallbackErrors:        boundedMetricInt(stats.ArtX.FallbackErrors),
+	}
+}
+
+func usesNativeArtXWire(info *panel.NodeInfo) bool {
+	return info != nil &&
+		info.Type == "artx" &&
+		info.ArtX != nil &&
+		strings.EqualFold(strings.TrimSpace(info.ArtX.Underlay), "artx-wire")
+}
+
+func boundedMetricInt(value uint64) int {
+	if value > uint64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(value)
 }
 
 // reportNodeMetricsTask pushes the rich metrics payload to the panel and

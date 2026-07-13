@@ -96,6 +96,8 @@ github.com/Designdocs/Xray-core v0.0.0-20260712112827-c27c3b4760b4 h1:LT+CMjNEhW
 github.com/Designdocs/Xray-core v0.0.0-20260712112827-c27c3b4760b4/go.mod h1:IwhelaCHN5m1k7R4n7Z5SJWvQGXv63UtsGdPY8X+VKI=
 github.com/Designdocs/Xray-core v0.0.0-20260713065709-4bc73e36456a h1:19qN1Zi6zzq5Hc2VUqUxc7XkZ5A0+uDJOHsGa56AjM4=
 github.com/Designdocs/Xray-core v0.0.0-20260713065709-4bc73e36456a/go.mod h1:IwhelaCHN5m1k7R4n7Z5SJWvQGXv63UtsGdPY8X+VKI=
+github.com/Designdocs/Xray-core v0.0.0-20260713082514-dcfa008f9773 h1:/aayD8XGZuZ0cJX/0ky8MrDENqm/T6OJLLa0RCE9P+g=
+github.com/Designdocs/Xray-core v0.0.0-20260713082514-dcfa008f9773/go.mod h1:IwhelaCHN5m1k7R4n7Z5SJWvQGXv63UtsGdPY8X+VKI=
 github.com/HdrHistogram/hdrhistogram-go v1.1.0/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/HdrHistogram/hdrhistogram-go v1.1.2/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=

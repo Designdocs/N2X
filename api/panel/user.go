@@ -227,7 +227,18 @@ type NodeMetrics struct {
 	API               *NodeMetricsAPI     `json:"api,omitempty"`
 	WS                *NodeMetricsWS      `json:"ws,omitempty"`
 	Limits            *NodeMetricsLimits  `json:"limits,omitempty"`
+	ArtX              *NodeMetricsArtX    `json:"artx,omitempty"`
 	KernelStatus      bool                `json:"kernel_status"`
+}
+
+// NodeMetricsArtX carries privacy-safe native ArtX protocol counters. It
+// contains no user, address, credential, or payload dimensions.
+type NodeMetricsArtX struct {
+	AuthenticationSuccess int `json:"authentication_success"`
+	AuthenticationFailure int `json:"authentication_failure"`
+	ReplayRejected        int `json:"replay_rejected"`
+	FallbackHits          int `json:"fallback_hits"`
+	FallbackErrors        int `json:"fallback_errors"`
 }
 
 // NodeMetricsLoad maps to `metrics.load.{load1,load5,load15}` on the
