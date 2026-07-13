@@ -58,7 +58,7 @@ func TestDecoyHandler(t *testing.T) {
 		contentType string
 		bodyText    string
 	}{
-		{method: http.MethodGet, path: "/", status: http.StatusOK, contentType: "text/html", bodyText: "Service status"},
+		{method: http.MethodGet, path: "/", status: http.StatusOK, contentType: "text/html", bodyText: "Today at a glance"},
 		{method: http.MethodHead, path: "/", status: http.StatusOK, contentType: "text/html"},
 		{method: http.MethodGet, path: "/assets/site.css", status: http.StatusOK, contentType: "text/css", bodyText: "#121415"},
 		{method: http.MethodHead, path: "/assets/site.css", status: http.StatusOK, contentType: "text/css"},
@@ -111,6 +111,40 @@ func TestDecoyHandler(t *testing.T) {
 	}
 }
 
+func TestDecoyHandlerSelectsPageByContentProfile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		path     string
+		bodyText string
+	}{
+		{name: "balanced default", path: "/", bodyText: "Today at a glance"},
+		{name: "balanced explicit", path: "/?profile=balanced", bodyText: "Today at a glance"},
+		{name: "web", path: "/?profile=web", bodyText: "Ideas for slower mornings"},
+		{name: "media", path: "/?profile=media", bodyText: "Continue listening"},
+		{name: "realtime", path: "/?profile=realtime", bodyText: "Live rooms"},
+		{name: "normalized", path: "/?profile=%20MeDiA%20", bodyText: "Continue listening"},
+		{name: "unknown", path: "/?profile=../../private", bodyText: "Today at a glance"},
+	}
+
+	handler := newHandler()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, test.path, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+			}
+			if !strings.Contains(response.Body.String(), test.bodyText) {
+				t.Fatalf("body does not contain %q", test.bodyText)
+			}
+		})
+	}
+}
+
 func TestDecoyHandlerRejectsUnsupportedMethods(t *testing.T) {
 	t.Parallel()
 
@@ -126,22 +160,26 @@ func TestDecoyHandlerRejectsUnsupportedMethods(t *testing.T) {
 func TestEmbeddedPageUsesStaticSemanticMarkup(t *testing.T) {
 	t.Parallel()
 
-	html, err := fs.ReadFile(embeddedAssets, "assets/index.html")
-	if err != nil {
-		t.Fatalf("read index: %v", err)
-	}
-	markup := string(html)
-	for _, element := range []string{"<main", "<section", "<header", "<footer"} {
-		if !strings.Contains(markup, element) {
-			t.Fatalf("index does not contain semantic element %q", element)
+	var markup strings.Builder
+	for _, profile := range []string{"balanced", "web", "media", "realtime"} {
+		html, err := fs.ReadFile(embeddedAssets, "assets/"+profile+".html")
+		if err != nil {
+			t.Fatalf("read %s page: %v", profile, err)
 		}
-	}
-	if !strings.Contains(markup, `href="/assets/site.css"`) {
-		t.Fatal("index does not link the embedded stylesheet")
-	}
-	for _, forbidden := range []string{"<script", "style="} {
-		if strings.Contains(strings.ToLower(markup), forbidden) {
-			t.Fatalf("index contains forbidden markup %q", forbidden)
+		pageMarkup := string(html)
+		markup.WriteString(pageMarkup)
+		for _, element := range []string{"<main", "<section", "<header", "<footer"} {
+			if !strings.Contains(pageMarkup, element) {
+				t.Fatalf("%s page does not contain semantic element %q", profile, element)
+			}
+		}
+		if !strings.Contains(pageMarkup, `href="/assets/site.css"`) {
+			t.Fatalf("%s page does not link the embedded stylesheet", profile)
+		}
+		for _, forbidden := range []string{"<script", "style="} {
+			if strings.Contains(strings.ToLower(pageMarkup), forbidden) {
+				t.Fatalf("%s page contains forbidden markup %q", profile, forbidden)
+			}
 		}
 	}
 
@@ -153,7 +191,7 @@ func TestEmbeddedPageUsesStaticSemanticMarkup(t *testing.T) {
 		t.Fatal("stylesheet does not contain the required dark background")
 	}
 
-	assetText := strings.ToLower(markup + "\n" + string(css))
+	assetText := strings.ToLower(markup.String() + "\n" + string(css))
 	for _, forbidden := range []string{"n2x", "artx", "anytls", "proxy"} {
 		if strings.Contains(assetText, forbidden) {
 			t.Fatalf("embedded assets contain forbidden string %q", forbidden)

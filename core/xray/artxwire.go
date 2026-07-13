@@ -30,7 +30,7 @@ func buildArtXWireInbound(option *conf.Options, nodeInfo *panel.NodeInfo, inboun
 	if tlsSettings == nil {
 		return errors.New("artx wire requires TLS certificate settings")
 	}
-	fallback, err := resolveArtXFallback(nodeInfo.ArtX.Fallback)
+	fallback, err := resolveArtXFallback(nodeInfo.ArtX.Fallback, nodeInfo.ArtX.Profile)
 	if err != nil {
 		return fmt.Errorf("resolve artx fallback: %w", err)
 	}

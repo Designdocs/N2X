@@ -169,6 +169,9 @@ func TestArtXUnknownProfileFallsBackToBalanced(t *testing.T) {
 		strings.Join(artXProfilePaddingScheme("balanced"), "\n"); got != want {
 		t.Fatalf("unknown profile should fall back to balanced, got %q", got)
 	}
+	if got := newArtXObservation(&panel.ArtXNode{Profile: "does-not-exist"}).Profile; got != artXProfileBalanced {
+		t.Fatalf("unknown observed profile should fall back to balanced, got %q", got)
+	}
 }
 
 // TestArtXObservationReportsProfileAndPaddingFingerprint is the P1#5 node-side

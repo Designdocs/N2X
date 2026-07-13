@@ -10,6 +10,7 @@ func TestResolveArtXFallback(t *testing.T) {
 	tests := []struct {
 		name       string
 		config     panel.ArtXFallback
+		profile    string
 		listen     string
 		wantOrigin string
 		wantNil    bool
@@ -23,19 +24,28 @@ func TestResolveArtXFallback(t *testing.T) {
 		{
 			name:       "installed decoy default",
 			config:     panel.ArtXFallback{Enabled: true, Origin: artXDecoySelector},
-			wantOrigin: "http://127.0.0.1:60443/",
+			profile:    "web",
+			wantOrigin: "http://127.0.0.1:60443/?profile=web",
 		},
 		{
 			name:       "installed decoy custom loopback",
 			config:     panel.ArtXFallback{Enabled: true, Origin: artXDecoySelector},
+			profile:    "media",
 			listen:     "127.0.0.1:61443",
-			wantOrigin: "http://127.0.0.1:61443/",
+			wantOrigin: "http://127.0.0.1:61443/?profile=media",
 		},
 		{
 			name:       "installed decoy IPv6 loopback",
 			config:     panel.ArtXFallback{Enabled: true, Origin: artXDecoySelector},
+			profile:    "realtime",
 			listen:     "[::1]:61443",
-			wantOrigin: "http://[::1]:61443/",
+			wantOrigin: "http://[::1]:61443/?profile=realtime",
+		},
+		{
+			name:       "installed decoy unknown profile",
+			config:     panel.ArtXFallback{Enabled: true, Origin: artXDecoySelector},
+			profile:    "unknown",
+			wantOrigin: "http://127.0.0.1:60443/?profile=balanced",
 		},
 		{
 			name:       "explicit HTTPS",
@@ -80,7 +90,7 @@ func TestResolveArtXFallback(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(artXDecoyListenEnvironment, test.listen)
 
-			got, err := resolveArtXFallback(test.config)
+			got, err := resolveArtXFallback(test.config, test.profile)
 			if (err != nil) != test.wantError {
 				t.Fatalf("resolveArtXFallback() error = %v, wantError %v", err, test.wantError)
 			}

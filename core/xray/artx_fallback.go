@@ -17,7 +17,7 @@ const (
 	artXDecoyListenEnvironment = "N2X_ARTX_DECOY_LISTEN"
 )
 
-func resolveArtXFallback(config panel.ArtXFallback) (*coreConf.ArtXFallbackConfig, error) {
+func resolveArtXFallback(config panel.ArtXFallback, profile string) (*coreConf.ArtXFallbackConfig, error) {
 	if !config.Enabled {
 		return nil, nil
 	}
@@ -27,7 +27,7 @@ func resolveArtXFallback(config panel.ArtXFallback) (*coreConf.ArtXFallbackConfi
 		return nil, errors.New("artx fallback origin is required when enabled")
 	}
 	if origin == artXDecoySelector {
-		return resolveInstalledDecoyFallback()
+		return resolveInstalledDecoyFallback(profile)
 	}
 
 	parsed, err := url.Parse(origin)
@@ -50,7 +50,7 @@ func resolveArtXFallback(config panel.ArtXFallback) (*coreConf.ArtXFallbackConfi
 	return &coreConf.ArtXFallbackConfig{Enabled: true, Origin: origin}, nil
 }
 
-func resolveInstalledDecoyFallback() (*coreConf.ArtXFallbackConfig, error) {
+func resolveInstalledDecoyFallback(profile string) (*coreConf.ArtXFallbackConfig, error) {
 	listenAddress := strings.TrimSpace(os.Getenv(artXDecoyListenEnvironment))
 	if listenAddress == "" {
 		listenAddress = decoy.DefaultListenAddress
@@ -59,6 +59,10 @@ func resolveInstalledDecoyFallback() (*coreConf.ArtXFallbackConfig, error) {
 		return nil, fmt.Errorf("invalid installed decoy listen address: %w", err)
 	}
 
-	origin := (&url.URL{Scheme: "http", Host: listenAddress, Path: "/"}).String()
+	originURL := &url.URL{Scheme: "http", Host: listenAddress, Path: "/"}
+	query := originURL.Query()
+	query.Set("profile", canonicalArtXProfile(profile))
+	originURL.RawQuery = query.Encode()
+	origin := originURL.String()
 	return &coreConf.ArtXFallbackConfig{Enabled: true, Origin: origin}, nil
 }

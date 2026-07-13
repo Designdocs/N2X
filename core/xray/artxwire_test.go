@@ -65,6 +65,45 @@ func TestBuildArtXWireInboundOwnsTLS(t *testing.T) {
 	}
 }
 
+func TestBuildArtXWireInboundRoutesInstalledDecoyByProfile(t *testing.T) {
+	options := &conf.Options{CertConfig: &conf.CertConfig{
+		CertMode: "file",
+		CertFile: "/panel/cert.pem",
+		KeyFile:  "/panel/key.pem",
+	}}
+	nodeInfo := &panel.NodeInfo{
+		Type:     "artx",
+		Security: panel.Tls,
+		ArtX: &panel.ArtXNode{
+			Underlay:       artXUnderlayWire,
+			WireVersion:    artXWireVersion,
+			Profile:        artXProfileMedia,
+			ProfileVersion: artXWireProfileVersion,
+			Fallback: panel.ArtXFallback{
+				Enabled: true,
+				Origin:  artXDecoySelector,
+			},
+		},
+	}
+	inbound := &coreConf.InboundDetourConfig{}
+
+	if err := buildArtX(options, nodeInfo, inbound); err != nil {
+		t.Fatalf("buildArtX returned error: %v", err)
+	}
+
+	var settings coreConf.ArtXServerConfig
+	if inbound.Settings == nil {
+		t.Fatal("expected ArtX wire settings")
+	}
+	if err := json.Unmarshal(*inbound.Settings, &settings); err != nil {
+		t.Fatalf("unmarshal ArtX wire settings failed: %v", err)
+	}
+	wantOrigin := "http://127.0.0.1:60443/?profile=media"
+	if settings.Fallback == nil || settings.Fallback.Origin != wantOrigin {
+		t.Fatalf("installed decoy origin = %+v, want %q", settings.Fallback, wantOrigin)
+	}
+}
+
 func TestBuildArtXUsersSelectsAccountByUnderlay(t *testing.T) {
 	users := []panel.UserInfo{{Uuid: "test-psk"}}
 

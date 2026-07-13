@@ -9,12 +9,24 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
 const DefaultListenAddress = "127.0.0.1:60443"
 
 const maxHeaderBytes = 16 << 10
+
+const profileQueryParameter = "profile"
+
+type contentProfile string
+
+const (
+	contentProfileBalanced contentProfile = "balanced"
+	contentProfileWeb      contentProfile = "web"
+	contentProfileMedia    contentProfile = "media"
+	contentProfileRealtime contentProfile = "realtime"
+)
 
 //go:embed assets
 var embeddedAssets embed.FS
@@ -110,7 +122,7 @@ func (handler *assetHandler) serveHTTP(response http.ResponseWriter, request *ht
 
 	switch request.URL.Path {
 	case "/":
-		handler.serveAsset(response, request, "index.html", "text/html; charset=utf-8", http.StatusOK)
+		handler.serveAsset(response, request, pageAssetName(request), "text/html; charset=utf-8", http.StatusOK)
 	case "/assets/site.css":
 		handler.serveAsset(response, request, "site.css", "text/css; charset=utf-8", http.StatusOK)
 	case "/robots.txt":
@@ -119,6 +131,24 @@ func (handler *assetHandler) serveHTTP(response http.ResponseWriter, request *ht
 		response.WriteHeader(http.StatusNoContent)
 	default:
 		writePlainText(response, request, http.StatusNotFound, "Not Found\n")
+	}
+}
+
+func pageAssetName(request *http.Request) string {
+	profile := normalizeContentProfile(request.URL.Query().Get(profileQueryParameter))
+	return string(profile) + ".html"
+}
+
+func normalizeContentProfile(profile string) contentProfile {
+	switch contentProfile(strings.ToLower(strings.TrimSpace(profile))) {
+	case contentProfileWeb:
+		return contentProfileWeb
+	case contentProfileMedia:
+		return contentProfileMedia
+	case contentProfileRealtime:
+		return contentProfileRealtime
+	default:
+		return contentProfileBalanced
 	}
 }
 

@@ -122,7 +122,7 @@ func newArtXObservation(node *panel.ArtXNode) ArtXObservation {
 	return ArtXObservation{
 		Protocol:         "artx",
 		Underlay:         normalizeArtXUnderlay(node.Underlay),
-		Profile:          normalizeArtXProfile(node.Profile),
+		Profile:          canonicalArtXProfile(node.Profile),
 		ProfileVersion:   node.ProfileVersion,
 		PaddingSchemeMD5: paddingSchemeMD5(resolveArtXPaddingScheme(node)),
 		PaddingSource:    source,
@@ -161,10 +161,15 @@ func resolveArtXPaddingScheme(node *panel.ArtXNode) []string {
 }
 
 func artXProfilePaddingScheme(profile string) []string {
-	if scheme, ok := artXProfilePaddingSchemes[normalizeArtXProfile(profile)]; ok {
-		return scheme
+	return artXProfilePaddingSchemes[canonicalArtXProfile(profile)]
+}
+
+func canonicalArtXProfile(profile string) string {
+	normalized := normalizeArtXProfile(profile)
+	if _, ok := artXProfilePaddingSchemes[normalized]; ok {
+		return normalized
 	}
-	return artXProfilePaddingSchemes[artXProfileBalanced]
+	return artXProfileBalanced
 }
 
 func normalizeArtXProfile(profile string) string {

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Loopline — Team Rooms</title>
+  <link rel="stylesheet" href="/assets/site.css">
+</head>
+<body class="page page-realtime">
+  <header class="site-header header-realtime">
+    <a class="brand" href="#top" aria-label="Loopline home">
+      <span class="brand-mark brand-mark-live" aria-hidden="true">L</span>
+      <span>Loopline</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a class="nav-link nav-link-active" href="#rooms">Rooms</a>
+      <a class="nav-link" href="#agenda">Agenda</a>
+      <a class="nav-link" href="#updates">Updates</a>
+    </nav>
+    <span class="presence-label"><span aria-hidden="true"></span> 7 online</span>
+  </header>
+
+  <main id="top" class="page-shell realtime-shell">
+    <section class="realtime-intro" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">Tuesday workspace</p>
+        <h1 id="page-title">Live rooms</h1>
+        <p class="hero-copy">See what is happening now and where the team is gathering next.</p>
+      </div>
+      <div class="time-card surface">
+        <span class="summary-label">Local time</span>
+        <strong>10:42</strong>
+        <span class="summary-note">Morning session</span>
+      </div>
+    </section>
+
+    <section id="rooms" class="room-grid" aria-label="Active rooms">
+      <article class="room-card surface room-card-active">
+        <header class="room-header">
+          <span class="live-badge"><span aria-hidden="true"></span> Live now</span>
+          <span class="room-count">4 people</span>
+        </header>
+        <h2>Weekly product room</h2>
+        <p>Reviewing the final notes before handoff.</p>
+        <div class="room-footer">
+          <div class="attendee-row"><span>AR</span><span>KM</span><span>SL</span><span>+1</span></div>
+          <span class="room-duration">24:18</span>
+        </div>
+      </article>
+      <article class="room-card surface">
+        <header class="room-header">
+          <span class="quiet-pill">Open room</span>
+          <span class="room-count">2 people</span>
+        </header>
+        <h2>Studio check-in</h2>
+        <p>A quick working session for open questions.</p>
+        <div class="room-footer">
+          <div class="attendee-row"><span>NO</span><span>ET</span></div>
+          <span class="room-duration">08:06</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="realtime-grid">
+      <article id="agenda" class="surface panel">
+        <header class="panel-header">
+          <div>
+            <p class="eyebrow">Coming up</p>
+            <h2>Today's agenda</h2>
+          </div>
+          <span class="quiet-pill">3 sessions</span>
+        </header>
+        <ol class="agenda-list">
+          <li class="agenda-current"><time>11:30</time><span><strong>Launch readiness</strong><small>Starts in 48 minutes</small></span></li>
+          <li><time>13:00</time><span><strong>Research playback</strong><small>Library room</small></span></li>
+          <li><time>15:45</time><span><strong>Team wrap-up</strong><small>Open to everyone</small></span></li>
+        </ol>
+      </article>
+
+      <aside id="updates" class="surface panel activity-panel" aria-labelledby="activity-title">
+        <p class="eyebrow">Recent updates</p>
+        <h2 id="activity-title">Team activity</h2>
+        <ul class="activity-list">
+          <li><span class="activity-dot activity-dot-sage"></span><p><strong>Maya</strong> shared the final outline<small>2 min ago</small></p></li>
+          <li><span class="activity-dot activity-dot-blue"></span><p><strong>Jon</strong> opened Studio check-in<small>8 min ago</small></p></li>
+          <li><span class="activity-dot activity-dot-clay"></span><p><strong>Elin</strong> updated today's agenda<small>21 min ago</small></p></li>
+        </ul>
+      </aside>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Loopline</span>
+    <span>Meet where the work is happening.</span>
+  </footer>
+</body>
+</html>
