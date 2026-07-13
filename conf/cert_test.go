@@ -98,3 +98,82 @@ func TestCertConfigUnmarshalAcceptsModeAlias(t *testing.T) {
 		t.Fatalf("expected mode alias to populate cert mode, got %q", config.CertMode)
 	}
 }
+
+func TestCertConfigUnmarshalDerivesManagedPathsFromDomain(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      string
+		certFile string
+		keyFile  string
+	}{
+		{
+			name:     "legacy defaults",
+			raw:      `{"CertMode":"dns","CertDomain":"new.example.com","CertFile":"/etc/N2X/fullchain.cer","KeyFile":"/etc/N2X/cert.key"}`,
+			certFile: "/etc/N2X/fullchain-new.example.com.cer",
+			keyFile:  "/etc/N2X/cert-new.example.com.key",
+		},
+		{
+			name:     "previous managed domain",
+			raw:      `{"cert_mode":"http","cert_domain":"new.example.com","cert_file":"/etc/N2X/fullchain-old.example.com.cer","key_file":"/etc/N2X/cert-old.example.com.key"}`,
+			certFile: "/etc/N2X/fullchain-new.example.com.cer",
+			keyFile:  "/etc/N2X/cert-new.example.com.key",
+		},
+		{
+			name:     "domain placeholders",
+			raw:      `{"CertMode":"self","CertDomain":"new.example.com","CertFile":"/etc/N2X/fullchain-{domain}.cer","KeyFile":"/etc/N2X/cert-{domain}.key"}`,
+			certFile: "/etc/N2X/fullchain-new.example.com.cer",
+			keyFile:  "/etc/N2X/cert-new.example.com.key",
+		},
+		{
+			name:     "wildcard domain",
+			raw:      `{"CertMode":"dns","CertDomain":"*.example.com","CertFile":"/etc/N2X/fullchain.cer","KeyFile":"/etc/N2X/cert.key"}`,
+			certFile: "/etc/N2X/fullchain-wildcard.example.com.cer",
+			keyFile:  "/etc/N2X/cert-wildcard.example.com.key",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var config CertConfig
+			if err := json.Unmarshal([]byte(test.raw), &config); err != nil {
+				t.Fatalf("unmarshal cert config failed: %v", err)
+			}
+			if config.CertFile != test.certFile || config.KeyFile != test.keyFile {
+				t.Fatalf("expected cert=%q key=%q, got cert=%q key=%q", test.certFile, test.keyFile, config.CertFile, config.KeyFile)
+			}
+		})
+	}
+}
+
+func TestCertConfigUnmarshalPreservesExplicitPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "automatic mode custom paths",
+			raw:  `{"CertMode":"dns","CertDomain":"new.example.com","CertFile":"/custom/server.pem","KeyFile":"/custom/server.key"}`,
+		},
+		{
+			name: "file mode legacy paths",
+			raw:  `{"CertMode":"file","CertDomain":"new.example.com","CertFile":"/etc/N2X/fullchain.cer","KeyFile":"/etc/N2X/cert.key"}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var expected map[string]any
+			if err := json.Unmarshal([]byte(test.raw), &expected); err != nil {
+				t.Fatalf("unmarshal expected config failed: %v", err)
+			}
+
+			var config CertConfig
+			if err := json.Unmarshal([]byte(test.raw), &config); err != nil {
+				t.Fatalf("unmarshal cert config failed: %v", err)
+			}
+			if config.CertFile != expected["CertFile"] || config.KeyFile != expected["KeyFile"] {
+				t.Fatalf("expected explicit paths to be preserved, got cert=%q key=%q", config.CertFile, config.KeyFile)
+			}
+		})
+	}
+}
