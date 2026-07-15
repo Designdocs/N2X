@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	artXUnderlayAnyTLS     = "anytls"
-	artXUnderlayWire       = "artx-wire"
-	artXWireVersion        = 1
-	artXWireProfileVersion = 1
+	artXUnderlayAnyTLS            = "anytls"
+	artXUnderlayWire              = "artx-wire"
+	artXWireVersion               = 1
+	artXWireDefaultProfileVersion = 1
 )
 
 const (

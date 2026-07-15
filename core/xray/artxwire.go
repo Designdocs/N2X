@@ -20,7 +20,7 @@ func buildArtXWireInbound(option *conf.Options, nodeInfo *panel.NodeInfo, inboun
 	if nodeInfo.ArtX.WireVersion != artXWireVersion {
 		return fmt.Errorf("unsupported artx wire version: %d", nodeInfo.ArtX.WireVersion)
 	}
-	if nodeInfo.ArtX.ProfileVersion != artXWireProfileVersion {
+	if nodeInfo.ArtX.ProfileVersion != artXWireDefaultProfileVersion && nodeInfo.ArtX.ProfileVersion != 3 {
 		return fmt.Errorf("unsupported artx profile version: %d", nodeInfo.ArtX.ProfileVersion)
 	}
 	tlsSettings, err := buildInboundTLSConfig(option, nodeInfo)

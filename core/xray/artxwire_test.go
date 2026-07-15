@@ -78,7 +78,7 @@ func TestBuildArtXWireInboundRoutesInstalledDecoyByProfile(t *testing.T) {
 			Underlay:       artXUnderlayWire,
 			WireVersion:    artXWireVersion,
 			Profile:        artXProfileMedia,
-			ProfileVersion: artXWireProfileVersion,
+			ProfileVersion: artXWireDefaultProfileVersion,
 			Fallback: panel.ArtXFallback{
 				Enabled: true,
 				Origin:  artXDecoySelector,
@@ -161,7 +161,16 @@ func TestBuildArtXWireInboundRejectsUnsupportedProfileVersions(t *testing.T) {
 		CertFile: "/panel/cert.pem",
 		KeyFile:  "/panel/key.pem",
 	}}
-	for _, version := range []int{0, 2, int(^uint(0) >> 1)} {
+	accepted := &panel.NodeInfo{ArtX: &panel.ArtXNode{
+		Underlay:       "artx-wire",
+		WireVersion:    1,
+		ProfileVersion: 3,
+	}}
+	if err := buildArtX(options, accepted, &coreConf.InboundDetourConfig{}); err != nil {
+		t.Fatalf("profile version 3 was rejected: %v", err)
+	}
+
+	for _, version := range []int{0, 2, 4, int(^uint(0) >> 1)} {
 		t.Run(strconv.Itoa(version), func(t *testing.T) {
 			nodeInfo := &panel.NodeInfo{ArtX: &panel.ArtXNode{
 				Underlay:       "artx-wire",
