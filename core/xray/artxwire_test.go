@@ -26,6 +26,7 @@ func TestBuildArtXWireInboundOwnsTLS(t *testing.T) {
 			Underlay:       "artx-wire",
 			WireVersion:    1,
 			ProfileVersion: 1,
+			UDP:            true,
 			Fallback: panel.ArtXFallback{
 				Enabled: true,
 				Origin:  "https://fallback.example.com/",
@@ -54,7 +55,7 @@ func TestBuildArtXWireInboundOwnsTLS(t *testing.T) {
 	if err := json.Unmarshal(*inbound.Settings, &settings); err != nil {
 		t.Fatalf("unmarshal ArtX wire settings failed: %v", err)
 	}
-	if settings.WireVersion != 1 || settings.ProfileVersion != 1 {
+	if settings.WireVersion != 1 || settings.ProfileVersion != 1 || !settings.UDPEnabled {
 		t.Fatalf("unexpected ArtX versions: %+v", settings)
 	}
 	if settings.TLSSettings == nil || len(settings.TLSSettings.Certs) != 1 {

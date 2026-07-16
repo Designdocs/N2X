@@ -168,6 +168,7 @@ func TestClientGetNodeInfoParsesArtXWireVersion(t *testing.T) {
 			"wire_version": 1,
 			"profile": "balanced",
 			"profile_version": 1,
+			"udp": true,
 			"fallback": {"enabled": true, "origin": "n2x://decoy"},
 			"base_config": {"push_interval": 60, "pull_interval": 60}
 		}`
@@ -178,7 +179,7 @@ func TestClientGetNodeInfoParsesArtXWireVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get node info failed: %v", err)
 	}
-	if node.ArtX.Underlay != "artx-wire" || node.ArtX.WireVersion != 1 {
+	if node.ArtX.Underlay != "artx-wire" || node.ArtX.WireVersion != 1 || !node.ArtX.UDP {
 		t.Fatalf("unexpected ArtX wire settings: %+v", node.ArtX)
 	}
 	if !node.ArtX.Fallback.Enabled || node.ArtX.Fallback.Origin != "n2x://decoy" {

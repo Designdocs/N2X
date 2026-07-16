@@ -42,6 +42,7 @@ func buildArtXWireInbound(option *conf.Options, nodeInfo *panel.NodeInfo, inboun
 		TLSSettings:    tlsSettings,
 		WireVersion:    uint32(nodeInfo.ArtX.WireVersion),
 		ProfileVersion: uint32(nodeInfo.ArtX.ProfileVersion),
+		UDPEnabled:     nodeInfo.ArtX.UDP,
 		Fallback:       fallback,
 	}
 	rawSettings, err := json.Marshal(settings)

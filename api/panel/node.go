@@ -140,6 +140,7 @@ type ArtXNode struct {
 	WireVersion     int          `json:"wire_version"`
 	Profile         string       `json:"profile"`
 	ProfileVersion  int          `json:"profile_version"`
+	UDP             bool         `json:"udp"`
 	TlsSettings     TlsSettings  `json:"tls_settings"`
 	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
 	PaddingScheme   []string     `json:"padding_scheme,omitempty"`
