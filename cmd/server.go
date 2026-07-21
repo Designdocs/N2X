@@ -206,7 +206,8 @@ func serverHandle(_ *cobra.Command, _ []string) {
 	log.Info("Nodes started")
 	xdns := os.Getenv("XRAY_DNS_PATH")
 	if watch {
-		err = c.Watch(config, xdns, func() {
+		// A distinct name: the closure below assigns to the outer err.
+		stopWatch, watchErr := c.Watch(config, xdns, func() {
 			nodes.Close()
 			err = vc.Close()
 			if err != nil {
@@ -232,10 +233,11 @@ func serverHandle(_ *cobra.Command, _ []string) {
 			log.Info("Nodes restarted")
 			runtime.GC()
 		})
-		if err != nil {
-			log.WithField("err", err).Error("start watch failed")
+		if watchErr != nil {
+			log.WithField("err", watchErr).Error("start watch failed")
 			return
 		}
+		defer stopWatch()
 	}
 	// clear memory
 	runtime.GC()
