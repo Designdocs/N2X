@@ -11,6 +11,17 @@ type XrayConfig struct {
 	LegacyConnConfig   *XrayConnectionConfig `json:"XrayConnectionConfig"`
 	InboundConfigPath  string                `json:"InboundConfigPath"`
 	OutboundConfigPath string                `json:"OutboundConfigPath"`
+	// EnableBTExtraSniffing toggles the DHT and UDP tracker sniffers. It is a
+	// pointer so an absent key means enabled: UnmarshalJSON decodes into a
+	// zero struct, which would turn a plain bool off for every config file
+	// written before this option existed.
+	EnableBTExtraSniffing *bool `json:"EnableBTExtraSniffing"`
+}
+
+// BTExtraSniffingEnabled reports whether the DHT and UDP tracker sniffers
+// should be registered. Enabled unless explicitly set to false.
+func (x *XrayConfig) BTExtraSniffingEnabled() bool {
+	return x.EnableBTExtraSniffing == nil || *x.EnableBTExtraSniffing
 }
 
 type XrayLogConfig struct {

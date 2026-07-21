@@ -2,7 +2,9 @@ package dispatcher
 
 import (
 	"context"
+	"sync/atomic"
 
+	"github.com/Designdocs/N2X/core/xray/common/protocol/bt"
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/errors"
 	"github.com/xtls/xray-core/common/net"
@@ -11,6 +13,24 @@ import (
 	"github.com/xtls/xray-core/common/protocol/quic"
 	"github.com/xtls/xray-core/common/protocol/tls"
 )
+
+// btExtraSniffing gates the DHT and UDP tracker sniffers. It is set once at
+// startup from the core config but read from every connection goroutine.
+var btExtraSniffing atomic.Bool
+
+func init() {
+	btExtraSniffing.Store(true)
+}
+
+// SetBTExtraSniffing enables or disables the DHT and UDP tracker sniffers.
+func SetBTExtraSniffing(enabled bool) {
+	btExtraSniffing.Store(enabled)
+}
+
+// BTExtraSniffingEnabled reports whether the extra BT sniffers are registered.
+func BTExtraSniffingEnabled() bool {
+	return btExtraSniffing.Load()
+}
 
 type SniffResult interface {
 	Protocol() string
@@ -32,16 +52,34 @@ type Sniffer struct {
 	sniffer []protocolSnifferWithMetadata
 }
 
-func NewSniffer(ctx context.Context) *Sniffer {
-	ret := &Sniffer{
-		sniffer: []protocolSnifferWithMetadata{
-			{func(c context.Context, b []byte) (SniffResult, error) { return http.SniffHTTP(b, ctx) }, false, net.Network_TCP},
-			{func(c context.Context, b []byte) (SniffResult, error) { return tls.SniffTLS(b) }, false, net.Network_TCP},
-			{func(c context.Context, b []byte) (SniffResult, error) { return bittorrent.SniffBittorrent(b) }, false, net.Network_TCP},
-			{func(c context.Context, b []byte) (SniffResult, error) { return quic.SniffQUIC(b) }, false, net.Network_UDP},
-			{func(c context.Context, b []byte) (SniffResult, error) { return bittorrent.SniffUTP(b) }, false, net.Network_UDP},
-		},
+// newProtocolSniffers builds the protocol sniffer set. It takes no context so
+// it can be exercised without a running core instance.
+func newProtocolSniffers(ctx context.Context) []protocolSnifferWithMetadata {
+	sniffers := []protocolSnifferWithMetadata{
+		{func(c context.Context, b []byte) (SniffResult, error) { return http.SniffHTTP(b, ctx) }, false, net.Network_TCP},
+		{func(c context.Context, b []byte) (SniffResult, error) { return tls.SniffTLS(b) }, false, net.Network_TCP},
+		{func(c context.Context, b []byte) (SniffResult, error) { return bittorrent.SniffBittorrent(b) }, false, net.Network_TCP},
+		{func(c context.Context, b []byte) (SniffResult, error) { return quic.SniffQUIC(b) }, false, net.Network_UDP},
 	}
+	if btExtraSniffing.Load() {
+		// bt.SniffUTP replaces bittorrent.SniffUTP, whose timestamp check can
+		// never pass. Keeping the upstream one on the disabled path makes the
+		// switch an exact rollback to the previous behaviour.
+		sniffers = append(sniffers,
+			protocolSnifferWithMetadata{func(c context.Context, b []byte) (SniffResult, error) { return bt.SniffUTP(b) }, false, net.Network_UDP},
+			protocolSnifferWithMetadata{func(c context.Context, b []byte) (SniffResult, error) { return bt.SniffDHT(b) }, false, net.Network_UDP},
+			protocolSnifferWithMetadata{func(c context.Context, b []byte) (SniffResult, error) { return bt.SniffUDPTracker(b) }, false, net.Network_UDP},
+		)
+	} else {
+		sniffers = append(sniffers,
+			protocolSnifferWithMetadata{func(c context.Context, b []byte) (SniffResult, error) { return bittorrent.SniffUTP(b) }, false, net.Network_UDP},
+		)
+	}
+	return sniffers
+}
+
+func NewSniffer(ctx context.Context) *Sniffer {
+	ret := &Sniffer{sniffer: newProtocolSniffers(ctx)}
 	if sniffer, err := newFakeDNSSniffer(ctx); err == nil {
 		others := ret.sniffer
 		ret.sniffer = append(ret.sniffer, sniffer)
