@@ -22,6 +22,20 @@
         }
     },
     {
+        "tag": "socks5-unlock",
+        "protocol": "socks",
+        "settings": {
+            "servers": [{
+                "address": "socks5.example.invalid",
+                "port": 1080,
+                "users": [{
+                    "user": "USERNAME",
+                    "pass": "PASSWORD"
+                }]
+            }]
+        }
+    },
+    {
         "protocol": "blackhole",
         "tag": "block"
     }

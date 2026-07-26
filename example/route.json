@@ -17,6 +17,13 @@
         },
         {
             "type": "field",
+            "outboundTag": "socks5-unlock",
+            "domain": [
+                "domain:socks5-unlock.invalid"
+            ]
+        },
+        {
+            "type": "field",
             "outboundTag": "socks5-warp",
             "domain": [""]
         },
