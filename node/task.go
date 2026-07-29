@@ -159,6 +159,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 				return nil
 			}
 		}
+		c.prepareHTTPSRedirect(newN)
 		// add new node
 		err = c.server.AddNode(c.tag, newN, c.Options)
 		if err != nil {
@@ -180,6 +181,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			}).Error("Add users failed")
 			return nil
 		}
+		c.refreshHTTPSRedirect(newN)
 		// Check interval
 		if c.nodeInfoMonitorPeriodic.Interval != newN.PullInterval &&
 			newN.PullInterval != 0 {

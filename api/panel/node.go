@@ -136,6 +136,8 @@ type AnyTlsNode struct {
 
 type ArtXNode struct {
 	CommonNode
+	PublicHost      string       `json:"public_host"`
+	PublicPort      int          `json:"public_port"`
 	Underlay        string       `json:"underlay"`
 	WireVersion     int          `json:"wire_version"`
 	Profile         string       `json:"profile"`

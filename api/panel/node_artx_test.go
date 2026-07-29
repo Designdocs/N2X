@@ -24,6 +24,8 @@ func TestClientGetNodeInfoParsesArtXNodeConfig(t *testing.T) {
 
 		body := `{
 			"host": "edge.example.com",
+			"public_host": "public.example.com",
+			"public_port": 8443,
 			"server_port": 443,
 			"server_name": "edge.example.com",
 			"underlay": "anytls",
@@ -87,6 +89,9 @@ func TestClientGetNodeInfoParsesArtXNodeConfig(t *testing.T) {
 	if node.ArtX.ProfileVersion != 2 {
 		t.Fatalf("expected profile version 2, got %d", node.ArtX.ProfileVersion)
 	}
+	if node.ArtX.PublicHost != "public.example.com" || node.ArtX.PublicPort != 8443 {
+		t.Fatalf("unexpected ArtX public endpoint: %s:%d", node.ArtX.PublicHost, node.ArtX.PublicPort)
+	}
 	if len(node.ArtX.PaddingScheme) != 2 {
 		t.Fatalf("expected two padding rules, got %d", len(node.ArtX.PaddingScheme))
 	}
@@ -146,6 +151,9 @@ func TestClientGetNodeInfoDefaultsArtXUnderlayAndProfile(t *testing.T) {
 	}
 	if node.ArtX.ProfileVersion != 1 {
 		t.Fatalf("expected default profile version 1, got %d", node.ArtX.ProfileVersion)
+	}
+	if node.ArtX.PublicHost != "" || node.ArtX.PublicPort != 0 {
+		t.Fatalf("legacy ArtX response unexpectedly inferred public endpoint: %s:%d", node.ArtX.PublicHost, node.ArtX.PublicPort)
 	}
 }
 

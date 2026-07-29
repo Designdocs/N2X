@@ -32,6 +32,7 @@ type Controller struct {
 	onlineIpReportPeriodic    *task.Task
 	nodeStatusReportPeriodic  *task.Task
 	nodeMetricsReportPeriodic *task.Task
+	httpsRedirectManager      *httpsRedirectManager
 
 	// cumulative byte counters maintained by reportUserTrafficTask and
 	// drained by reportNodeMetricsTask to derive inbound/outbound rates
@@ -45,11 +46,17 @@ type Controller struct {
 }
 
 // NewController return a Node controller with default parameters.
-func NewController(server vCore.Core, api *panel.Client, config *conf.Options) *Controller {
+func NewController(
+	server vCore.Core,
+	api *panel.Client,
+	config *conf.Options,
+	redirectManager *httpsRedirectManager,
+) *Controller {
 	controller := &Controller{
-		server:    server,
-		Options:   config,
-		apiClient: api,
+		server:               server,
+		Options:              config,
+		apiClient:            api,
+		httpsRedirectManager: redirectManager,
 	}
 	return controller
 }
@@ -95,6 +102,7 @@ func (c *Controller) Start() error {
 			return fmt.Errorf("request cert error: %s", err)
 		}
 	}
+	c.prepareHTTPSRedirect(node)
 	// Add new tag
 	err = c.server.AddNode(c.tag, node, c.Options)
 	if err != nil {
@@ -110,6 +118,7 @@ func (c *Controller) Start() error {
 	}
 	log.WithField("tag", c.tag).Infof("Added %d new users", added)
 	c.info = node
+	c.refreshHTTPSRedirect(node)
 	c.startTasks(node)
 	return nil
 }

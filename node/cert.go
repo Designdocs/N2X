@@ -41,6 +41,7 @@ func (c *Controller) renewCertTask(certConfig *conf.CertConfig) error {
 		log.WithField("tag", c.tag).Info("renew cert error: ", err)
 		return nil
 	}
+	c.refreshHTTPSRedirect(c.info)
 	return nil
 }
 

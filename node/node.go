@@ -9,11 +9,14 @@ import (
 )
 
 type Node struct {
-	controllers []*Controller
+	controllers          []*Controller
+	httpsRedirectManager *httpsRedirectManager
 }
 
 func New() *Node {
-	return &Node{}
+	return &Node{
+		httpsRedirectManager: newHTTPSRedirectManager(defaultHTTPSRedirectListenAddress),
+	}
 }
 
 func (n *Node) Start(nodes []conf.NodeConfig, core vCore.Core) error {
@@ -24,7 +27,12 @@ func (n *Node) Start(nodes []conf.NodeConfig, core vCore.Core) error {
 			return err
 		}
 		// Register controller service
-		n.controllers[i] = NewController(core, p, &nodes[i].Options)
+		n.controllers[i] = NewController(
+			core,
+			p,
+			&nodes[i].Options,
+			n.httpsRedirectManager,
+		)
 		err = n.controllers[i].Start()
 		if err != nil {
 			return fmt.Errorf("start node controller [%s-%s-%d] error: %s",
@@ -42,6 +50,9 @@ func (n *Node) Start(nodes []conf.NodeConfig, core vCore.Core) error {
 }
 
 func (n *Node) Close() {
+	if n.httpsRedirectManager != nil {
+		_ = n.httpsRedirectManager.Close()
+	}
 	for _, c := range n.controllers {
 		c.apiClient.StopWebSocket()
 		err := c.Close()
