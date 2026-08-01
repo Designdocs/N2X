@@ -70,7 +70,7 @@ func TestDecoyHandler(t *testing.T) {
 		{method: http.MethodHead, path: "/missing", status: http.StatusNotFound, contentType: "text/plain"},
 	}
 
-	handler := newHandler()
+	handler := newHandler(contentProfileBalanced)
 	for _, test := range tests {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
 			request := httptest.NewRequest(test.method, test.path, nil)
@@ -128,7 +128,7 @@ func TestDecoyHandlerSelectsPageByContentProfile(t *testing.T) {
 		{name: "unknown", path: "/?profile=../../private", bodyText: "Today at a glance"},
 	}
 
-	handler := newHandler()
+	handler := newHandler(contentProfileBalanced)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, test.path, nil)
@@ -150,7 +150,7 @@ func TestDecoyHandlerRejectsUnsupportedMethods(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("data"))
 	response := httptest.NewRecorder()
-	newHandler().ServeHTTP(response, request)
+	newHandler(contentProfileBalanced).ServeHTTP(response, request)
 
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)

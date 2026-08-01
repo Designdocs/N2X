@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/Designdocs/N2X/api/panel"
@@ -13,8 +12,8 @@ import (
 )
 
 const (
-	artXDecoySelector          = "n2x://decoy"
-	artXDecoyListenEnvironment = "N2X_ARTX_DECOY_LISTEN"
+	artXDecoySelector          = decoySelector
+	artXDecoyListenEnvironment = decoy.ListenAddressEnvironment
 )
 
 func resolveArtXFallback(config panel.ArtXFallback, profile string) (*coreConf.ArtXFallbackConfig, error) {
@@ -51,12 +50,9 @@ func resolveArtXFallback(config panel.ArtXFallback, profile string) (*coreConf.A
 }
 
 func resolveInstalledDecoyFallback(profile string) (*coreConf.ArtXFallbackConfig, error) {
-	listenAddress := strings.TrimSpace(os.Getenv(artXDecoyListenEnvironment))
-	if listenAddress == "" {
-		listenAddress = decoy.DefaultListenAddress
-	}
-	if err := decoy.ValidateListenAddress(listenAddress); err != nil {
-		return nil, fmt.Errorf("invalid installed decoy listen address: %w", err)
+	listenAddress, err := decoy.ResolveListenAddress()
+	if err != nil {
+		return nil, err
 	}
 
 	originURL := &url.URL{Scheme: "http", Host: listenAddress, Path: "/"}

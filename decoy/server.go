@@ -11,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 const DefaultListenAddress = "127.0.0.1:60443"
@@ -33,6 +36,10 @@ var embeddedAssets embed.FS
 
 type Config struct {
 	ListenAddress string
+	// DefaultProfile names the page served when a request does not select one
+	// itself. Empty means consult ProfileEnvironment, then fall back to
+	// balanced.
+	DefaultProfile string
 }
 
 type Server struct {
@@ -68,23 +75,46 @@ func NewServer(config Config) (*Server, error) {
 		return nil, err
 	}
 
+	profile, err := resolveConfiguredProfile(config.DefaultProfile)
+	if err != nil {
+		return nil, err
+	}
+
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("listen on configured address: %w", err)
 	}
 
+	return newServer(listener, profile), nil
+}
+
+// newServer wires the HTTP stack onto an already bound listener.
+//
+// The handler is wrapped in h2c because Xray splices raw, TLS-terminated bytes
+// straight to this port. Inbound TLS advertises "h2" and "http/1.1", so a
+// browser that picks h2 delivers cleartext HTTP/2 frames here; an HTTP/1.1-only
+// listener would reject the preface and the browser would see a protocol error
+// instead of a page.
+func newServer(listener net.Listener, defaultProfile contentProfile) *Server {
+	handler := h2c.NewHandler(newHandler(defaultProfile), &http2.Server{
+		IdleTimeout:      30 * time.Second,
+		MaxReadFrameSize: maxHeaderBytes,
+	})
+
 	return &Server{
 		httpServer: &http.Server{
-			Addr:              address,
-			Handler:           newHandler(),
+			Addr:              listener.Addr().String(),
+			Handler:           handler,
 			ReadHeaderTimeout: 5 * time.Second,
-			ReadTimeout:       10 * time.Second,
-			WriteTimeout:      10 * time.Second,
-			IdleTimeout:       30 * time.Second,
-			MaxHeaderBytes:    maxHeaderBytes,
+			// ReadTimeout and WriteTimeout are deliberately left unset: the h2c
+			// handler hijacks the connection for the lifetime of the HTTP/2
+			// session, and a whole-connection deadline would tear down long
+			// lived multiplexed streams mid-response.
+			IdleTimeout:    30 * time.Second,
+			MaxHeaderBytes: maxHeaderBytes,
 		},
 		listener: listener,
-	}, nil
+	}
 }
 
 func (server *Server) Serve() error {
@@ -99,18 +129,19 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	return server.httpServer.Shutdown(ctx)
 }
 
-func newHandler() http.Handler {
+func newHandler(defaultProfile contentProfile) http.Handler {
 	assets, err := fs.Sub(embeddedAssets, "assets")
 	if err != nil {
 		panic("embedded service assets are unavailable")
 	}
 
-	handler := &assetHandler{assets: assets}
+	handler := &assetHandler{assets: assets, defaultProfile: defaultProfile}
 	return http.HandlerFunc(handler.serveHTTP)
 }
 
 type assetHandler struct {
-	assets fs.FS
+	assets         fs.FS
+	defaultProfile contentProfile
 }
 
 func (handler *assetHandler) serveHTTP(response http.ResponseWriter, request *http.Request) {
@@ -122,7 +153,7 @@ func (handler *assetHandler) serveHTTP(response http.ResponseWriter, request *ht
 
 	switch request.URL.Path {
 	case "/":
-		handler.serveAsset(response, request, pageAssetName(request), "text/html; charset=utf-8", http.StatusOK)
+		handler.serveAsset(response, request, handler.pageAssetName(request), "text/html; charset=utf-8", http.StatusOK)
 	case "/assets/site.css":
 		handler.serveAsset(response, request, "site.css", "text/css; charset=utf-8", http.StatusOK)
 	case "/robots.txt":
@@ -134,21 +165,23 @@ func (handler *assetHandler) serveHTTP(response http.ResponseWriter, request *ht
 	}
 }
 
-func pageAssetName(request *http.Request) string {
-	profile := normalizeContentProfile(request.URL.Query().Get(profileQueryParameter))
-	return string(profile) + ".html"
+// pageAssetName picks the page for a request. An explicit, recognised profile
+// query wins; anything else (absent, empty or unknown) gets the configured
+// default. Fallback traffic from a browser always lands in the latter case,
+// since the browser asks for "/" with no query of its own.
+func (handler *assetHandler) pageAssetName(request *http.Request) string {
+	if profile, ok := parseContentProfile(request.URL.Query().Get(profileQueryParameter)); ok {
+		return string(profile) + ".html"
+	}
+	return string(handler.defaultProfile) + ".html"
 }
 
-func normalizeContentProfile(profile string) contentProfile {
-	switch contentProfile(strings.ToLower(strings.TrimSpace(profile))) {
-	case contentProfileWeb:
-		return contentProfileWeb
-	case contentProfileMedia:
-		return contentProfileMedia
-	case contentProfileRealtime:
-		return contentProfileRealtime
+func parseContentProfile(value string) (contentProfile, bool) {
+	switch profile := contentProfile(strings.ToLower(strings.TrimSpace(value))); profile {
+	case contentProfileBalanced, contentProfileWeb, contentProfileMedia, contentProfileRealtime:
+		return profile, true
 	default:
-		return contentProfileBalanced
+		return "", false
 	}
 }
 

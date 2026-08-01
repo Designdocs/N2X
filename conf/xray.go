@@ -1,6 +1,10 @@
 package conf
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/Designdocs/N2X/decoy"
+)
 
 type XrayConfig struct {
 	LogConfig          *XrayLogConfig        `json:"Log"`
@@ -79,15 +83,47 @@ func (x *XrayConfig) UnmarshalJSON(b []byte) error {
 }
 
 type XrayOptions struct {
-	EnableProxyProtocol bool                    `json:"EnableProxyProtocol"`
-	EnableDNS           bool                    `json:"EnableDNS"`
-	DNSType             string                  `json:"DNSType"`
-	EnableUot           bool                    `json:"EnableUot"`
-	EnableTFO           bool                    `json:"EnableTFO"`
-	DisableIVCheck      bool                    `json:"DisableIVCheck"`
-	DisableSniffing     bool                    `json:"DisableSniffing"`
-	EnableFallback      bool                    `json:"EnableFallback"`
-	FallBackConfigs     []FallBackConfigForXray `json:"FallBackConfigs"`
+	EnableProxyProtocol bool   `json:"EnableProxyProtocol"`
+	EnableDNS           bool   `json:"EnableDNS"`
+	DNSType             string `json:"DNSType"`
+	EnableUot           bool   `json:"EnableUot"`
+	EnableTFO           bool   `json:"EnableTFO"`
+	DisableIVCheck      bool   `json:"DisableIVCheck"`
+	DisableSniffing     bool   `json:"DisableSniffing"`
+	EnableFallback      bool   `json:"EnableFallback"`
+	// DecoyFallback turns on fallback and, when FallBackConfigs is empty,
+	// points it at the companion web service installed with the node. It exists
+	// so serving a page on port 443 does not require running a separate web
+	// server or hand-writing a destination.
+	DecoyFallback   bool                    `json:"DecoyFallback"`
+	FallBackConfigs []FallBackConfigForXray `json:"FallBackConfigs"`
+}
+
+// FallbackEnabled reports whether inbound fallback should be configured at all.
+func (x *XrayOptions) FallbackEnabled() bool {
+	if x == nil {
+		return false
+	}
+	return x.EnableFallback || x.DecoyFallback
+}
+
+// ResolvedFallbackConfigs returns the fallback entries to build, substituting a
+// single companion web service entry when DecoyFallback is on and the operator
+// has not written their own. Explicit entries always win.
+//
+// The returned slice is freshly allocated so callers cannot write through to
+// the stored configuration across reloads.
+func (x *XrayOptions) ResolvedFallbackConfigs() []FallBackConfigForXray {
+	if x == nil {
+		return nil
+	}
+	if len(x.FallBackConfigs) > 0 {
+		return x.FallBackConfigs
+	}
+	if !x.DecoyFallback {
+		return nil
+	}
+	return []FallBackConfigForXray{{Dest: decoy.Selector}}
 }
 
 type FallBackConfigForXray struct {

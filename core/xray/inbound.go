@@ -50,6 +50,11 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	if err != nil {
 		return nil, err
 	}
+	// ws and xhttp reject an unmatched request inside the transport, so the
+	// protocol fallbacks built above never see a browser arriving on this port.
+	if err := enableTransportDecoyFallback(option.XrayOptions, network); err != nil {
+		return nil, err
+	}
 	// Set network protocol
 	// Set server port
 	in.PortList = &coreConf.PortList{
@@ -270,54 +275,55 @@ func normalizeECHValue(value string, expectedPEMType string) (string, error) {
 	return strings.Join(strings.Fields(trimmed), ""), nil
 }
 
+// resolveVlessDecryption builds the inbound decryption string from the panel
+// supplied encryption settings. Shared by the fallback and non-fallback paths
+// so enabling fallback can never silently downgrade the handshake.
+func resolveVlessDecryption(nodeInfo *panel.NodeInfo) (string, error) {
+	if nodeInfo.VAllss == nil || nodeInfo.VAllss.Encryption == "" {
+		return "none", nil
+	}
+
+	switch nodeInfo.VAllss.Encryption {
+	case "mlkem768x25519plus":
+		encSettings := nodeInfo.VAllss.EncryptionSettings
+		parts := []string{
+			"mlkem768x25519plus",
+			encSettings.Mode,
+			encSettings.Ticket,
+		}
+		if encSettings.ServerPadding != "" {
+			parts = append(parts, encSettings.ServerPadding)
+		}
+		parts = append(parts, encSettings.PrivateKey)
+		return strings.Join(parts, "."), nil
+	default:
+		return "", fmt.Errorf("vless decryption method %s is not support", nodeInfo.VAllss.Encryption)
+	}
+}
+
 func buildV2ray(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
 	v := nodeInfo.VAllss
 	if nodeInfo.Type == "vless" {
 		//Set vless
 		inbound.Protocol = "vless"
-		if config.XrayOptions.EnableFallback {
+		decryption, err := resolveVlessDecryption(nodeInfo)
+		if err != nil {
+			return err
+		}
+		settings := &coreConf.VLessInboundConfig{Decryption: decryption}
+		if config.XrayOptions.FallbackEnabled() {
 			// Set fallback
-			fallbackConfigs, err := buildVlessFallbacks(config.XrayOptions.FallBackConfigs)
+			fallbackConfigs, err := buildVlessFallbacks(config.XrayOptions.ResolvedFallbackConfigs())
 			if err != nil {
 				return err
 			}
-			s, err := json.Marshal(&coreConf.VLessInboundConfig{
-				Decryption: "none",
-				Fallbacks:  fallbackConfigs,
-			})
-			if err != nil {
-				return fmt.Errorf("marshal vless fallback config error: %s", err)
-			}
-			inbound.Settings = (*json.RawMessage)(&s)
-		} else {
-			var err error
-			decryption := "none"
-			if nodeInfo.VAllss.Encryption != "" {
-				switch nodeInfo.VAllss.Encryption {
-				case "mlkem768x25519plus":
-					encSettings := nodeInfo.VAllss.EncryptionSettings
-					parts := []string{
-						"mlkem768x25519plus",
-						encSettings.Mode,
-						encSettings.Ticket,
-					}
-					if encSettings.ServerPadding != "" {
-						parts = append(parts, encSettings.ServerPadding)
-					}
-					parts = append(parts, encSettings.PrivateKey)
-					decryption = strings.Join(parts, ".")
-				default:
-					return fmt.Errorf("vless decryption method %s is not support", nodeInfo.VAllss.Encryption)
-				}
-			}
-			s, err := json.Marshal(&coreConf.VLessInboundConfig{
-				Decryption: decryption,
-			})
-			if err != nil {
-				return fmt.Errorf("marshal vless config error: %s", err)
-			}
-			inbound.Settings = (*json.RawMessage)(&s)
+			settings.Fallbacks = fallbackConfigs
 		}
+		s, err := json.Marshal(settings)
+		if err != nil {
+			return fmt.Errorf("marshal vless config error: %s", err)
+		}
+		inbound.Settings = (*json.RawMessage)(&s)
 	} else {
 		// Set vmess
 		inbound.Protocol = "vmess"
@@ -369,9 +375,9 @@ func buildV2ray(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCon
 func buildTrojan(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
 	inbound.Protocol = "trojan"
 	v := nodeInfo.Trojan
-	if config.XrayOptions.EnableFallback {
+	if config.XrayOptions.FallbackEnabled() {
 		// Set fallback
-		fallbackConfigs, err := buildTrojanFallbacks(config.XrayOptions.FallBackConfigs)
+		fallbackConfigs, err := buildTrojanFallbacks(config.XrayOptions.ResolvedFallbackConfigs())
 		if err != nil {
 			return err
 		}
@@ -457,8 +463,12 @@ func buildVlessFallbacks(fallbackConfigs []conf.FallBackConfigForXray) ([]*coreC
 		if c.Dest == "" {
 			return nil, fmt.Errorf("dest is required for fallback fialed")
 		}
+		destination, err := resolveFallbackDest(c.Dest)
+		if err != nil {
+			return nil, err
+		}
 		var dest json.RawMessage
-		dest, err := json.Marshal(c.Dest)
+		dest, err = json.Marshal(destination)
 		if err != nil {
 			return nil, fmt.Errorf("marshal dest %s config fialed: %s", dest, err)
 		}
@@ -485,8 +495,12 @@ func buildTrojanFallbacks(fallbackConfigs []conf.FallBackConfigForXray) ([]*core
 			return nil, fmt.Errorf("dest is required for fallback fialed")
 		}
 
+		destination, err := resolveFallbackDest(c.Dest)
+		if err != nil {
+			return nil, err
+		}
 		var dest json.RawMessage
-		dest, err := json.Marshal(c.Dest)
+		dest, err = json.Marshal(destination)
 		if err != nil {
 			return nil, fmt.Errorf("marshal dest %s config fialed: %s", dest, err)
 		}

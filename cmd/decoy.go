@@ -13,9 +13,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const decoyListenEnvironment = "N2X_ARTX_DECOY_LISTEN"
+const decoyListenEnvironment = decoy.ListenAddressEnvironment
 
-var decoyListenAddress string
+var (
+	decoyListenAddress string
+	decoyProfile       string
+)
 
 var decoyCommand = cobra.Command{
 	Use:   "decoy",
@@ -36,6 +39,12 @@ func init() {
 		"",
 		"loopback listen address",
 	)
+	decoyServeCommand.Flags().StringVar(
+		&decoyProfile,
+		"profile",
+		"",
+		"default page profile: balanced, web, media or realtime",
+	)
 	decoyCommand.AddCommand(&decoyServeCommand)
 	command.AddCommand(&decoyCommand)
 }
@@ -54,11 +63,14 @@ func decoyServe(command *cobra.Command, _ []string) error {
 	ctx, stop := signal.NotifyContext(command.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return runDecoyServer(ctx, resolveDecoyListen(decoyListenAddress))
+	return runDecoyServer(ctx, resolveDecoyListen(decoyListenAddress), strings.TrimSpace(decoyProfile))
 }
 
-func runDecoyServer(ctx context.Context, listenAddress string) error {
-	server, err := decoy.NewServer(decoy.Config{ListenAddress: listenAddress})
+func runDecoyServer(ctx context.Context, listenAddress string, defaultProfile string) error {
+	server, err := decoy.NewServer(decoy.Config{
+		ListenAddress:  listenAddress,
+		DefaultProfile: defaultProfile,
+	})
 	if err != nil {
 		return err
 	}
