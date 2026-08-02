@@ -1,21 +1,16 @@
 {
-  "_comment": "所有以 _comment 结尾或名为 _comment 的字段仅用于说明，N2X 会忽略，可安全保留或删除。",
   "Log": {
-    "_comment": "Level 可填 debug/info/warn/error；Output 留空输出到控制台，否则填写日志文件绝对路径。",
     "Level": "info",
     "Output": ""
   },
   "Cores": [
     {
-      "_comment": "Type 目前固定填 xray；如配置多个同类核心，可增加 Name，并在节点中用 CoreName 指定。",
       "Type": "xray",
       "Log": {
-        "_comment": "Level 可填 debug/info/warning/error/none；ErrorPath 为空时输出到控制台。",
         "Level": "error",
         "ErrorPath": "/etc/N2X/error.log"
       },
       "ConnectionConfig": {
-        "_comment": "handshake/connIdle/uplinkOnly/downlinkOnly 单位为秒；bufferSize 单位为 KB。",
         "handshake": 4,
         "connIdle": 300,
         "uplinkOnly": 2,
@@ -24,52 +19,41 @@
         "statsUserDownlink": false,
         "bufferSize": 64
       },
-      "_paths_comment": "以下路径均填写绝对路径；对应文件留空时使用核心内置默认配置。",
       "DnsConfigPath": "/etc/N2X/dns.json",
       "OutboundConfigPath": "/etc/N2X/custom_outbound.json",
       "RouteConfigPath": "/etc/N2X/route.json",
-      "_sniffing_comment": "EnableBTExtraSniffing 控制 BT DHT 与 UDP tracker 嗅探；不需要时设为 false。",
       "EnableBTExtraSniffing": true
     }
   ],
   "Nodes": [
     {
-      "_comment": "Core 固定填 xray；NodeID 填面板节点数字 ID；NodeType 可填 shadowsocks/vless/vmess/trojan/anytls/artx；Timeout 单位为秒。",
       "Core": "xray",
-      "_api_comment": "ApiHost 填面板完整 HTTP(S) 地址且不带接口路径；ApiKey 填面板对接密钥。",
       "ApiHost": "${N2X_API_HOST:-http://127.0.0.1}",
       "ApiKey": "${N2X_API_KEY}",
       "NodeID": 33,
       "NodeType": "shadowsocks",
       "Timeout": 30,
       "WebSocket": {
-        "_comment": "Enabled=false 时仅使用 HTTP；URL 留空会根据 ApiHost 自动生成，也可填写完整 ws:// 或 wss:// 地址；Debug 仅排障时开启。",
         "Enabled": true,
         "URL": "",
         "Debug": false
       },
       "ListenIP": "0.0.0.0",
       "SendIP": "0.0.0.0",
-      "_traffic_comment": "DeviceOnlineMinTraffic 和 ReportMinTraffic 的单位均为 KB；ReportMinTraffic=0 表示不设置最低上报流量。",
       "DeviceOnlineMinTraffic": 200,
       "ReportMinTraffic": 0,
-      "_dns_comment": "EnableDNS=true 时 DNSType 可填 AsIs/UseIP/UseIPv4/UseIPv6；false 时 DNSType 不生效。",
       "EnableDNS": false,
       "DNSType": "UseIPv4",
-      "_network_comment": "ListenIP/SendIP 可填 0.0.0.0、:: 或指定地址；EnableProxyProtocol 仅在受信任的前置代理发送 PROXY protocol 时开启；EnableUot/EnableTFO 填 true 或 false。",
       "EnableProxyProtocol": false,
       "EnableUot": true,
       "EnableTFO": true,
       "CertConfig": {
-        "_comment": "CertMode 可填 none/file/http/dns/self：file 使用现有证书，http/dns 自动申请，self 生成自签证书；RejectUnknownSni=true 时拒绝未知 SNI。",
         "CertMode": "none",
         "RejectUnknownSni": false,
         "CertDomain": "all.example.com",
-        "_paths_comment": "http/dns/self 模式的 CertFile 和 KeyFile 支持 {domain}；file 模式请填写现有证书的实际绝对路径。",
         "CertFile": "/etc/N2X/fullchain-{domain}.cer",
         "KeyFile": "/etc/N2X/cert-{domain}.key",
         "Email": "example@gmail.com",
-        "_provider_comment": "Provider 和 DNSEnv 仅 dns 模式使用；Provider 填 lego 支持的名称，例如 cloudflare、alidns。",
         "Provider": "cloudflare",
         "DNSEnv": {
           "CF_API_KEY": "ExampleKEY",
@@ -77,5 +61,22 @@
         }
       }
     }
-  ]
+  ],
+  "_help": {
+    "Log": "Level 可填 debug/info/warn/error；Output 留空输出到控制台，否则填写日志文件绝对路径。",
+    "Cores.Type": "Type 目前固定填 xray；如配置多个同类核心，可增加 Name，并在节点中用 CoreName 指定。",
+    "Cores.Log": "Level 可填 debug/info/warning/error/none；ErrorPath 为空时输出到控制台。",
+    "Cores.ConnectionConfig": "handshake/connIdle/uplinkOnly/downlinkOnly 单位为秒；bufferSize 单位为 KB。",
+    "Cores.Paths": "DnsConfigPath/OutboundConfigPath/RouteConfigPath 均填写绝对路径；对应文件留空时使用核心内置默认配置。",
+    "Cores.EnableBTExtraSniffing": "控制 BT DHT 与 UDP tracker 嗅探；不需要时设为 false。",
+    "Nodes.Basic": "Core 固定填 xray；NodeID 填面板节点数字 ID；NodeType 可填 shadowsocks/vless/vmess/trojan/anytls/artx；Timeout 单位为秒。",
+    "Nodes.API": "ApiHost 填面板完整 HTTP(S) 地址且不带接口路径；ApiKey 填面板对接密钥。",
+    "Nodes.WebSocket": "Enabled=false 时仅使用 HTTP；URL 留空会根据 ApiHost 自动生成，也可填写完整 ws:// 或 wss:// 地址；Debug 仅排障时开启。",
+    "Nodes.Traffic": "DeviceOnlineMinTraffic 和 ReportMinTraffic 的单位均为 KB；ReportMinTraffic=0 表示不设置最低上报流量。",
+    "Nodes.DNS": "EnableDNS=true 时 DNSType 可填 AsIs/UseIP/UseIPv4/UseIPv6；false 时 DNSType 不生效。",
+    "Nodes.Network": "ListenIP/SendIP 可填 0.0.0.0、:: 或指定地址；EnableProxyProtocol 仅在受信任的前置代理发送 PROXY protocol 时开启；EnableUot/EnableTFO 填 true 或 false。",
+    "Nodes.CertConfig": "CertMode 可填 none/file/http/dns/self：file 使用现有证书，http/dns 自动申请，self 生成自签证书；RejectUnknownSni=true 时拒绝未知 SNI。",
+    "Nodes.CertPaths": "http/dns/self 模式的 CertFile 和 KeyFile 支持 {domain}；file 模式请填写现有证书的实际绝对路径。",
+    "Nodes.CertProvider": "Provider 和 DNSEnv 仅 dns 模式使用；Provider 填 lego 支持的名称，例如 cloudflare、alidns。"
+  }
 }
