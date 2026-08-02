@@ -1,12 +1,15 @@
 package xray
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
+	"github.com/xtls/xray-core/app/proxyman"
 	coreConf "github.com/xtls/xray-core/infra/conf"
+	"github.com/xtls/xray-core/transport/internet/reality"
 )
 
 func postQuantumNode() *panel.NodeInfo {
@@ -109,5 +112,46 @@ func TestBuildV2rayFallbackPreservesDecryption(t *testing.T) {
 	}
 	if len(settings.Fallbacks) != 1 {
 		t.Fatalf("fallbacks = %d, want 1", len(settings.Fallbacks))
+	}
+}
+
+func TestBuildInboundVlessRealityDefaultsToCompatibilityFloor(t *testing.T) {
+	node := &panel.NodeInfo{
+		Type:     "vless",
+		Security: panel.Reality,
+		Common:   &panel.CommonNode{ServerPort: 10443},
+		VAllss: &panel.VAllssNode{
+			Network:         "tcp",
+			NetworkSettings: json.RawMessage(`{}`),
+			TlsSettings: panel.TlsSettings{
+				ServerName: "example.com",
+				ServerPort: "443",
+				ShortId:    "01234567",
+				PrivateKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			},
+		},
+	}
+	options := &conf.Options{
+		ListenIP:    "127.0.0.1",
+		XrayOptions: &conf.XrayOptions{},
+	}
+
+	inbound, err := buildInbound(options, node, "reality-test")
+	if err != nil {
+		t.Fatalf("buildInbound() error = %v", err)
+	}
+	receiverMessage, err := inbound.ReceiverSettings.GetInstance()
+	if err != nil {
+		t.Fatalf("decode receiver settings: %v", err)
+	}
+	receiver := receiverMessage.(*proxyman.ReceiverConfig)
+	securityMessage, err := receiver.StreamSettings.SecuritySettings[0].GetInstance()
+	if err != nil {
+		t.Fatalf("decode Reality settings: %v", err)
+	}
+	settings := securityMessage.(*reality.Config)
+
+	if want := []byte{0, 0, 0}; !bytes.Equal(settings.MinClientVer, want) {
+		t.Fatalf("minimum client version = %v, want compatibility floor %v", settings.MinClientVer, want)
 	}
 }

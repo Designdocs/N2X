@@ -127,6 +127,10 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 		if xver == 0 {
 			xver = v.RealityConfig.Xver
 		}
+		minClientVer := v.RealityConfig.MinClientVer
+		if minClientVer == "" {
+			minClientVer = "0.0.0"
+		}
 		d, err := json.Marshal(fmt.Sprintf(
 			"%s:%s",
 			dest,
@@ -141,7 +145,7 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 			Show:         false,
 			ServerNames:  []string{v.TlsSettings.ServerName},
 			PrivateKey:   v.TlsSettings.PrivateKey,
-			MinClientVer: v.RealityConfig.MinClientVer,
+			MinClientVer: minClientVer,
 			MaxClientVer: v.RealityConfig.MaxClientVer,
 			MaxTimeDiff:  uint64(mtd.Microseconds()),
 			ShortIds:     []string{v.TlsSettings.ShortId},
