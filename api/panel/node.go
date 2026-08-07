@@ -141,6 +141,9 @@ type AnyTlsNode struct {
 
 type TuicNode struct {
 	CommonNode
+	// Version is the TUIC generation the panel pinned the node to. sing-box
+	// implements v5 only; zero means the panel did not say.
+	Version           int          `json:"version"`
 	CongestionControl string       `json:"congestion_control"`
 	ZeroRTTHandshake  bool         `json:"zero_rtt_handshake"`
 	TlsSettings       TlsSettings  `json:"tls_settings"`
@@ -254,6 +257,22 @@ var xhttpObjectLikeKeys = map[string]struct{}{
 	"tlsSettings":       {},
 	"xhttpSettings":     {},
 	"xmux":              {},
+}
+
+// hysteriaVersion reads the protocol generation out of a node config payload.
+// A missing or unparsable version yields 0 so the caller can fall back to the
+// configured node type rather than guessing.
+func hysteriaVersion(body []byte) int {
+	var probe struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return 0
+	}
+	if probe.Version < 0 {
+		return 0
+	}
+	return probe.Version
 }
 
 func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
@@ -381,34 +400,57 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
 			rsp.TlsSettingsBack = nil
 		}
+		// sing-box implements TUIC v5 only. Serving v5 to a node the panel
+		// pinned to an older generation would fail every client handshake
+		// with nothing in the log explaining why.
+		if rsp.Version != 0 && rsp.Version < 5 {
+			return nil, fmt.Errorf("tuic v%d is not supported, only v5", rsp.Version)
+		}
 		cm = &rsp.CommonNode
 		node.Tuic = rsp
 		node.Security = Tls
-	case "hysteria":
-		rsp := &HysteriaNode{}
-		err = json.Unmarshal(r.Body(), rsp)
-		if err != nil {
-			return nil, fmt.Errorf("decode hysteria params error: %s", err)
+	case "hysteria", "hysteria2":
+		// Panels model Hysteria as one node type carrying a version field
+		// rather than as two types: 1 is Hysteria, 2 is Hysteria2. They are
+		// different wire protocols served by different inbounds, so the
+		// version decides which one to build and node.Type is rewritten to
+		// match — the core selector reads it to route the node.
+		version := hysteriaVersion(r.Body())
+		if version == 0 {
+			// A panel that models the generation as its own node type sends
+			// no version; fall back to what the operator configured.
+			version = 1
+			if c.NodeType == "hysteria2" {
+				version = 2
+			}
 		}
-		if rsp.TlsSettingsBack != nil {
-			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
-			rsp.TlsSettingsBack = nil
+		if version >= 2 {
+			rsp := &Hysteria2Node{}
+			err = json.Unmarshal(r.Body(), rsp)
+			if err != nil {
+				return nil, fmt.Errorf("decode hysteria2 params error: %s", err)
+			}
+			if rsp.TlsSettingsBack != nil {
+				rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
+				rsp.TlsSettingsBack = nil
+			}
+			cm = &rsp.CommonNode
+			node.Hysteria2 = rsp
+			node.Type = "hysteria2"
+		} else {
+			rsp := &HysteriaNode{}
+			err = json.Unmarshal(r.Body(), rsp)
+			if err != nil {
+				return nil, fmt.Errorf("decode hysteria params error: %s", err)
+			}
+			if rsp.TlsSettingsBack != nil {
+				rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
+				rsp.TlsSettingsBack = nil
+			}
+			cm = &rsp.CommonNode
+			node.Hysteria = rsp
+			node.Type = "hysteria"
 		}
-		cm = &rsp.CommonNode
-		node.Hysteria = rsp
-		node.Security = Tls
-	case "hysteria2":
-		rsp := &Hysteria2Node{}
-		err = json.Unmarshal(r.Body(), rsp)
-		if err != nil {
-			return nil, fmt.Errorf("decode hysteria2 params error: %s", err)
-		}
-		if rsp.TlsSettingsBack != nil {
-			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
-			rsp.TlsSettingsBack = nil
-		}
-		cm = &rsp.CommonNode
-		node.Hysteria2 = rsp
 		node.Security = Tls
 	case "shadowtls":
 		rsp := &ShadowTLSNode{}
@@ -480,8 +522,18 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	}
 
 	// set interval
-	node.PushInterval = intervalToTime(cm.BaseConfig.PushInterval)
-	node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
+	//
+	// base_config is optional: a panel that omits it used to crash the agent
+	// here on a nil dereference. Fall back to the 60s that both X-Board and
+	// V2board default to. A present-but-zero value is left alone, since
+	// node/task.go already treats zero as "keep the current interval".
+	const defaultInterval = 60 * time.Second
+	node.PushInterval = defaultInterval
+	node.PullInterval = defaultInterval
+	if cm.BaseConfig != nil {
+		node.PushInterval = intervalToTime(cm.BaseConfig.PushInterval)
+		node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
+	}
 	node.CertConfig = cm.CertConfig
 
 	node.Common = cm
@@ -611,6 +663,11 @@ func shouldNormalizeObjectLikeArray(key string, value any) bool {
 }
 
 func intervalToTime(i interface{}) time.Duration {
+	// reflect.TypeOf(nil) is nil, so Kind() below would panic on a JSON null
+	// or an absent field.
+	if i == nil {
+		return 0
+	}
 	switch reflect.TypeOf(i).Kind() {
 	case reflect.Int:
 		return time.Duration(i.(int)) * time.Second

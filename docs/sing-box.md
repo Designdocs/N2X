@@ -42,6 +42,43 @@ side by side on different nodes and ports, and a node picks one with
 `"Core": "xray"` or `"Core": "sing"`. An `anytls` node with no `Core` set goes
 to xray.
 
+## Node types are not always panel types
+
+`NodeType` in `config.json` is what N2X asks the panel for; it is not always
+what the panel serves back.
+
+**Hysteria is one panel type with a version field.** X-Board (and V2board)
+model Hysteria and Hysteria2 as a single `hysteria` node type carrying
+`"version": 1` or `"version": 2` — the panel UI shows it as a 协议版本
+dropdown. `GetNodeInfo` reads that field and rewrites `NodeInfo.Type` to
+`hysteria` or `hysteria2` before the core selector sees it, so the right
+inbound is built either way:
+
+| `NodeType` in config | panel `version` | inbound built |
+| --- | --- | --- |
+| `hysteria` | 2 | Hysteria2 |
+| `hysteria` | 1 | Hysteria |
+| `hysteria2` | 2 | Hysteria2 |
+| `hysteria2` | 1 | Hysteria — the panel wins |
+| either | absent | falls back to the configured type |
+
+Prefer `"NodeType": "hysteria"`. X-Board aliases `hysteria2` back to
+`hysteria`, but stock V2board has no such alias and rejects it.
+
+The two generations also disagree on obfuscation: v1 sends the password in
+`obfs`, v2 sends the type in `obfs` and the password in `obfs-password`.
+`buildHysteria2Obfs` treats a lone `obfs` as a Salamander password so a panel
+that only fills one field still works.
+
+**TUIC is v5 only.** sing-box does not implement v4. A node the panel pinned
+to an older generation is rejected at parse time rather than served as v5,
+which would fail every client handshake with nothing useful in the log.
+
+**ShadowTLS needs panel support.** It is not in X-Board's `VALID_TYPES`
+(`hysteria, vless, trojan, vmess, tuic, shadowsocks, anytls, artx, socks,
+naive, http, mieru`), so the panel rejects `node_type=shadowtls` before N2X
+sees a response. The core supports it; the panel has to grow the type first.
+
 ## ShadowTLS is two inbounds
 
 sing-box's ShadowTLS inbound performs the camouflage handshake against a real

@@ -111,7 +111,16 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		"vmess",
 		"trojan",
 		"shadowsocks",
-		"vless":
+		"vless",
+		// Panels expose a single "hysteria" node type and pick the generation
+		// with a version field; "hysteria2" is accepted here because it is the
+		// name operators expect and X-Board aliases it back to "hysteria".
+		// GetNodeInfo resolves which one to actually serve.
+		"hysteria",
+		"hysteria2",
+		"tuic",
+		"shadowtls",
+		"naive":
 	default:
 		return nil, fmt.Errorf("unsupported Node type: %s", c.NodeType)
 	}
