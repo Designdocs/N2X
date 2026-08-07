@@ -276,14 +276,14 @@ jobs:
           if [[ "$GOOS" == "android" ]]; then
             ldflags="-checklinkname=0 $ldflags"
           fi
-          GOEXPERIMENT=jsonv2 go build -v -o build_assets/N2X -tags "sing xray hysteria2 with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" -trimpath -ldflags "$ldflags"
+          GOEXPERIMENT=jsonv2 go build -v -o build_assets/N2X -tags "sing xray with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" -trimpath -ldflags "$ldflags"
 
       - name: Build Mips softfloat N2X
         if: matrix.goarch == 'mips' || matrix.goarch == 'mipsle'
         run: |
           echo "version: $version"
           ldflags="-X github.com/Designdocs/N2X/cmd.version=$version -s -w -buildid="
-          GOEXPERIMENT=jsonv2 GOMIPS=softfloat go build -v -o build_assets/N2X_softfloat -tags "sing xray hysteria2 with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" -trimpath -ldflags "$ldflags"
+          GOEXPERIMENT=jsonv2 GOMIPS=softfloat go build -v -o build_assets/N2X_softfloat -tags "sing xray with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" -trimpath -ldflags "$ldflags"
       - name: Rename Windows N2X
         if: matrix.goos == 'windows'
         run: |

@@ -36,6 +36,11 @@ type NodeInfo struct {
 	ArtX        *ArtXNode
 	Shadowsocks *ShadowsocksNode
 	Trojan      *TrojanNode
+	Tuic        *TuicNode
+	Hysteria    *HysteriaNode
+	Hysteria2   *Hysteria2Node
+	ShadowTLS   *ShadowTLSNode
+	Naive       *NaiveNode
 	Common      *CommonNode
 	CertConfig  *conf.CertConfig
 }
@@ -132,6 +137,74 @@ type AnyTlsNode struct {
 	TlsSettings     TlsSettings  `json:"tls_settings"`
 	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
 	PaddingScheme   []string     `json:"padding_scheme,omitempty"`
+}
+
+type TuicNode struct {
+	CommonNode
+	CongestionControl string       `json:"congestion_control"`
+	ZeroRTTHandshake  bool         `json:"zero_rtt_handshake"`
+	TlsSettings       TlsSettings  `json:"tls_settings"`
+	TlsSettingsBack   *TlsSettings `json:"tlsSettings"`
+}
+
+type HysteriaNode struct {
+	CommonNode
+	UpMbps          int          `json:"up_mbps"`
+	DownMbps        int          `json:"down_mbps"`
+	Obfs            string       `json:"obfs"`
+	TlsSettings     TlsSettings  `json:"tls_settings"`
+	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
+}
+
+type Hysteria2Node struct {
+	CommonNode
+	IgnoreClientBandwidth bool         `json:"ignore_client_bandwidth"`
+	UpMbps                int          `json:"up_mbps"`
+	DownMbps              int          `json:"down_mbps"`
+	ObfsType              string       `json:"obfs"`
+	ObfsPassword          string       `json:"obfs-password"`
+	TlsSettings           TlsSettings  `json:"tls_settings"`
+	TlsSettingsBack       *TlsSettings `json:"tlsSettings"`
+}
+
+// ShadowTLSNode carries the panel-supplied ShadowTLS parameters.
+//
+// A ShadowTLS node is served as two chained sing-box inbounds: the public
+// ShadowTLS listener performs the TLS camouflage handshake against a real
+// upstream site, then hands the decrypted stream to an internal Shadowsocks
+// inbound (the "detour") which owns per-user authentication and traffic
+// accounting. The Cipher/ServerKey fields therefore configure that inner
+// Shadowsocks layer, exactly as they would on a plain shadowsocks node.
+type ShadowTLSNode struct {
+	CommonNode
+	Version     int                `json:"version"`
+	Password    string             `json:"password"`
+	Handshake   ShadowTLSHandshake `json:"handshake"`
+	StrictMode  bool               `json:"strict_mode"`
+	WildcardSNI string             `json:"wildcard_sni"`
+
+	// Inner Shadowsocks detour settings.
+	Cipher    string `json:"cipher"`
+	ServerKey string `json:"server_key"`
+}
+
+// ShadowTLSHandshake is the upstream server the ShadowTLS listener relays the
+// camouflage handshake to. It must be a real TLS 1.3 site.
+type ShadowTLSHandshake struct {
+	Server     string `json:"server"`
+	ServerPort int    `json:"server_port"`
+}
+
+// NaiveNode carries the panel-supplied NaiveProxy parameters. Naive always
+// requires TLS: it is an HTTP/2 (and optionally HTTP/3) CONNECT proxy whose
+// cover traffic is indistinguishable from ordinary HTTPS.
+type NaiveNode struct {
+	CommonNode
+	// Network restricts the listener to "tcp" (HTTP/2 only) or "udp"
+	// (HTTP/3 only). Empty means both.
+	Network         string       `json:"network"`
+	TlsSettings     TlsSettings  `json:"tls_settings"`
+	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
 }
 
 type ArtXNode struct {
@@ -298,6 +371,70 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		cm = &rsp.CommonNode
 		node.ArtX = rsp
 		node.Security = Tls
+	case "tuic":
+		rsp := &TuicNode{}
+		err = json.Unmarshal(r.Body(), rsp)
+		if err != nil {
+			return nil, fmt.Errorf("decode tuic params error: %s", err)
+		}
+		if rsp.TlsSettingsBack != nil {
+			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
+			rsp.TlsSettingsBack = nil
+		}
+		cm = &rsp.CommonNode
+		node.Tuic = rsp
+		node.Security = Tls
+	case "hysteria":
+		rsp := &HysteriaNode{}
+		err = json.Unmarshal(r.Body(), rsp)
+		if err != nil {
+			return nil, fmt.Errorf("decode hysteria params error: %s", err)
+		}
+		if rsp.TlsSettingsBack != nil {
+			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
+			rsp.TlsSettingsBack = nil
+		}
+		cm = &rsp.CommonNode
+		node.Hysteria = rsp
+		node.Security = Tls
+	case "hysteria2":
+		rsp := &Hysteria2Node{}
+		err = json.Unmarshal(r.Body(), rsp)
+		if err != nil {
+			return nil, fmt.Errorf("decode hysteria2 params error: %s", err)
+		}
+		if rsp.TlsSettingsBack != nil {
+			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
+			rsp.TlsSettingsBack = nil
+		}
+		cm = &rsp.CommonNode
+		node.Hysteria2 = rsp
+		node.Security = Tls
+	case "shadowtls":
+		rsp := &ShadowTLSNode{}
+		err = json.Unmarshal(r.Body(), rsp)
+		if err != nil {
+			return nil, fmt.Errorf("decode shadowtls params error: %s", err)
+		}
+		normalizeShadowTLSNode(rsp)
+		cm = &rsp.CommonNode
+		node.ShadowTLS = rsp
+		// ShadowTLS terminates the camouflage handshake itself and the inner
+		// Shadowsocks layer needs no certificate of its own.
+		node.Security = None
+	case "naive":
+		rsp := &NaiveNode{}
+		err = json.Unmarshal(r.Body(), rsp)
+		if err != nil {
+			return nil, fmt.Errorf("decode naive params error: %s", err)
+		}
+		if rsp.TlsSettingsBack != nil {
+			rsp.TlsSettings = mergeLegacyTLSSettings(rsp.TlsSettings, rsp.TlsSettingsBack)
+			rsp.TlsSettingsBack = nil
+		}
+		cm = &rsp.CommonNode
+		node.Naive = rsp
+		node.Security = Tls
 	default:
 		return nil, fmt.Errorf("unsupported node type: %s", c.NodeType)
 	}
@@ -369,6 +506,38 @@ func normalizeArtXNode(node *ArtXNode) {
 	}
 	if node.ProfileVersion < 1 {
 		node.ProfileVersion = 1
+	}
+}
+
+// normalizeShadowTLSNode fills in the defaults for the fields a panel is not
+// guaranteed to send. ShadowTLS is not part of the stock X-Board node schema,
+// so a partially populated payload is the common case rather than an error.
+func normalizeShadowTLSNode(node *ShadowTLSNode) {
+	// v3 is the only version that resists the active probing attacks v1 and
+	// v2 are known to be vulnerable to, so it is the default.
+	if node.Version < 1 || node.Version > 3 {
+		node.Version = 3
+	}
+	if strings.TrimSpace(node.Cipher) == "" {
+		node.Cipher = "2022-blake3-aes-128-gcm"
+	}
+	if strings.TrimSpace(node.Handshake.Server) == "" {
+		// Fall back to the node's own advertised name so the camouflage
+		// target at least resolves rather than failing every handshake.
+		if strings.TrimSpace(node.ServerName) != "" {
+			node.Handshake.Server = node.ServerName
+		} else {
+			node.Handshake.Server = node.Host
+		}
+	}
+	if node.Handshake.ServerPort == 0 {
+		node.Handshake.ServerPort = 443
+	}
+	switch strings.ToLower(strings.TrimSpace(node.WildcardSNI)) {
+	case "authed", "all":
+		node.WildcardSNI = strings.ToLower(strings.TrimSpace(node.WildcardSNI))
+	default:
+		node.WildcardSNI = "off"
 	}
 }
 

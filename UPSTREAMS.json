@@ -9,6 +9,33 @@
       "ref": "13357f3bc706dbae675223a42016a57ed27c3510",
       "group": "core",
       "notes": "Track wyx2685/Xray-core main commits and keep the replace pinned to an exact commit."
+    },
+    {
+      "name": "sing-box",
+      "module": "github.com/sagernet/sing-box",
+      "upstream": "https://github.com/wyx2685/sing-box_mod",
+      "strategy": "commit",
+      "ref": "8d054dcd8bfec013c675eb2d246fcb98f5c9c870",
+      "group": "core",
+      "notes": "V2bX-flavoured sing-box fork; upstream sing-box has no live AddUsers/DelUsers inbound API. Its dev-next branch has not moved since 2025-12-02. Bumping this pin requires re-checking github.com/sagernet/{sing,sing-quic,quic-go} against xray-core — see docs/sing-box.md."
+    },
+    {
+      "name": "sing-quic",
+      "module": "github.com/sagernet/sing-quic",
+      "upstream": "https://github.com/SagerNet/sing-quic",
+      "strategy": "tag",
+      "ref": "v0.6.3",
+      "group": "core",
+      "notes": "Pinned: newest sing-quic that still builds against a sing version without tls.Config.HandshakeTimeout, which xray-core requires. Do not bump without reading docs/sing-box.md."
+    },
+    {
+      "name": "sing-quic-go",
+      "module": "github.com/sagernet/quic-go",
+      "upstream": "https://github.com/SagerNet/quic-go",
+      "strategy": "tag",
+      "ref": "v0.59.0-sing-box-mod.2",
+      "group": "core",
+      "notes": "Pinned: oldest sing-box quic-go that uses the qpack v0.6 API, so it can share github.com/quic-go/qpack with the apernet/quic-go that xray-core needs."
     }
   ]
 }

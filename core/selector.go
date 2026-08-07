@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -68,39 +69,92 @@ func isSupported(protocol string, protocols []string) bool {
 	return false
 }
 
-func (s *Selector) AddNode(tag string, info *panel.NodeInfo, option *conf.Options) error {
-	var core Core
-	if len(option.CoreName) > 0 {
-		// use name to select core
-		if c, ok := s.cores[option.CoreName]; ok {
-			core = c
-		}
-	} else {
-		// use type to select core
-		for _, c := range s.cores {
-			if len(option.Core) == 0 {
-				if !isSupported(info.Type, c.Protocols()) {
-					continue
-				}
-			} else if option.Core != c.Type() {
-				continue
+// corePriority ranks core types when a node does not pin one.
+//
+// Some protocols are served by more than one core on purpose — "anytls" has
+// both an xray-native and a sing-box implementation — so the choice must not
+// depend on Go's randomised map iteration order. Cores earlier in this list
+// win, which keeps a deployment on the core it used before another core
+// learned the same protocol. Pin a node explicitly with "Core" or "CoreName"
+// to override.
+var corePriority = []string{"xray", "sing"}
+
+// orderedCoreNames returns the configured core names in a stable order:
+// cores whose type appears in corePriority first, in that order, then the
+// rest sorted by name.
+func (s *Selector) orderedCoreNames() []string {
+	names := make([]string, 0, len(s.cores))
+	for name := range s.cores {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	rank := func(name string) int {
+		coreType := s.cores[name].Type()
+		for i, t := range corePriority {
+			if t == coreType {
+				return i
 			}
-			core = c
+		}
+		return len(corePriority)
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		return rank(names[i]) < rank(names[j])
+	})
+	return names
+}
+
+// selectCore resolves which configured core should serve a node.
+func (s *Selector) selectCore(info *panel.NodeInfo, option *conf.Options) (Core, error) {
+	if len(option.CoreName) > 0 {
+		core, ok := s.cores[option.CoreName]
+		if !ok {
+			return nil, fmt.Errorf("no core named %q is configured", option.CoreName)
+		}
+		if !isSupported(info.Type, core.Protocols()) {
+			return nil, fmt.Errorf("core %q does not support the %q node type", option.CoreName, info.Type)
+		}
+		return core, nil
+	}
+
+	names := s.orderedCoreNames()
+	if len(option.Core) > 0 {
+		for _, name := range names {
+			core := s.cores[name]
+			if core.Type() == option.Core && isSupported(info.Type, core.Protocols()) {
+				return core, nil
+			}
+		}
+		return nil, fmt.Errorf("no %q core supports the %q node type", option.Core, info.Type)
+	}
+
+	for _, name := range names {
+		if core := s.cores[name]; isSupported(info.Type, core.Protocols()) {
+			return core, nil
 		}
 	}
-	if core == nil {
-		return errors.New("the node type is not support")
+	return nil, fmt.Errorf("the %q node type is not supported by any configured core", info.Type)
+}
+
+func (s *Selector) AddNode(tag string, info *panel.NodeInfo, option *conf.Options) error {
+	core, err := s.selectCore(info, option)
+	if err != nil {
+		return err
 	}
 	if len(option.Core) == 0 {
 		option.Core = core.Type()
-		err := option.UnmarshalJSON(option.RawOptions)
-		if err != nil {
-			return fmt.Errorf("unmarshal option error: %s", err)
+		// Options carrying no Core were kept as raw JSON by conf; now that the
+		// core is known, decode them into that core's option struct. A node
+		// pinned by CoreName alone can reach here with nothing buffered, in
+		// which case there is nothing left to decode.
+		if len(option.RawOptions) > 0 {
+			if err := option.UnmarshalJSON(option.RawOptions); err != nil {
+				return fmt.Errorf("unmarshal option error: %s", err)
+			}
+			option.RawOptions = nil
 		}
-		option.RawOptions = nil
 	}
-	err := core.AddNode(tag, info, option)
-	if err != nil {
+	if err := core.AddNode(tag, info, option); err != nil {
 		return err
 	}
 	s.nodes.Store(tag, core)

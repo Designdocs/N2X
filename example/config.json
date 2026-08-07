@@ -23,6 +23,21 @@
       "OutboundConfigPath": "/etc/N2X/custom_outbound.json",
       "RouteConfigPath": "/etc/N2X/route.json",
       "EnableBTExtraSniffing": true
+    },
+    {
+      "Type": "sing",
+      "Log": {
+        "Disable": false,
+        "Level": "error",
+        "Output": "",
+        "Timestamp": true
+      },
+      "NTP": {
+        "Enable": false,
+        "Server": "time.apple.com",
+        "ServerPort": 0
+      },
+      "OriginalPath": ""
     }
   ],
   "Nodes": [
@@ -60,22 +75,134 @@
           "CLOUDFLARE_EMAIL": "example@gmail.com"
         }
       }
+    },
+    {
+      "Core": "xray",
+      "ApiHost": "${N2X_API_HOST:-http://127.0.0.1}",
+      "ApiKey": "${N2X_API_KEY}",
+      "NodeID": 34,
+      "NodeType": "anytls",
+      "Timeout": 30,
+      "ListenIP": "0.0.0.0",
+      "SendIP": "0.0.0.0",
+      "CertConfig": {
+        "CertMode": "file",
+        "CertDomain": "anytls-xray.example.com",
+        "CertFile": "/etc/N2X/fullchain-anytls-xray.example.com.cer",
+        "KeyFile": "/etc/N2X/cert-anytls-xray.example.com.key"
+      }
+    },
+    {
+      "Core": "sing",
+      "ApiHost": "${N2X_API_HOST:-http://127.0.0.1}",
+      "ApiKey": "${N2X_API_KEY}",
+      "NodeID": 35,
+      "NodeType": "anytls",
+      "Timeout": 30,
+      "ListenIP": "0.0.0.0",
+      "SendIP": "0.0.0.0",
+      "EnableSniff": true,
+      "SniffOverrideDestination": true,
+      "CertConfig": {
+        "CertMode": "file",
+        "CertDomain": "anytls-sing.example.com",
+        "CertFile": "/etc/N2X/fullchain-anytls-sing.example.com.cer",
+        "KeyFile": "/etc/N2X/cert-anytls-sing.example.com.key"
+      }
+    },
+    {
+      "Core": "sing",
+      "ApiHost": "${N2X_API_HOST:-http://127.0.0.1}",
+      "ApiKey": "${N2X_API_KEY}",
+      "NodeID": 36,
+      "NodeType": "hysteria2",
+      "Timeout": 30,
+      "ListenIP": "0.0.0.0",
+      "SendIP": "0.0.0.0",
+      "EnableSniff": true,
+      "CertConfig": {
+        "CertMode": "file",
+        "CertDomain": "hy2.example.com",
+        "CertFile": "/etc/N2X/fullchain-hy2.example.com.cer",
+        "KeyFile": "/etc/N2X/cert-hy2.example.com.key"
+      }
+    },
+    {
+      "Core": "sing",
+      "ApiHost": "${N2X_API_HOST:-http://127.0.0.1}",
+      "ApiKey": "${N2X_API_KEY}",
+      "NodeID": 37,
+      "NodeType": "tuic",
+      "Timeout": 30,
+      "ListenIP": "0.0.0.0",
+      "SendIP": "0.0.0.0",
+      "CertConfig": {
+        "CertMode": "file",
+        "CertDomain": "tuic.example.com",
+        "CertFile": "/etc/N2X/fullchain-tuic.example.com.cer",
+        "KeyFile": "/etc/N2X/cert-tuic.example.com.key"
+      }
+    },
+    {
+      "Core": "sing",
+      "ApiHost": "${N2X_API_HOST:-http://127.0.0.1}",
+      "ApiKey": "${N2X_API_KEY}",
+      "NodeID": 38,
+      "NodeType": "shadowtls",
+      "Timeout": 30,
+      "ListenIP": "0.0.0.0",
+      "SendIP": "0.0.0.0",
+      "ShadowTLSOptions": {
+        "Version": 3,
+        "HandshakeServer": "www.microsoft.com",
+        "HandshakeServerPort": 443,
+        "StrictMode": false,
+        "WildcardSNI": "off"
+      },
+      "CertConfig": {
+        "CertMode": "none"
+      }
+    },
+    {
+      "Core": "sing",
+      "ApiHost": "${N2X_API_HOST:-http://127.0.0.1}",
+      "ApiKey": "${N2X_API_KEY}",
+      "NodeID": 39,
+      "NodeType": "naive",
+      "Timeout": 30,
+      "ListenIP": "0.0.0.0",
+      "SendIP": "0.0.0.0",
+      "NaiveOptions": {
+        "Network": ""
+      },
+      "CertConfig": {
+        "CertMode": "file",
+        "CertDomain": "naive.example.com",
+        "CertFile": "/etc/N2X/fullchain-naive.example.com.cer",
+        "KeyFile": "/etc/N2X/cert-naive.example.com.key"
+      }
     }
   ],
   "_help": {
     "Log": "Level 可填 debug/info/warn/error；Output 留空输出到控制台，否则填写日志文件绝对路径。",
-    "Cores.Type": "Type 目前固定填 xray；如配置多个同类核心，可增加 Name，并在节点中用 CoreName 指定。",
-    "Cores.Log": "Level 可填 debug/info/warning/error/none；ErrorPath 为空时输出到控制台。",
-    "Cores.ConnectionConfig": "handshake/connIdle/uplinkOnly/downlinkOnly 单位为秒；bufferSize 单位为 KB。",
-    "Cores.Paths": "DnsConfigPath/OutboundConfigPath/RouteConfigPath 均填写绝对路径；对应文件留空时使用核心内置默认配置。",
-    "Cores.EnableBTExtraSniffing": "控制 BT DHT 与 UDP tracker 嗅探；不需要时设为 false。",
-    "Nodes.Basic": "Core 固定填 xray；NodeID 填面板节点数字 ID；NodeType 可填 shadowsocks/vless/vmess/trojan/anytls/artx；Timeout 单位为秒。",
+    "Cores.Type": "Type 可填 xray 或 sing；如配置多个同类核心，可增加 Name，并在节点中用 CoreName 指定。二进制实际带哪些核心取决于编译标签，可用 `N2X version` 查看。",
+    "Cores.Log": "xray 核心的 Level 可填 debug/info/warning/error/none；sing 核心的 Level 可填 trace/debug/info/warn/error/fatal/panic，Disable=true 时完全静音。",
+    "Cores.ConnectionConfig": "仅 xray 核心使用。handshake/connIdle/uplinkOnly/downlinkOnly 单位为秒；bufferSize 单位为 KB。",
+    "Cores.Paths": "仅 xray 核心使用。DnsConfigPath/OutboundConfigPath/RouteConfigPath 均填写绝对路径；对应文件留空时使用核心内置默认配置。",
+    "Cores.EnableBTExtraSniffing": "仅 xray 核心使用。控制 BT DHT 与 UDP tracker 嗅探；不需要时设为 false。",
+    "Cores.NTP": "仅 sing 核心使用。Enable=true 时由 sing-box 校时并写入系统时间，Hysteria2/TUIC 等对时间敏感的协议可按需开启。",
+    "Cores.OriginalPath": "仅 sing 核心使用。填写一份原生 sing-box 配置的绝对路径作为基础配置（通常用于自定义 route/dns/outbounds）；留空表示不使用。",
+    "Nodes.Basic": "NodeID 填面板节点数字 ID；Timeout 单位为秒。NodeType 由所选核心决定：xray 支持 shadowsocks/vless/vmess/trojan/anytls/artx；sing 支持 shadowsocks/vless/vmess/trojan/anytls/hysteria/hysteria2/tuic/shadowtls/naive。",
+    "Nodes.Core": "Core 填 xray 或 sing，用于指定该节点由哪个核心承载。anytls 两个核心都支持，必须显式指定；不指定时按 xray→sing 的固定顺序选择，以保持升级前后行为一致。多个同类核心时改用 CoreName。",
     "Nodes.API": "ApiHost 填面板完整 HTTP(S) 地址且不带接口路径；ApiKey 填面板对接密钥。",
     "Nodes.WebSocket": "Enabled=false 时仅使用 HTTP；URL 留空会根据 ApiHost 自动生成，也可填写完整 ws:// 或 wss:// 地址；Debug 仅排障时开启。",
     "Nodes.Traffic": "DeviceOnlineMinTraffic 和 ReportMinTraffic 的单位均为 KB；ReportMinTraffic=0 表示不设置最低上报流量。",
-    "Nodes.DNS": "EnableDNS=true 时 DNSType 可填 AsIs/UseIP/UseIPv4/UseIPv6；false 时 DNSType 不生效。",
+    "Nodes.DNS": "EnableDNS=true 时 DNSType 可填 AsIs/UseIP/UseIPv4/UseIPv6；false 时 DNSType 不生效。sing 核心请改用 DomainStrategy。",
     "Nodes.Network": "ListenIP/SendIP 可填 0.0.0.0、:: 或指定地址；EnableProxyProtocol 仅在受信任的前置代理发送 PROXY protocol 时开启；EnableUot/EnableTFO 填 true 或 false。",
-    "Nodes.CertConfig": "CertMode 可填 none/file/http/dns/self：file 使用现有证书，http/dns 自动申请，self 生成自签证书；RejectUnknownSni=true 时拒绝未知 SNI。",
+    "Nodes.SingOptions": "仅 sing 核心使用。EnableSniff/SniffOverrideDestination 控制流量嗅探；DomainStrategy 可填 as_is/prefer_ipv4/prefer_ipv6/ipv4_only/ipv6_only；MultiplexConfig 控制 mux；FallBackConfigs 仅 trojan 使用。",
+    "Nodes.ShadowTLSOptions": "仅 shadowtls 节点使用，用于覆盖面板下发值。Version 建议填 3；HandshakeServer/HandshakeServerPort 必须指向一个真实且支持 TLS1.3 的站点；StrictMode=true 时校验更严格；WildcardSNI 可填 off/authed/all。用户鉴权在内部 Shadowsocks 层完成，因此增删用户不会中断连接。",
+    "Nodes.NaiveOptions": "仅 naive 节点使用。Network 留空表示同时监听 TCP(HTTP/2) 与 UDP(HTTP/3)，也可填 tcp 或 udp。注意：naive 无法在线增删用户，用户变更会重建监听器并短暂断开已有连接，因此 naive 节点必须配置真实证书。",
+    "Nodes.CertConfig": "CertMode 可填 none/file/http/dns/self：file 使用现有证书，http/dns 自动申请，self 生成自签证书；RejectUnknownSni=true 时拒绝未知 SNI。hysteria2/tuic/naive 必须具备可用证书；shadowtls 不需要自己的证书，填 none 即可。",
     "Nodes.CertPaths": "http/dns/self 模式的 CertFile 和 KeyFile 支持 {domain}；file 模式请填写现有证书的实际绝对路径。",
     "Nodes.CertProvider": "Provider 和 DNSEnv 仅 dns 模式使用；Provider 填 lego 支持的名称，例如 cloudflare、alidns。"
   }

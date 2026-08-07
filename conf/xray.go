@@ -71,7 +71,11 @@ func NewXrayConfig() *XrayConfig {
 type _XrayConfig XrayConfig
 
 func (x *XrayConfig) UnmarshalJSON(b []byte) error {
-	tmp := _XrayConfig{}
+	// Decode on top of whatever the caller pre-populated (CoreConfig hands us
+	// a NewXrayConfig) instead of a zero value, so omitting a key keeps its
+	// default. Starting from zero silently dropped ConnectionConfig, and
+	// parseConnectionConfig then panicked on the nil pointer.
+	tmp := _XrayConfig(*x)
 	if err := json.Unmarshal(b, &tmp); err != nil {
 		return err
 	}
