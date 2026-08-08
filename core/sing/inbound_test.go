@@ -268,6 +268,52 @@ func TestBuildNaiveOptionsSetsHTTPALPN(t *testing.T) {
 	if !strings.Contains(alpn, "h2") || !strings.Contains(alpn, "http/1.1") {
 		t.Fatalf("ALPN = %q, naive needs h2 and http/1.1", alpn)
 	}
+	// A tcp-only node runs no QUIC listener, so advertising h3 would only
+	// widen what this endpoint answers to.
+	if strings.Contains(alpn, "h3") {
+		t.Fatalf("ALPN = %q, a tcp-only naive node must not offer h3", alpn)
+	}
+}
+
+// sing-box brings up naive's HTTP/3 listener whenever the network list carries
+// udp, and that listener shares this TLS config. Without h3 in the ALPN the
+// QUIC handshake fails with `no application protocol` and the listener is dead
+// weight on the port.
+func TestBuildNaiveOptionsOffersH3WhenUDPIsCarried(t *testing.T) {
+	for _, network := range []string{"", "udp", "tcp\nudp"} {
+		t.Run("network="+strings.ReplaceAll(network, "\n", "+"), func(t *testing.T) {
+			info := testNode("naive", panel.Tls)
+			info.Naive = &panel.NaiveNode{Network: network}
+
+			opts, err := buildNaiveOptions(info, testOptions(), nil)
+			if err != nil {
+				t.Fatalf("buildNaiveOptions: %v", err)
+			}
+			alpn := strings.Join(opts.TLS.ALPN, ",")
+			if !strings.Contains(alpn, "h3") {
+				t.Fatalf("ALPN = %q, want h3 for a node whose listener carries udp", alpn)
+			}
+			// The TCP half still needs its own protocols.
+			if !strings.Contains(alpn, "h2") || !strings.Contains(alpn, "http/1.1") {
+				t.Fatalf("ALPN = %q, naive still needs h2 and http/1.1", alpn)
+			}
+		})
+	}
+}
+
+func TestNaiveNetworkCarriesUDP(t *testing.T) {
+	for network, want := range map[string]bool{
+		"":         true,
+		"udp":      true,
+		"tcp\nudp": true,
+		"udp\ntcp": true,
+		"tcp":      false,
+		" tcp ":    false,
+	} {
+		if got := naiveNetworkCarriesUDP(network); got != want {
+			t.Fatalf("naiveNetworkCarriesUDP(%q) = %v, want %v", network, got, want)
+		}
+	}
 }
 
 func TestBuildShadowsocksUsersDerivesKeys(t *testing.T) {

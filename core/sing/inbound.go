@@ -17,6 +17,7 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/json/badoption"
+	N "github.com/sagernet/sing/common/network"
 )
 
 type HttpNetworkConfig struct {
@@ -406,10 +407,33 @@ func buildNaiveOptions(info *panel.NodeInfo, c *conf.Options, users []auth.User)
 	if c.SingOptions.NaiveOptions != nil && c.SingOptions.NaiveOptions.Network != "" {
 		network = c.SingOptions.NaiveOptions.Network
 	}
+	// A network list carrying udp is what makes sing-box bring up naive's
+	// HTTP/3 listener on the same port. That listener shares this TLS config,
+	// and sing-quic only defaults the ALPN to h3 when none was set at all — so
+	// without this the QUIC handshake dies on `no application protocol` and the
+	// listener answers nothing. The cost is that the TCP listener would also
+	// select h3 if a client offered it there, which no real client does.
+	if naiveNetworkCarriesUDP(network) {
+		tls.ALPN = append(tls.ALPN, "h3")
+	}
 	return &option.NaiveInboundOptions{
 		ListenOptions:              listen,
 		Users:                      users,
 		Network:                    option.NetworkList(network),
 		InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{TLS: &tls},
 	}, nil
+}
+
+// naiveNetworkCarriesUDP mirrors option.NetworkList.Build: an empty list means
+// both networks, which is the default a panel node arrives with.
+func naiveNetworkCarriesUDP(network string) bool {
+	if network == "" {
+		return true
+	}
+	for _, entry := range strings.Split(network, "\n") {
+		if strings.TrimSpace(entry) == N.NetworkUDP {
+			return true
+		}
+	}
+	return false
 }
