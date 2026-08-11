@@ -27,6 +27,22 @@ func TestApplyProtocolRuntimeStatsUsesArtXCounters(t *testing.T) {
 				ReplayRejected:        1,
 				FallbackHits:          3,
 				FallbackErrors:        1,
+				RequestedUDPMode:      "native",
+				ActiveUDPMode:         "native",
+				NativeListenerReady:   true,
+				NativeActive:          2,
+				NativeAccepted:        18,
+				NativeRejected:        3,
+				NativeDatagramsUp:     200,
+				NativeDatagramsDown:   199,
+				NativeBytesUp:         4096,
+				NativeBytesDown:       3072,
+				NativeTransportErrors: 1,
+				NativeTargetErrors:    2,
+				NativeCleanupFailures: 0,
+				NativeCleanupMillis:   33,
+				LastErrorCode:         "native_target_rejected",
+				LastErrorUnix:         1785667200,
 			},
 		}},
 		tag: "artx-canary",
@@ -44,6 +60,13 @@ func TestApplyProtocolRuntimeStatsUsesArtXCounters(t *testing.T) {
 	}
 	if metrics.ArtX == nil || metrics.ArtX.AuthenticationSuccess != 18 || metrics.ArtX.FallbackHits != 3 {
 		t.Fatalf("ArtX metrics = %#v", metrics.ArtX)
+	}
+	if metrics.ArtX.RequestedUDPMode != "native" || metrics.ArtX.ActiveUDPMode != "native" ||
+		!metrics.ArtX.NativeListenerReady || metrics.ArtX.NativeActive != 2 ||
+		metrics.ArtX.NativeAccepted != 18 || metrics.ArtX.NativeRejected != 3 ||
+		metrics.ArtX.NativeCleanupMillis != 33 || metrics.ArtX.LastErrorCode != "native_target_rejected" ||
+		metrics.ArtX.LastErrorUnix != 1785667200 {
+		t.Fatalf("native UDP metrics = %#v", metrics.ArtX)
 	}
 }
 

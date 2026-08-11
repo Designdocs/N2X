@@ -219,6 +219,7 @@ type ArtXNode struct {
 	Profile         string       `json:"profile"`
 	ProfileVersion  int          `json:"profile_version"`
 	UDP             bool         `json:"udp"`
+	UDPMode         string       `json:"udp_mode"`
 	TlsSettings     TlsSettings  `json:"tls_settings"`
 	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
 	PaddingScheme   []string     `json:"padding_scheme,omitempty"`
@@ -558,6 +559,9 @@ func normalizeArtXNode(node *ArtXNode) {
 	}
 	if node.ProfileVersion < 1 {
 		node.ProfileVersion = 1
+	}
+	if strings.TrimSpace(node.UDPMode) == "" || !node.UDP || node.Underlay != "artx-wire" {
+		node.UDPMode = "compat"
 	}
 }
 

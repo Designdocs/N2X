@@ -2,6 +2,7 @@ package xray
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Designdocs/N2X/api/panel"
@@ -36,7 +37,15 @@ func (c *Xray) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) e
 	}
 	err = c.addOutbound(outBoundConfig)
 	if err != nil {
+		_ = c.removeInbound(tag)
 		return fmt.Errorf("add outbound error: %s", err)
+	}
+	if err := c.startNativeUDP(tag, info, config); err != nil {
+		return errors.Join(
+			fmt.Errorf("start native UDP error: %w", err),
+			wrapRollbackError("remove outbound", c.removeOutbound(tag)),
+			wrapRollbackError("remove inbound", c.removeInbound(tag)),
+		)
 	}
 	return nil
 }
@@ -72,15 +81,18 @@ func (c *Xray) addOutbound(config *core.OutboundHandlerConfig) error {
 }
 
 func (c *Xray) DelNode(tag string) error {
-	err := c.removeInbound(tag)
-	if err != nil {
-		return fmt.Errorf("remove in error: %s", err)
+	return errors.Join(
+		wrapRollbackError("stop native UDP", c.stopNativeUDP(tag)),
+		wrapRollbackError("remove inbound", c.removeInbound(tag)),
+		wrapRollbackError("remove outbound", c.removeOutbound(tag)),
+	)
+}
+
+func wrapRollbackError(operation string, err error) error {
+	if err == nil {
+		return nil
 	}
-	err = c.removeOutbound(tag)
-	if err != nil {
-		return fmt.Errorf("remove out error: %s", err)
-	}
-	return nil
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func (c *Xray) removeInbound(tag string) error {

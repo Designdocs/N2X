@@ -29,6 +29,22 @@ type ArtXRuntimeStats struct {
 	ReplayRejected        uint64
 	FallbackHits          uint64
 	FallbackErrors        uint64
+	RequestedUDPMode      string
+	ActiveUDPMode         string
+	NativeListenerReady   bool
+	NativeActive          uint64
+	NativeAccepted        uint64
+	NativeRejected        uint64
+	NativeDatagramsUp     uint64
+	NativeDatagramsDown   uint64
+	NativeBytesUp         uint64
+	NativeBytesDown       uint64
+	NativeTransportErrors uint64
+	NativeTargetErrors    uint64
+	NativeCleanupFailures uint64
+	NativeCleanupMillis   uint64
+	LastErrorCode         string
+	LastErrorUnix         int64
 }
 
 type Core interface {

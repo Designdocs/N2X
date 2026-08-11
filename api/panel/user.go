@@ -234,11 +234,29 @@ type NodeMetrics struct {
 // NodeMetricsArtX carries privacy-safe native ArtX protocol counters. It
 // contains no user, address, credential, or payload dimensions.
 type NodeMetricsArtX struct {
-	AuthenticationSuccess int `json:"authentication_success"`
-	AuthenticationFailure int `json:"authentication_failure"`
-	ReplayRejected        int `json:"replay_rejected"`
-	FallbackHits          int `json:"fallback_hits"`
-	FallbackErrors        int `json:"fallback_errors"`
+	AuthenticationSuccess int     `json:"authentication_success"`
+	AuthenticationFailure int     `json:"authentication_failure"`
+	ReplayRejected        int     `json:"replay_rejected"`
+	FallbackHits          int     `json:"fallback_hits"`
+	FallbackErrors        int     `json:"fallback_errors"`
+	RequestedUDPMode      string  `json:"requested_udp_mode"`
+	ActiveUDPMode         string  `json:"active_udp_mode"`
+	NativeListenerReady   bool    `json:"native_listener_ready"`
+	NativeActive          int     `json:"native_active_associations"`
+	NativeAccepted        int     `json:"native_accepted_associations"`
+	NativeRejected        int     `json:"native_rejected_associations"`
+	NativeDatagramsUp     int     `json:"native_datagrams_up"`
+	NativeDatagramsDown   int     `json:"native_datagrams_down"`
+	NativeBytesUp         int     `json:"native_bytes_up"`
+	NativeBytesDown       int     `json:"native_bytes_down"`
+	NativeTransportErrors int     `json:"native_transport_errors"`
+	NativeTargetErrors    int     `json:"native_target_errors"`
+	NativeCleanupFailures int     `json:"native_cleanup_failures"`
+	NativeCleanupMillis   int     `json:"native_cleanup_millis"`
+	LastErrorCode         string  `json:"last_error_code"`
+	LastErrorUnix         int64   `json:"last_error_unix"`
+	ProcessCPUSeconds     float64 `json:"process_cpu_seconds"`
+	ProcessRSSBytes       uint64  `json:"process_rss_bytes"`
 }
 
 // NodeMetricsLoad maps to `metrics.load.{load1,load5,load15}` on the

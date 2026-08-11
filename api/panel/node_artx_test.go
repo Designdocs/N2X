@@ -152,6 +152,9 @@ func TestClientGetNodeInfoDefaultsArtXUnderlayAndProfile(t *testing.T) {
 	if node.ArtX.ProfileVersion != 1 {
 		t.Fatalf("expected default profile version 1, got %d", node.ArtX.ProfileVersion)
 	}
+	if node.ArtX.UDPMode != "compat" {
+		t.Fatalf("expected default UDP mode compat, got %q", node.ArtX.UDPMode)
+	}
 	if node.ArtX.PublicHost != "" || node.ArtX.PublicPort != 0 {
 		t.Fatalf("legacy ArtX response unexpectedly inferred public endpoint: %s:%d", node.ArtX.PublicHost, node.ArtX.PublicPort)
 	}
@@ -177,6 +180,7 @@ func TestClientGetNodeInfoParsesArtXWireVersion(t *testing.T) {
 			"profile": "balanced",
 			"profile_version": 1,
 			"udp": true,
+			"udp_mode": "native",
 			"fallback": {"enabled": true, "origin": "n2x://decoy"},
 			"base_config": {"push_interval": 60, "pull_interval": 60}
 		}`
@@ -187,7 +191,7 @@ func TestClientGetNodeInfoParsesArtXWireVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get node info failed: %v", err)
 	}
-	if node.ArtX.Underlay != "artx-wire" || node.ArtX.WireVersion != 1 || !node.ArtX.UDP {
+	if node.ArtX.Underlay != "artx-wire" || node.ArtX.WireVersion != 1 || !node.ArtX.UDP || node.ArtX.UDPMode != "native" {
 		t.Fatalf("unexpected ArtX wire settings: %+v", node.ArtX)
 	}
 	if !node.ArtX.Fallback.Enabled || node.ArtX.Fallback.Origin != "n2x://decoy" {

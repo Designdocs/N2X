@@ -134,6 +134,15 @@ func TestArtXWireTLSOwnershipDoesNotAffectAnyTLSScaffold(t *testing.T) {
 	}
 }
 
+func TestArtXNativeUDPRequiresExplicitWireMode(t *testing.T) {
+	if artXNativeUDPEnabled(&panel.NodeInfo{ArtX: &panel.ArtXNode{Underlay: artXUnderlayWire, UDP: true, UDPMode: artXUDPModeCompat}}) {
+		t.Fatal("compat mode unexpectedly enabled native UDP")
+	}
+	if !artXNativeUDPEnabled(&panel.NodeInfo{ArtX: &panel.ArtXNode{Underlay: artXUnderlayWire, UDP: true, UDPMode: artXUDPModeNative}}) {
+		t.Fatal("explicit native wire mode did not enable native UDP")
+	}
+}
+
 func TestArtXWireBuildObservationUsesWireSpecificFields(t *testing.T) {
 	node := &panel.ArtXNode{
 		Underlay:       artXUnderlayWire,

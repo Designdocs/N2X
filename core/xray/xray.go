@@ -1,6 +1,7 @@
 package xray
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -37,6 +38,9 @@ type Xray struct {
 	dispatcher                *dispatcher.DefaultDispatcher
 	users                     *UserMap
 	nodeReportMinTrafficBytes map[string]int64
+	nativeUDPMu               sync.Mutex
+	nativeUDP                 map[string]*nativeUDPService
+	nativeUDPState            map[string]*nativeUDPState
 }
 
 type UserMap struct {
@@ -51,6 +55,8 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 			uidMap: make(map[string]int),
 		},
 		nodeReportMinTrafficBytes: make(map[string]int64),
+		nativeUDP:                 make(map[string]*nativeUDPService),
+		nativeUDPState:            make(map[string]*nativeUDPState),
 	}, nil
 }
 
@@ -203,14 +209,11 @@ func (c *Xray) Start() error {
 func (c *Xray) Close() error {
 	c.access.Lock()
 	defer c.access.Unlock()
+	nativeUDPErr := c.closeNativeUDP()
 	c.ihm = nil
 	c.ohm = nil
 	c.dispatcher = nil
-	err := c.Server.Close()
-	if err != nil {
-		return err
-	}
-	return nil
+	return errors.Join(nativeUDPErr, c.Server.Close())
 }
 
 func (c *Xray) Protocols() []string {

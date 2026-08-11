@@ -2,6 +2,7 @@ package node
 
 import (
 	"math"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/shirou/gopsutil/v4/process"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -217,6 +219,30 @@ func (c *Controller) applyProtocolRuntimeStats(metrics *panel.NodeMetrics) {
 		ReplayRejected:        boundedMetricInt(stats.ArtX.ReplayRejected),
 		FallbackHits:          boundedMetricInt(stats.ArtX.FallbackHits),
 		FallbackErrors:        boundedMetricInt(stats.ArtX.FallbackErrors),
+		RequestedUDPMode:      stats.ArtX.RequestedUDPMode,
+		ActiveUDPMode:         stats.ArtX.ActiveUDPMode,
+		NativeListenerReady:   stats.ArtX.NativeListenerReady,
+		NativeActive:          boundedMetricInt(stats.ArtX.NativeActive),
+		NativeAccepted:        boundedMetricInt(stats.ArtX.NativeAccepted),
+		NativeRejected:        boundedMetricInt(stats.ArtX.NativeRejected),
+		NativeDatagramsUp:     boundedMetricInt(stats.ArtX.NativeDatagramsUp),
+		NativeDatagramsDown:   boundedMetricInt(stats.ArtX.NativeDatagramsDown),
+		NativeBytesUp:         boundedMetricInt(stats.ArtX.NativeBytesUp),
+		NativeBytesDown:       boundedMetricInt(stats.ArtX.NativeBytesDown),
+		NativeTransportErrors: boundedMetricInt(stats.ArtX.NativeTransportErrors),
+		NativeTargetErrors:    boundedMetricInt(stats.ArtX.NativeTargetErrors),
+		NativeCleanupFailures: boundedMetricInt(stats.ArtX.NativeCleanupFailures),
+		NativeCleanupMillis:   boundedMetricInt(stats.ArtX.NativeCleanupMillis),
+		LastErrorCode:         stats.ArtX.LastErrorCode,
+		LastErrorUnix:         stats.ArtX.LastErrorUnix,
+	}
+	if current, err := process.NewProcess(int32(os.Getpid())); err == nil {
+		if times, timesErr := current.Times(); timesErr == nil {
+			metrics.ArtX.ProcessCPUSeconds = times.Total()
+		}
+		if memory, memoryErr := current.MemoryInfo(); memoryErr == nil {
+			metrics.ArtX.ProcessRSSBytes = memory.RSS
+		}
 	}
 }
 

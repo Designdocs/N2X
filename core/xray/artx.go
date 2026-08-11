@@ -18,6 +18,8 @@ const (
 	artXUnderlayWire              = "artx-wire"
 	artXWireVersion               = 1
 	artXWireDefaultProfileVersion = 1
+	artXUDPModeCompat             = "compat"
+	artXUDPModeNative             = "native"
 )
 
 const (
@@ -81,6 +83,13 @@ func buildArtX(option *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf
 	if nodeInfo.ArtX == nil {
 		return errors.New("missing artx node settings")
 	}
+	udpMode := nodeInfo.ArtX.UDPMode
+	if udpMode == "" {
+		udpMode = artXUDPModeCompat
+	}
+	if udpMode != artXUDPModeCompat && udpMode != artXUDPModeNative {
+		return fmt.Errorf("unsupported artx udp mode: %s", udpMode)
+	}
 
 	switch normalizeArtXUnderlay(nodeInfo.ArtX.Underlay) {
 	case artXUnderlayAnyTLS:
@@ -96,6 +105,11 @@ func buildArtX(option *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf
 	default:
 		return fmt.Errorf("unsupported artx underlay: %s", nodeInfo.ArtX.Underlay)
 	}
+}
+
+func artXNativeUDPEnabled(nodeInfo *panel.NodeInfo) bool {
+	return nodeInfo != nil && nodeInfo.ArtX != nil && nodeInfo.ArtX.UDP &&
+		normalizeArtXUnderlay(nodeInfo.ArtX.Underlay) == artXUnderlayWire && nodeInfo.ArtX.UDPMode == artXUDPModeNative
 }
 
 // ArtXObservation is the node-side observability summary emitted once per ArtX

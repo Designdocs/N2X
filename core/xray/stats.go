@@ -9,11 +9,23 @@ import (
 var _ vCore.RuntimeStatsProvider = (*Xray)(nil)
 
 func (c *Xray) RuntimeStats(tag string) vCore.RuntimeStats {
-	if c == nil || c.Server == nil {
+	if c == nil {
 		return artXRuntimeStats(nil, tag)
 	}
-	manager, _ := c.Server.GetFeature(featurestats.ManagerType()).(featurestats.Manager)
-	return artXRuntimeStats(manager, tag)
+	var manager featurestats.Manager
+	if c.Server != nil {
+		manager, _ = c.Server.GetFeature(featurestats.ManagerType()).(featurestats.Manager)
+	}
+	result := artXRuntimeStats(manager, tag)
+	state := c.nativeUDPStatus(tag)
+	result.ArtX.RequestedUDPMode = state.RequestedMode
+	result.ArtX.ActiveUDPMode = state.ActiveMode
+	result.ArtX.NativeListenerReady = state.ListenerReady
+	result.ArtX.NativeCleanupFailures = state.CleanupFailure
+	result.ArtX.NativeCleanupMillis = state.CleanupMillis
+	result.ArtX.LastErrorCode = state.LastErrorCode
+	result.ArtX.LastErrorUnix = state.LastErrorUnix
+	return result
 }
 
 func artXRuntimeStats(manager featurestats.Manager, tag string) vCore.RuntimeStats {
@@ -27,6 +39,15 @@ func artXRuntimeStats(manager featurestats.Manager, tag string) vCore.RuntimeSta
 			ReplayRejected:        stats.ReplayRejected,
 			FallbackHits:          stats.FallbackHits,
 			FallbackErrors:        stats.FallbackErrors,
+			NativeActive:          stats.NativeActive,
+			NativeAccepted:        stats.NativeAccepted,
+			NativeRejected:        stats.NativeRejected,
+			NativeDatagramsUp:     stats.NativeDatagramsUp,
+			NativeDatagramsDown:   stats.NativeDatagramsDown,
+			NativeBytesUp:         stats.NativeBytesUp,
+			NativeBytesDown:       stats.NativeBytesDown,
+			NativeTransportErrors: stats.NativeTransportErrors,
+			NativeTargetErrors:    stats.NativeTargetErrors,
 		},
 	}
 }
