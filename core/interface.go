@@ -29,6 +29,7 @@ type ArtXRuntimeStats struct {
 	ReplayRejected        uint64
 	FallbackHits          uint64
 	FallbackErrors        uint64
+	FlowControlNegotiated uint64
 	RequestedUDPMode      string
 	ActiveUDPMode         string
 	NativeListenerReady   bool

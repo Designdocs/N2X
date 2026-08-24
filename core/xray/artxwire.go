@@ -23,6 +23,10 @@ func buildArtXWireInbound(option *conf.Options, nodeInfo *panel.NodeInfo, inboun
 	if nodeInfo.ArtX.ProfileVersion != artXWireDefaultProfileVersion && nodeInfo.ArtX.ProfileVersion != 3 {
 		return fmt.Errorf("unsupported artx profile version: %d", nodeInfo.ArtX.ProfileVersion)
 	}
+	maxWindowScale, err := artXMaxWindowScale(nodeInfo.ArtX)
+	if err != nil {
+		return err
+	}
 	tlsSettings, err := buildInboundTLSConfig(option, nodeInfo)
 	if err != nil {
 		return err
@@ -43,6 +47,7 @@ func buildArtXWireInbound(option *conf.Options, nodeInfo *panel.NodeInfo, inboun
 		WireVersion:    uint32(nodeInfo.ArtX.WireVersion),
 		ProfileVersion: uint32(nodeInfo.ArtX.ProfileVersion),
 		UDPEnabled:     nodeInfo.ArtX.UDP,
+		MaxWindowScale: maxWindowScale,
 		Fallback:       fallback,
 	}
 	rawSettings, err := json.Marshal(settings)
@@ -58,11 +63,14 @@ type artXWireBuildObservation struct {
 	Protocol          string `json:"protocol"`
 	Underlay          string `json:"underlay"`
 	ProfileVersion    int    `json:"profile_version"`
+	FlowControl       string `json:"flow_control"`
+	MaxWindowScale    int    `json:"max_window_scale"`
 	FallbackMode      string `json:"fallback_mode"`
 	FallbackAvailable bool   `json:"fallback_available"`
 }
 
 func newArtXWireBuildObservation(node *panel.ArtXNode, fallbackAvailable bool) artXWireBuildObservation {
+	maxWindowScale, _ := artXMaxWindowScale(node)
 	fallbackMode := "disabled"
 	if node.Fallback.Enabled {
 		fallbackMode = "https-origin"
@@ -75,6 +83,8 @@ func newArtXWireBuildObservation(node *panel.ArtXNode, fallbackAvailable bool) a
 		Protocol:          "artx",
 		Underlay:          artXUnderlayWire,
 		ProfileVersion:    node.ProfileVersion,
+		FlowControl:       canonicalArtXFlowControl(node.FlowControl),
+		MaxWindowScale:    int(maxWindowScale),
 		FallbackMode:      fallbackMode,
 		FallbackAvailable: fallbackAvailable,
 	}
@@ -85,9 +95,30 @@ func logArtXWireBuildObservation(observation artXWireBuildObservation) {
 		"protocol":           observation.Protocol,
 		"underlay":           observation.Underlay,
 		"profile_version":    observation.ProfileVersion,
+		"flow_control":       observation.FlowControl,
+		"max_window_scale":   observation.MaxWindowScale,
 		"fallback_mode":      observation.FallbackMode,
 		"fallback_available": observation.FallbackAvailable,
 	}).Info("artx wire inbound observation")
+}
+
+func artXMaxWindowScale(node *panel.ArtXNode) (uint32, error) {
+	switch canonicalArtXFlowControl(node.FlowControl) {
+	case panel.ArtXFlowControlLegacy:
+		return 0, nil
+	case panel.ArtXFlowControlHighLatency:
+		return panel.ArtXHighLatencyWindowScale, nil
+	default:
+		return 0, fmt.Errorf("unsupported artx flow control: %s", node.FlowControl)
+	}
+}
+
+func canonicalArtXFlowControl(flowControl string) string {
+	flowControl = strings.TrimSpace(flowControl)
+	if flowControl == "" {
+		return panel.ArtXFlowControlLegacy
+	}
+	return flowControl
 }
 
 func artXWireHandlesTLS(nodeInfo *panel.NodeInfo) bool {

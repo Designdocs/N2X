@@ -39,6 +39,7 @@ func artXRuntimeStats(manager featurestats.Manager, tag string) vCore.RuntimeSta
 			ReplayRejected:        stats.ReplayRejected,
 			FallbackHits:          stats.FallbackHits,
 			FallbackErrors:        stats.FallbackErrors,
+			FlowControlNegotiated: stats.FlowControlNegotiated,
 			NativeActive:          stats.NativeActive,
 			NativeAccepted:        stats.NativeAccepted,
 			NativeRejected:        stats.NativeRejected,

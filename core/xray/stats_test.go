@@ -26,6 +26,7 @@ func TestArtXRuntimeStatsReadsOnlyRequestedInbound(t *testing.T) {
 	setCounter("artx-canary", "replay_rejected", 1)
 	setCounter("artx-canary", "fallback_hits", 2)
 	setCounter("artx-canary", "fallback_errors", 1)
+	setCounter("artx-canary", "flow_control_negotiated", 5)
 	setCounter("artx-canary", "native_active_associations", 2)
 	setCounter("artx-canary", "native_accepted_associations", 8)
 	setCounter("artx-canary", "native_rejected_associations", 3)
@@ -41,7 +42,7 @@ func TestArtXRuntimeStatsReadsOnlyRequestedInbound(t *testing.T) {
 	if got.ActiveConnections != 2 || got.TotalConnections != 9 {
 		t.Fatalf("connection stats = %#v", got)
 	}
-	if got.ArtX == nil || got.ArtX.AuthenticationSuccess != 7 || got.ArtX.AuthenticationFailure != 2 || got.ArtX.ReplayRejected != 1 || got.ArtX.FallbackHits != 2 || got.ArtX.FallbackErrors != 1 {
+	if got.ArtX == nil || got.ArtX.AuthenticationSuccess != 7 || got.ArtX.AuthenticationFailure != 2 || got.ArtX.ReplayRejected != 1 || got.ArtX.FallbackHits != 2 || got.ArtX.FallbackErrors != 1 || got.ArtX.FlowControlNegotiated != 5 {
 		t.Fatalf("ArtX stats = %#v", got.ArtX)
 	}
 	if got.ArtX.NativeActive != 2 || got.ArtX.NativeAccepted != 8 || got.ArtX.NativeRejected != 3 ||

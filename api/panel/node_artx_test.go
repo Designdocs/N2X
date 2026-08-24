@@ -177,6 +177,7 @@ func TestClientGetNodeInfoParsesArtXWireVersion(t *testing.T) {
 			"server_name": "edge.example.com",
 			"underlay": "artx-wire",
 			"wire_version": 1,
+			"flow_control": "high_latency",
 			"profile": "balanced",
 			"profile_version": 1,
 			"udp": true,
@@ -194,7 +195,52 @@ func TestClientGetNodeInfoParsesArtXWireVersion(t *testing.T) {
 	if node.ArtX.Underlay != "artx-wire" || node.ArtX.WireVersion != 1 || !node.ArtX.UDP || node.ArtX.UDPMode != "native" {
 		t.Fatalf("unexpected ArtX wire settings: %+v", node.ArtX)
 	}
+	if node.ArtX.FlowControl != "high_latency" {
+		t.Fatalf("expected high-latency flow control, got %q", node.ArtX.FlowControl)
+	}
 	if !node.ArtX.Fallback.Enabled || node.ArtX.Fallback.Origin != "n2x://decoy" {
 		t.Fatalf("unexpected ArtX fallback selector: %+v", node.ArtX.Fallback)
+	}
+}
+
+func TestClientGetNodeInfoDefaultsArtXFlowControlToLegacy(t *testing.T) {
+	client, err := New(&conf.ApiConfig{
+		APIHost:  "http://panel.test",
+		Key:      "token",
+		NodeType: "artx",
+		NodeID:   1,
+	})
+	if err != nil {
+		t.Fatalf("create panel client failed: %v", err)
+	}
+	client.client.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body := `{
+			"host": "edge.example.com",
+			"server_port": 443,
+			"server_name": "edge.example.com",
+			"underlay": "artx-wire",
+			"wire_version": 1,
+			"profile_version": 1,
+			"base_config": {"push_interval": 60, "pull_interval": 60}
+		}`
+		return textResponse(r, http.StatusOK, body), nil
+	}))
+
+	node, err := client.GetNodeInfo()
+	if err != nil {
+		t.Fatalf("get node info failed: %v", err)
+	}
+	if node.ArtX.FlowControl != "legacy" {
+		t.Fatalf("expected legacy flow control, got %q", node.ArtX.FlowControl)
+	}
+}
+
+func TestNormalizeArtXNodeForcesLegacyFlowControlOutsideWire(t *testing.T) {
+	node := &ArtXNode{Underlay: "anytls", FlowControl: "high_latency"}
+
+	normalizeArtXNode(node)
+
+	if node.FlowControl != "legacy" {
+		t.Fatalf("expected non-wire underlay to use legacy flow control, got %q", node.FlowControl)
 	}
 }

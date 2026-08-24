@@ -216,6 +216,7 @@ type ArtXNode struct {
 	PublicPort      int          `json:"public_port"`
 	Underlay        string       `json:"underlay"`
 	WireVersion     int          `json:"wire_version"`
+	FlowControl     string       `json:"flow_control"`
 	Profile         string       `json:"profile"`
 	ProfileVersion  int          `json:"profile_version"`
 	UDP             bool         `json:"udp"`
@@ -226,6 +227,12 @@ type ArtXNode struct {
 	Fallback        ArtXFallback `json:"fallback"`
 	Behavior        ArtXBehavior `json:"behavior"`
 }
+
+const (
+	ArtXFlowControlLegacy      = "legacy"
+	ArtXFlowControlHighLatency = "high_latency"
+	ArtXHighLatencyWindowScale = 4
+)
 
 type ArtXFallback struct {
 	Enabled bool   `json:"enabled"`
@@ -553,6 +560,10 @@ func normalizeArtXNode(node *ArtXNode) {
 	}
 	if strings.TrimSpace(node.Underlay) == "" {
 		node.Underlay = "anytls"
+	}
+	node.FlowControl = strings.TrimSpace(node.FlowControl)
+	if node.FlowControl == "" || node.Underlay != "artx-wire" {
+		node.FlowControl = ArtXFlowControlLegacy
 	}
 	if strings.TrimSpace(node.Profile) == "" {
 		node.Profile = "balanced"

@@ -66,6 +66,36 @@ func TestBuildArtXWireInboundOwnsTLS(t *testing.T) {
 	}
 }
 
+func TestBuildArtXWireInboundConfiguresHighLatencyWindowScale(t *testing.T) {
+	options := &conf.Options{CertConfig: &conf.CertConfig{
+		CertMode: "file",
+		CertFile: "/panel/cert.pem",
+		KeyFile:  "/panel/key.pem",
+	}}
+	nodeInfo := &panel.NodeInfo{
+		Type:     "artx",
+		Security: panel.Tls,
+		ArtX: &panel.ArtXNode{
+			Underlay:       artXUnderlayWire,
+			WireVersion:    artXWireVersion,
+			ProfileVersion: artXWireDefaultProfileVersion,
+			FlowControl:    panel.ArtXFlowControlHighLatency,
+		},
+	}
+	inbound := &coreConf.InboundDetourConfig{}
+
+	if err := buildArtX(options, nodeInfo, inbound); err != nil {
+		t.Fatalf("buildArtX returned error: %v", err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(*inbound.Settings, &settings); err != nil {
+		t.Fatalf("unmarshal ArtX wire settings failed: %v", err)
+	}
+	if settings["maxWindowScale"] != float64(panel.ArtXHighLatencyWindowScale) {
+		t.Fatalf("maxWindowScale = %#v, want %d", settings["maxWindowScale"], panel.ArtXHighLatencyWindowScale)
+	}
+}
+
 func TestBuildArtXWireInboundRoutesInstalledDecoyByProfile(t *testing.T) {
 	options := &conf.Options{CertConfig: &conf.CertConfig{
 		CertMode: "file",
@@ -146,6 +176,7 @@ func TestArtXNativeUDPRequiresExplicitWireMode(t *testing.T) {
 func TestArtXWireBuildObservationUsesWireSpecificFields(t *testing.T) {
 	node := &panel.ArtXNode{
 		Underlay:       artXUnderlayWire,
+		FlowControl:    panel.ArtXFlowControlHighLatency,
 		ProfileVersion: 1,
 		Fallback: panel.ArtXFallback{
 			Enabled: true,
@@ -160,8 +191,31 @@ func TestArtXWireBuildObservationUsesWireSpecificFields(t *testing.T) {
 	if observation.ProfileVersion != 1 {
 		t.Fatalf("unexpected profile version: %+v", observation)
 	}
+	if observation.FlowControl != panel.ArtXFlowControlHighLatency || observation.MaxWindowScale != panel.ArtXHighLatencyWindowScale {
+		t.Fatalf("unexpected flow-control observation: %+v", observation)
+	}
 	if observation.FallbackMode != "installed-decoy" || !observation.FallbackAvailable {
 		t.Fatalf("unexpected fallback observation: %+v", observation)
+	}
+}
+
+func TestBuildArtXWireInboundRejectsUnsupportedFlowControl(t *testing.T) {
+	options := &conf.Options{CertConfig: &conf.CertConfig{
+		CertMode: "file",
+		CertFile: "/panel/cert.pem",
+		KeyFile:  "/panel/key.pem",
+	}}
+	nodeInfo := &panel.NodeInfo{ArtX: &panel.ArtXNode{
+		Underlay:       artXUnderlayWire,
+		WireVersion:    artXWireVersion,
+		ProfileVersion: artXWireDefaultProfileVersion,
+		FlowControl:    "unbounded",
+	}}
+
+	err := buildArtX(options, nodeInfo, &coreConf.InboundDetourConfig{})
+
+	if err == nil || !strings.Contains(err.Error(), "unsupported artx flow control") {
+		t.Fatalf("expected flow-control validation error, got %v", err)
 	}
 }
 

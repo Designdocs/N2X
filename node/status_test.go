@@ -27,6 +27,7 @@ func TestApplyProtocolRuntimeStatsUsesArtXCounters(t *testing.T) {
 				ReplayRejected:        1,
 				FallbackHits:          3,
 				FallbackErrors:        1,
+				FlowControlNegotiated: 5,
 				RequestedUDPMode:      "native",
 				ActiveUDPMode:         "native",
 				NativeListenerReady:   true,
@@ -48,7 +49,10 @@ func TestApplyProtocolRuntimeStatsUsesArtXCounters(t *testing.T) {
 		tag: "artx-canary",
 		info: &panel.NodeInfo{
 			Type: "artx",
-			ArtX: &panel.ArtXNode{Underlay: "artx-wire"},
+			ArtX: &panel.ArtXNode{
+				Underlay:    "artx-wire",
+				FlowControl: panel.ArtXFlowControlHighLatency,
+			},
 		},
 	}
 	metrics := &panel.NodeMetrics{ActiveConnections: 99}
@@ -60,6 +64,9 @@ func TestApplyProtocolRuntimeStatsUsesArtXCounters(t *testing.T) {
 	}
 	if metrics.ArtX == nil || metrics.ArtX.AuthenticationSuccess != 18 || metrics.ArtX.FallbackHits != 3 {
 		t.Fatalf("ArtX metrics = %#v", metrics.ArtX)
+	}
+	if metrics.ArtX.ConfiguredFlowControl != panel.ArtXFlowControlHighLatency || metrics.ArtX.MaxWindowScale != 4 || metrics.ArtX.FlowControlNegotiated != 5 {
+		t.Fatalf("ArtX flow-control metrics = %#v", metrics.ArtX)
 	}
 	if metrics.ArtX.RequestedUDPMode != "native" || metrics.ArtX.ActiveUDPMode != "native" ||
 		!metrics.ArtX.NativeListenerReady || metrics.ArtX.NativeActive != 2 ||

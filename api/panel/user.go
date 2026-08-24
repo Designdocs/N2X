@@ -234,11 +234,14 @@ type NodeMetrics struct {
 // NodeMetricsArtX carries privacy-safe native ArtX protocol counters. It
 // contains no user, address, credential, or payload dimensions.
 type NodeMetricsArtX struct {
+	ConfiguredFlowControl string  `json:"configured_flow_control"`
+	MaxWindowScale        int     `json:"max_window_scale"`
 	AuthenticationSuccess int     `json:"authentication_success"`
 	AuthenticationFailure int     `json:"authentication_failure"`
 	ReplayRejected        int     `json:"replay_rejected"`
 	FallbackHits          int     `json:"fallback_hits"`
 	FallbackErrors        int     `json:"fallback_errors"`
+	FlowControlNegotiated int     `json:"flow_control_negotiated"`
 	RequestedUDPMode      string  `json:"requested_udp_mode"`
 	ActiveUDPMode         string  `json:"active_udp_mode"`
 	NativeListenerReady   bool    `json:"native_listener_ready"`

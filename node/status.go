@@ -214,11 +214,14 @@ func (c *Controller) applyProtocolRuntimeStats(metrics *panel.NodeMetrics) {
 		return
 	}
 	metrics.ArtX = &panel.NodeMetricsArtX{
+		ConfiguredFlowControl: c.info.ArtX.FlowControl,
+		MaxWindowScale:        configuredArtXWindowScale(c.info.ArtX),
 		AuthenticationSuccess: boundedMetricInt(stats.ArtX.AuthenticationSuccess),
 		AuthenticationFailure: boundedMetricInt(stats.ArtX.AuthenticationFailure),
 		ReplayRejected:        boundedMetricInt(stats.ArtX.ReplayRejected),
 		FallbackHits:          boundedMetricInt(stats.ArtX.FallbackHits),
 		FallbackErrors:        boundedMetricInt(stats.ArtX.FallbackErrors),
+		FlowControlNegotiated: boundedMetricInt(stats.ArtX.FlowControlNegotiated),
 		RequestedUDPMode:      stats.ArtX.RequestedUDPMode,
 		ActiveUDPMode:         stats.ArtX.ActiveUDPMode,
 		NativeListenerReady:   stats.ArtX.NativeListenerReady,
@@ -244,6 +247,13 @@ func (c *Controller) applyProtocolRuntimeStats(metrics *panel.NodeMetrics) {
 			metrics.ArtX.ProcessRSSBytes = memory.RSS
 		}
 	}
+}
+
+func configuredArtXWindowScale(node *panel.ArtXNode) int {
+	if node != nil && node.FlowControl == panel.ArtXFlowControlHighLatency {
+		return panel.ArtXHighLatencyWindowScale
+	}
+	return 0
 }
 
 func usesNativeArtXWire(info *panel.NodeInfo) bool {

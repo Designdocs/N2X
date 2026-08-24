@@ -92,6 +92,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/Designdocs/Xray-core v0.0.0-20260811140907-96ecc695b7c1 h1:zJeDIPVeiKIlq0MEJ0rMOQQRydAxZLzcp7mCUNMT+M8=
 github.com/Designdocs/Xray-core v0.0.0-20260811140907-96ecc695b7c1/go.mod h1:Veli4AY5V0+0BpiM5vVo7ReFUAveXP8NgR4AYIkjfOg=
+github.com/Designdocs/Xray-core v0.0.0-20260824004842-edd5aed5d20b h1:gR0Qt872fjGP//eCq5VXKSpJ0QlIEpwk4qYeJQm9M34=
+github.com/Designdocs/Xray-core v0.0.0-20260824004842-edd5aed5d20b/go.mod h1:Veli4AY5V0+0BpiM5vVo7ReFUAveXP8NgR4AYIkjfOg=
 github.com/HdrHistogram/hdrhistogram-go v1.1.0/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/HdrHistogram/hdrhistogram-go v1.1.2/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
