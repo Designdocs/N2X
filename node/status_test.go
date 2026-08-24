@@ -51,7 +51,7 @@ func TestApplyProtocolRuntimeStatsUsesArtXCounters(t *testing.T) {
 			Type: "artx",
 			ArtX: &panel.ArtXNode{
 				Underlay:    "artx-wire",
-				FlowControl: panel.ArtXFlowControlHighLatency,
+				FlowControl: panel.ArtXFlowControlMediumLatency,
 			},
 		},
 	}
@@ -65,7 +65,7 @@ func TestApplyProtocolRuntimeStatsUsesArtXCounters(t *testing.T) {
 	if metrics.ArtX == nil || metrics.ArtX.AuthenticationSuccess != 18 || metrics.ArtX.FallbackHits != 3 {
 		t.Fatalf("ArtX metrics = %#v", metrics.ArtX)
 	}
-	if metrics.ArtX.ConfiguredFlowControl != panel.ArtXFlowControlHighLatency || metrics.ArtX.MaxWindowScale != 4 || metrics.ArtX.FlowControlNegotiated != 5 {
+	if metrics.ArtX.ConfiguredFlowControl != panel.ArtXFlowControlMediumLatency || metrics.ArtX.MaxWindowScale != 3 || metrics.ArtX.FlowControlNegotiated != 5 {
 		t.Fatalf("ArtX flow-control metrics = %#v", metrics.ArtX)
 	}
 	if metrics.ArtX.RequestedUDPMode != "native" || metrics.ArtX.ActiveUDPMode != "native" ||

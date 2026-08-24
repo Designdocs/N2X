@@ -106,6 +106,8 @@ func artXMaxWindowScale(node *panel.ArtXNode) (uint32, error) {
 	switch canonicalArtXFlowControl(node.FlowControl) {
 	case panel.ArtXFlowControlLegacy:
 		return 0, nil
+	case panel.ArtXFlowControlMediumLatency:
+		return panel.ArtXMediumLatencyWindowScale, nil
 	case panel.ArtXFlowControlHighLatency:
 		return panel.ArtXHighLatencyWindowScale, nil
 	default:

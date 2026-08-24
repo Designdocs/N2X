@@ -250,10 +250,17 @@ func (c *Controller) applyProtocolRuntimeStats(metrics *panel.NodeMetrics) {
 }
 
 func configuredArtXWindowScale(node *panel.ArtXNode) int {
-	if node != nil && node.FlowControl == panel.ArtXFlowControlHighLatency {
-		return panel.ArtXHighLatencyWindowScale
+	if node == nil {
+		return 0
 	}
-	return 0
+	switch node.FlowControl {
+	case panel.ArtXFlowControlMediumLatency:
+		return panel.ArtXMediumLatencyWindowScale
+	case panel.ArtXFlowControlHighLatency:
+		return panel.ArtXHighLatencyWindowScale
+	default:
+		return 0
+	}
 }
 
 func usesNativeArtXWire(info *panel.NodeInfo) bool {

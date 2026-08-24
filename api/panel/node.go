@@ -229,9 +229,11 @@ type ArtXNode struct {
 }
 
 const (
-	ArtXFlowControlLegacy      = "legacy"
-	ArtXFlowControlHighLatency = "high_latency"
-	ArtXHighLatencyWindowScale = 4
+	ArtXFlowControlLegacy        = "legacy"
+	ArtXFlowControlMediumLatency = "medium_latency"
+	ArtXFlowControlHighLatency   = "high_latency"
+	ArtXMediumLatencyWindowScale = 3
+	ArtXHighLatencyWindowScale   = 4
 )
 
 type ArtXFallback struct {

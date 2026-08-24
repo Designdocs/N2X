@@ -177,7 +177,7 @@ func TestClientGetNodeInfoParsesArtXWireVersion(t *testing.T) {
 			"server_name": "edge.example.com",
 			"underlay": "artx-wire",
 			"wire_version": 1,
-			"flow_control": "high_latency",
+			"flow_control": "medium_latency",
 			"profile": "balanced",
 			"profile_version": 1,
 			"udp": true,
@@ -195,8 +195,8 @@ func TestClientGetNodeInfoParsesArtXWireVersion(t *testing.T) {
 	if node.ArtX.Underlay != "artx-wire" || node.ArtX.WireVersion != 1 || !node.ArtX.UDP || node.ArtX.UDPMode != "native" {
 		t.Fatalf("unexpected ArtX wire settings: %+v", node.ArtX)
 	}
-	if node.ArtX.FlowControl != "high_latency" {
-		t.Fatalf("expected high-latency flow control, got %q", node.ArtX.FlowControl)
+	if node.ArtX.FlowControl != "medium_latency" {
+		t.Fatalf("expected medium-latency flow control, got %q", node.ArtX.FlowControl)
 	}
 	if !node.ArtX.Fallback.Enabled || node.ArtX.Fallback.Origin != "n2x://decoy" {
 		t.Fatalf("unexpected ArtX fallback selector: %+v", node.ArtX.Fallback)
@@ -236,7 +236,7 @@ func TestClientGetNodeInfoDefaultsArtXFlowControlToLegacy(t *testing.T) {
 }
 
 func TestNormalizeArtXNodeForcesLegacyFlowControlOutsideWire(t *testing.T) {
-	node := &ArtXNode{Underlay: "anytls", FlowControl: "high_latency"}
+	node := &ArtXNode{Underlay: "anytls", FlowControl: "medium_latency"}
 
 	normalizeArtXNode(node)
 
