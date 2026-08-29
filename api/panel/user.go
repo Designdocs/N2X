@@ -28,6 +28,9 @@ type UserListBody struct {
 
 type AliveMap struct {
 	Alive map[int]int `json:"alive"`
+	// Kicked carries panel-issued device kicks: uid → ip → remaining ttl
+	// seconds. Kicked IPs are rejected outright by the limiter.
+	Kicked map[int]map[string]int64 `json:"kicked"`
 }
 
 // GetUserList will pull user from v2board
@@ -118,6 +121,7 @@ func (c *Client) GetUserAlive() (map[int]int, error) {
 		aliveMap.Alive = make(map[int]int)
 	}
 	c.applyAliveMap(aliveMap.Alive)
+	c.applyKickedMap(aliveMap.Kicked)
 
 	return c.cachedAliveMap(), nil
 }

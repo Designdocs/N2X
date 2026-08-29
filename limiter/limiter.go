@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
@@ -31,6 +32,16 @@ type Limiter struct {
 	SpeedLimiter  *sync.Map      // key: TagUUID, value: *ratelimit.Bucket
 	AliveList     map[int]int    // Key: Uid, value: alive_ip
 	aliveMu       sync.RWMutex
+
+	// KickedIPs holds panel-issued device kicks: uid → ip → unix expiry.
+	// A kicked IP is rejected outright until its entry expires, so the
+	// freed device slot cannot be re-occupied by an auto-reconnect.
+	KickedIPs map[int]map[string]int64
+	kickedMu  sync.RWMutex
+
+	// deviceTolerance is panel-configured headroom over DeviceLimit so a
+	// device hopping nodes/networks is not rejected by its own stale entry.
+	deviceTolerance atomic.Int32
 }
 
 type UserLimitInfo struct {
@@ -50,7 +61,9 @@ func AddLimiter(tag string, l *conf.LimitConfig, users []panel.UserInfo, aliveLi
 		SpeedLimiter:  new(sync.Map),
 		AliveList:     cloneAliveList(aliveList),
 		OldUserOnline: new(sync.Map),
+		KickedIPs:     make(map[int]map[string]int64),
 	}
+	info.deviceTolerance.Store(1)
 	uuidmap := make(map[string]int)
 	for i := range users {
 		uuidmap[users[i].Uuid] = users[i].Id
@@ -148,6 +161,60 @@ func (l *Limiter) LimitedUserCount() int {
 	return count
 }
 
+// SetDeviceTolerance applies the panel-configured device-limit headroom.
+// Negative values are clamped to zero.
+func (l *Limiter) SetDeviceTolerance(tolerance int) {
+	if tolerance < 0 {
+		tolerance = 0
+	}
+	l.deviceTolerance.Store(int32(tolerance))
+}
+
+// MergeKickedList merges panel-issued kicks (uid → ip → remaining ttl in
+// seconds) into the local table. Entries expire locally, so merging is safe
+// against stale full syncs racing a fresh kick broadcast.
+func (l *Limiter) MergeKickedList(kicked map[int]map[string]int64) {
+	if len(kicked) == 0 {
+		return
+	}
+	now := time.Now().Unix()
+
+	l.kickedMu.Lock()
+	defer l.kickedMu.Unlock()
+	for uid, ips := range kicked {
+		for ip, ttl := range ips {
+			if ttl <= 0 {
+				continue
+			}
+			if l.KickedIPs[uid] == nil {
+				l.KickedIPs[uid] = make(map[string]int64)
+			}
+			expiry := now + ttl
+			if expiry > l.KickedIPs[uid][ip] {
+				l.KickedIPs[uid][ip] = expiry
+			}
+		}
+	}
+	// prune whatever already lapsed while we hold the lock
+	for uid, ips := range l.KickedIPs {
+		for ip, expiry := range ips {
+			if expiry <= now {
+				delete(ips, ip)
+			}
+		}
+		if len(ips) == 0 {
+			delete(l.KickedIPs, uid)
+		}
+	}
+}
+
+func (l *Limiter) isKicked(uid int, ip string) bool {
+	l.kickedMu.RLock()
+	expiry, ok := l.KickedIPs[uid][ip]
+	l.kickedMu.RUnlock()
+	return ok && expiry > time.Now().Unix()
+}
+
 func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool) (Bucket *ratelimit.Bucket, Reject bool) {
 	// check if ipv4 mapped ipv6
 	ip = strings.TrimPrefix(ip, "::ffff:")
@@ -175,6 +242,14 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 	} else {
 		return nil, true
 	}
+	// Panel-kicked IPs are rejected before any bookkeeping so they never
+	// re-enter the online table or re-occupy the freed device slot.
+	if l.isKicked(uid, ip) {
+		return nil, true
+	}
+	// Effective ceiling = device_limit + tolerance: headroom so a device
+	// switching nodes/networks is not blocked by its own stale alive entry.
+	effectiveLimit := deviceLimit + int(l.deviceTolerance.Load())
 	if noSSUDP {
 		// Store online user for device limit
 		newipMap := new(sync.Map)
@@ -190,7 +265,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 						l.OldUserOnline.Delete(ip)
 					}
 				} else if deviceLimit > 0 {
-					if deviceLimit <= aliveIp {
+					if effectiveLimit <= aliveIp {
 						oldipMap.Delete(ip)
 						return nil, true
 					}
@@ -202,7 +277,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 			}
 		} else {
 			if deviceLimit > 0 {
-				if deviceLimit <= aliveIp {
+				if effectiveLimit <= aliveIp {
 					l.UserOnlineIP.Delete(taguuid)
 					return nil, true
 				}

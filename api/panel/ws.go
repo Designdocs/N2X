@@ -69,6 +69,9 @@ type wsDriverHooks struct {
 	// Payload is the raw {users: ...} block; the client decides how to
 	// apply it.
 	OnSyncDevices func(raw json.RawMessage)
+	// OnSyncKick delivers a device-kick broadcast ({kicked: {uid: {ip:
+	// ttl}}}) issued when a user kicks one of their devices.
+	OnSyncKick func(raw json.RawMessage)
 	// OnAuthSuccess fires once per successful handshake. Useful for
 	// one-shot "ask for full state" logic (e.g. request.devices).
 	OnAuthSuccess func(nodeID int)
@@ -321,6 +324,12 @@ func (d *wsDriver) handleMessage(raw []byte) error {
 		log.WithFields(d.logFields).Info("ws sync.devices")
 		if d.cfg.Hooks.OnSyncDevices != nil {
 			d.cfg.Hooks.OnSyncDevices(evt.Data)
+		}
+
+	case "sync.kick":
+		log.WithFields(d.logFields).Info("ws sync.kick")
+		if d.cfg.Hooks.OnSyncKick != nil {
+			d.cfg.Hooks.OnSyncKick(evt.Data)
 		}
 
 	case "error":

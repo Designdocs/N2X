@@ -134,6 +134,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}
 		limiter.DeleteLimiter(oldTag)
 		c.limiter = limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, newA)
+		c.limiter.SetDeviceTolerance(newN.DeviceLimitTolerance)
 		// update alive list
 		if newA != nil {
 			c.setAliveMap(newA)

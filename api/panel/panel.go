@@ -35,6 +35,7 @@ type Client struct {
 	AliveMap         *AliveMap
 	aliveMu          sync.Mutex
 	aliveUpdate      func(map[int]int)
+	kickedUpdate     func(map[int]map[string]int64)
 
 	// wsCfg is retained so Start() can spawn the driver lazily after the
 	// owning controller has been fully constructed.
@@ -197,6 +198,7 @@ func (c *Client) StartWebSocket() {
 			OnSyncConfig:  c.invalidateNodeInfoCache,
 			OnSyncUsers:   c.invalidateUserListCache,
 			OnSyncDevices: c.onSyncDevices,
+			OnSyncKick:    c.onSyncKick,
 			OnAuthSuccess: c.onAuthSuccess,
 		},
 	})
@@ -277,10 +279,60 @@ func (c *Client) onSyncDevices(raw json.RawMessage) {
 		return
 	}
 	c.applyAliveMap(alive)
+	c.applyKickedMap(decodeKickedEnvelope(raw))
 	logrus.WithField("component", "panel-ws").
 		WithField("node_id", c.NodeId).
 		WithField("users", len(alive)).
 		Info("ws sync.devices applied")
+}
+
+// onSyncKick consumes the panel's kick broadcast ({kicked: {uid: {ip: ttl}}})
+// so a user-initiated device kick takes effect within milliseconds instead of
+// waiting for the next alivelist poll.
+func (c *Client) onSyncKick(raw json.RawMessage) {
+	kicked := decodeKickedEnvelope(raw)
+	if len(kicked) == 0 {
+		return
+	}
+	c.applyKickedMap(kicked)
+	logrus.WithField("component", "panel-ws").
+		WithField("node_id", c.NodeId).
+		WithField("users", len(kicked)).
+		Info("ws sync.kick applied")
+}
+
+// decodeKickedEnvelope extracts the optional {kicked: {uid: {ip: ttl}}} block
+// shared by alivelist responses, sync.devices pushes, and sync.kick events.
+func decodeKickedEnvelope(raw json.RawMessage) map[int]map[string]int64 {
+	var envelope struct {
+		Kicked map[int]map[string]int64 `json:"kicked"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil
+	}
+	return envelope.Kicked
+}
+
+// SetKickedUpdateHook lets the node controller consume kick updates without
+// making the panel package depend on limiter.
+func (c *Client) SetKickedUpdateHook(hook func(map[int]map[string]int64)) {
+	c.aliveMu.Lock()
+	c.kickedUpdate = hook
+	c.aliveMu.Unlock()
+}
+
+func (c *Client) applyKickedMap(kicked map[int]map[string]int64) {
+	if len(kicked) == 0 {
+		return
+	}
+
+	c.aliveMu.Lock()
+	hook := c.kickedUpdate
+	c.aliveMu.Unlock()
+
+	if hook != nil {
+		hook(kicked)
+	}
 }
 
 // onAuthSuccess runs once after each successful handshake. We proactively

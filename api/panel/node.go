@@ -27,8 +27,11 @@ type NodeInfo struct {
 	Security     int
 	PushInterval time.Duration
 	PullInterval time.Duration
-	RawDNS       RawDNS
-	Rules        Rules
+	// DeviceLimitTolerance is the panel-configured device-limit headroom
+	// applied by the limiter on top of each user's device_limit.
+	DeviceLimitTolerance int
+	RawDNS               RawDNS
+	Rules                Rules
 
 	// origin
 	VAllss      *VAllssNode
@@ -63,6 +66,10 @@ type Route struct {
 type BaseConfig struct {
 	PushInterval any `json:"push_interval"`
 	PullInterval any `json:"pull_interval"`
+	// DeviceLimitTolerance is panel-configured headroom over each user's
+	// device_limit, absorbing the transient double-count when a device
+	// hops nodes or networks before its old alive entry expires.
+	DeviceLimitTolerance any `json:"device_limit_tolerance"`
 }
 
 // VAllssNode is vmess and vless node info
@@ -540,9 +547,11 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	const defaultInterval = 60 * time.Second
 	node.PushInterval = defaultInterval
 	node.PullInterval = defaultInterval
+	node.DeviceLimitTolerance = 1
 	if cm.BaseConfig != nil {
 		node.PushInterval = intervalToTime(cm.BaseConfig.PushInterval)
 		node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
+		node.DeviceLimitTolerance = toleranceToInt(cm.BaseConfig.DeviceLimitTolerance, 1)
 	}
 	node.CertConfig = cm.CertConfig
 
@@ -677,6 +686,28 @@ func shouldNormalizeObjectLikeArray(key string, value any) bool {
 	}
 	items, ok := value.([]any)
 	return ok && len(items) == 0
+}
+
+// toleranceToInt mirrors intervalToTime's lenient decoding for the
+// device_limit_tolerance field; def is returned when the field is absent or
+// malformed. Negative values are clamped to zero.
+func toleranceToInt(i interface{}, def int) int {
+	result := def
+	switch v := i.(type) {
+	case nil:
+	case float64:
+		result = int(v)
+	case int:
+		result = v
+	case string:
+		if n, err := strconv.Atoi(v); err == nil {
+			result = n
+		}
+	}
+	if result < 0 {
+		result = 0
+	}
+	return result
 }
 
 func intervalToTime(i interface{}) time.Duration {

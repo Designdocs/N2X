@@ -90,12 +90,14 @@ func (c *Controller) Start() error {
 
 	// add limiter
 	l := limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, c.aliveMap)
+	l.SetDeviceTolerance(node.DeviceLimitTolerance)
 	// add rule limiter
 	if err = l.UpdateRule(&node.Rules); err != nil {
 		return fmt.Errorf("update rule error: %s", err)
 	}
 	c.limiter = l
 	c.apiClient.SetAliveUpdateHook(c.setAliveMap)
+	c.apiClient.SetKickedUpdateHook(c.setKickedMap)
 	if node.Security == panel.Tls {
 		err = c.requestCert(node)
 		if err != nil {
@@ -126,6 +128,7 @@ func (c *Controller) Start() error {
 // Close implement the Close() function of the service interface
 func (c *Controller) Close() error {
 	c.apiClient.SetAliveUpdateHook(nil)
+	c.apiClient.SetKickedUpdateHook(nil)
 	limiter.DeleteLimiter(c.tag)
 	if c.nodeInfoMonitorPeriodic != nil {
 		c.nodeInfoMonitorPeriodic.Close()
@@ -167,6 +170,12 @@ func (c *Controller) setAliveMap(alive map[int]int) {
 
 	if c.limiter != nil {
 		c.limiter.UpdateAliveList(snapshot)
+	}
+}
+
+func (c *Controller) setKickedMap(kicked map[int]map[string]int64) {
+	if c.limiter != nil {
+		c.limiter.MergeKickedList(kicked)
 	}
 }
 
