@@ -21,6 +21,20 @@ const (
 	Reality = 2
 )
 
+// securityFromTLS maps the panel's tls field onto a node security for the
+// protocols that are always wrapped in TLS (trojan, anytls).
+//
+// Panels omit the field entirely on an ordinary TLS node, so anything other
+// than an explicit REALITY selection keeps the historical TLS default —
+// reading a missing field as "none" would silently drop TLS on every node
+// already deployed.
+func securityFromTLS(tls int) int {
+	if tls == Reality {
+		return Reality
+	}
+	return Tls
+}
+
 type NodeInfo struct {
 	Id           int
 	Type         string
@@ -135,15 +149,19 @@ type TrojanNode struct {
 	CommonNode
 	Network         string          `json:"network"`
 	NetworkSettings json.RawMessage `json:"networkSettings"`
+	Tls             int             `json:"tls"`
 	TlsSettings     TlsSettings     `json:"tls_settings"`
 	TlsSettingsBack *TlsSettings    `json:"tlsSettings"`
+	RealityConfig   RealityConfig   `json:"-"`
 }
 
 type AnyTlsNode struct {
 	CommonNode
-	TlsSettings     TlsSettings  `json:"tls_settings"`
-	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
-	PaddingScheme   []string     `json:"padding_scheme,omitempty"`
+	Tls             int           `json:"tls"`
+	TlsSettings     TlsSettings   `json:"tls_settings"`
+	TlsSettingsBack *TlsSettings  `json:"tlsSettings"`
+	PaddingScheme   []string      `json:"padding_scheme,omitempty"`
+	RealityConfig   RealityConfig `json:"-"`
 }
 
 type TuicNode struct {
@@ -153,28 +171,114 @@ type TuicNode struct {
 	Version           int          `json:"version"`
 	CongestionControl string       `json:"congestion_control"`
 	ZeroRTTHandshake  bool         `json:"zero_rtt_handshake"`
+	AuthTimeout       Duration     `json:"auth_timeout"`
+	Heartbeat         Duration     `json:"heartbeat"`
 	TlsSettings       TlsSettings  `json:"tls_settings"`
 	TlsSettingsBack   *TlsSettings `json:"tlsSettings"`
 }
 
 type HysteriaNode struct {
 	CommonNode
-	UpMbps          int          `json:"up_mbps"`
-	DownMbps        int          `json:"down_mbps"`
-	Obfs            string       `json:"obfs"`
+	UpMbps      int        `json:"up_mbps"`
+	DownMbps    int        `json:"down_mbps"`
+	Obfs        string     `json:"obfs"`
+	ServerPorts PortRanges `json:"server_ports"`
+
+	// QUIC flow control and connection limits. Zero means the sing-box
+	// default for that setting.
+	ReceiveWindowConn   uint64 `json:"recv_window_conn"`
+	ReceiveWindowClient uint64 `json:"recv_window_client"`
+	MaxConnClient       int    `json:"max_conn_client"`
+	DisableMTUDiscovery bool   `json:"disable_mtu_discovery"`
+
 	TlsSettings     TlsSettings  `json:"tls_settings"`
 	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
 }
 
+// Duration is a panel-supplied duration. Panels send these either as a Go
+// duration string ("10s") or as a bare number of seconds, so both decode.
+type Duration time.Duration
+
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	switch v := value.(type) {
+	case nil:
+		*d = 0
+	case float64:
+		*d = Duration(float64(time.Second) * v)
+	case string:
+		if strings.TrimSpace(v) == "" {
+			*d = 0
+			return nil
+		}
+		parsed, err := time.ParseDuration(strings.TrimSpace(v))
+		if err != nil {
+			return fmt.Errorf("%q is not a duration: %w", v, err)
+		}
+		*d = Duration(parsed)
+	default:
+		return fmt.Errorf("%v is not a duration", value)
+	}
+	return nil
+}
+
+// PortRanges lists the UDP port ranges a Hysteria node answers on in addition
+// to its listen port — the server half of port hopping. Panels disagree on the
+// shape they send it in, so a single string, a list, and bare numbers all
+// decode into the same list of "from-to" entries.
+type PortRanges []string
+
+func (p *PortRanges) UnmarshalJSON(data []byte) error {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	switch v := value.(type) {
+	case nil:
+		*p = nil
+	case string:
+		*p = PortRanges{v}
+	case float64:
+		*p = PortRanges{strconv.FormatInt(int64(v), 10)}
+	case []any:
+		ranges := make(PortRanges, 0, len(v))
+		for _, entry := range v {
+			switch e := entry.(type) {
+			case string:
+				ranges = append(ranges, e)
+			case float64:
+				ranges = append(ranges, strconv.FormatInt(int64(e), 10))
+			default:
+				return fmt.Errorf("server_ports entry %v is not a port range", entry)
+			}
+		}
+		*p = ranges
+	default:
+		return fmt.Errorf("server_ports %v is not a port range", value)
+	}
+	return nil
+}
+
 type Hysteria2Node struct {
 	CommonNode
-	IgnoreClientBandwidth bool         `json:"ignore_client_bandwidth"`
-	UpMbps                int          `json:"up_mbps"`
-	DownMbps              int          `json:"down_mbps"`
-	ObfsType              string       `json:"obfs"`
-	ObfsPassword          string       `json:"obfs-password"`
-	TlsSettings           TlsSettings  `json:"tls_settings"`
-	TlsSettingsBack       *TlsSettings `json:"tlsSettings"`
+	IgnoreClientBandwidth bool       `json:"ignore_client_bandwidth"`
+	UpMbps                int        `json:"up_mbps"`
+	DownMbps              int        `json:"down_mbps"`
+	ObfsType              string     `json:"obfs"`
+	ObfsPassword          string     `json:"obfs-password"`
+	ServerPorts           PortRanges `json:"server_ports"`
+
+	// Masquerade is what the node answers plain HTTP/3 requests with, so a
+	// prober sees a website rather than a proxy. It is passed to the core
+	// untouched: sing-box accepts both a URL string ("https://example.com",
+	// "file:///var/www") and the full object form.
+	Masquerade json.RawMessage `json:"masquerade"`
+
+	TlsSettings     TlsSettings  `json:"tls_settings"`
+	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
 }
 
 // ShadowTLSNode carries the panel-supplied ShadowTLS parameters.
@@ -192,6 +296,10 @@ type ShadowTLSNode struct {
 	Handshake   ShadowTLSHandshake `json:"handshake"`
 	StrictMode  bool               `json:"strict_mode"`
 	WildcardSNI string             `json:"wildcard_sni"`
+
+	// HandshakeForServerName relays the camouflage handshake to a different
+	// upstream per client SNI. Anything not listed uses Handshake.
+	HandshakeForServerName map[string]ShadowTLSHandshake `json:"handshake_for_server_name"`
 
 	// Inner Shadowsocks detour settings.
 	Cipher    string `json:"cipher"`
@@ -252,6 +360,25 @@ type ArtXBehavior struct {
 	Padding       string `json:"padding"`
 	Keepalive     string `json:"keepalive"`
 	ErrorResponse string `json:"error_response"`
+}
+
+// RealityParams returns the REALITY parameters the panel sent for this node,
+// and whether this node type can carry them at all.
+//
+// REALITY is a property of the TCP stream rather than of the proxy protocol on
+// top of it, so every stream protocol can serve it; only the struct the panel
+// decoded the settings into differs per node type.
+func (n *NodeInfo) RealityParams() (TlsSettings, RealityConfig, bool) {
+	switch {
+	case n.VAllss != nil:
+		return n.VAllss.TlsSettings, n.VAllss.RealityConfig, true
+	case n.Trojan != nil:
+		return n.Trojan.TlsSettings, n.Trojan.RealityConfig, true
+	case n.AnyTls != nil:
+		return n.AnyTls.TlsSettings, n.AnyTls.RealityConfig, true
+	default:
+		return TlsSettings{}, RealityConfig{}, false
+	}
 }
 
 type RawDNS struct {
@@ -383,7 +510,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		}
 		cm = &rsp.CommonNode
 		node.Trojan = rsp
-		node.Security = Tls
+		node.Security = securityFromTLS(rsp.Tls)
 	case "anytls":
 		rsp := &AnyTlsNode{}
 		err = json.Unmarshal(r.Body(), rsp)
@@ -396,7 +523,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		}
 		cm = &rsp.CommonNode
 		node.AnyTls = rsp
-		node.Security = Tls
+		node.Security = securityFromTLS(rsp.Tls)
 	case "artx":
 		rsp := &ArtXNode{}
 		err = json.Unmarshal(r.Body(), rsp)

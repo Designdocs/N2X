@@ -2,10 +2,12 @@ package sing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
 
+	"github.com/Designdocs/N2X/common/porthop"
 	"github.com/Designdocs/N2X/conf"
 	vCore "github.com/Designdocs/N2X/core"
 	box "github.com/sagernet/sing-box"
@@ -45,6 +47,10 @@ type Sing struct {
 
 	// naive owns the rebuild-based user management NaiveProxy needs.
 	naive *naiveState
+
+	// portHop owns the firewall redirects that back Hysteria port hopping,
+	// so they are removed with the node rather than left on the host.
+	portHop *porthop.Manager
 }
 
 // UserMap translates the per-inbound user identity sing-box reports back into
@@ -113,6 +119,7 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 		},
 		nodeReportMinTrafficBytes: make(map[string]int64),
 		naive:                     newNaiveState(),
+		portHop:                   porthop.NewManager(),
 	}
 	hs.resolveTag = s.resolveNodeTag
 	return s, nil
@@ -133,7 +140,8 @@ func (b *Sing) Start() error {
 }
 
 func (b *Sing) Close() error {
-	return b.box.Close()
+	// The firewall outlives this process, so its rules go first.
+	return errors.Join(b.portHop.RemoveAll(), b.box.Close())
 }
 
 // Protocols lists the panel node types this core can serve.

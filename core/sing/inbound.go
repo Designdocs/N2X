@@ -89,23 +89,25 @@ func buildTLSOptions(info *panel.NodeInfo, c *conf.Options) (option.InboundTLSOp
 			tls.KeyPath = c.CertConfig.KeyFile
 		}
 	case panel.Reality:
-		if info.VAllss == nil {
-			return tls, fmt.Errorf("reality requires vmess/vless node settings")
+		// REALITY sits on the stream, below the proxy protocol, so trojan and
+		// anytls nodes configure it exactly as vmess/vless ones do.
+		tlsSettings, realityConfig, ok := info.RealityParams()
+		if !ok {
+			return tls, fmt.Errorf("the %s node type carries no reality settings", info.Type)
 		}
-		v := info.VAllss
 		tls.Enabled = true
-		tls.ServerName = v.TlsSettings.ServerName
-		port, _ := strconv.Atoi(v.TlsSettings.ServerPort)
-		dest := v.TlsSettings.Dest
+		tls.ServerName = tlsSettings.ServerName
+		port, _ := strconv.Atoi(tlsSettings.ServerPort)
+		dest := tlsSettings.Dest
 		if dest == "" {
 			dest = tls.ServerName
 		}
-		mtd, _ := time.ParseDuration(v.RealityConfig.MaxTimeDiff)
+		mtd, _ := time.ParseDuration(realityConfig.MaxTimeDiff)
 		tls.Reality = &option.InboundRealityOptions{
 			Enabled:    true,
-			ShortID:    []string{v.TlsSettings.ShortId},
-			PrivateKey: v.TlsSettings.PrivateKey,
-			Xver:       uint8(v.TlsSettings.Xver),
+			ShortID:    []string{tlsSettings.ShortId},
+			PrivateKey: tlsSettings.PrivateKey,
+			Xver:       uint8(tlsSettings.Xver),
 			Handshake: option.InboundRealityHandshakeOptions{
 				ServerOptions: option.ServerOptions{
 					Server:     dest,
@@ -123,7 +125,8 @@ func buildTLSOptions(info *panel.NodeInfo, c *conf.Options) (option.InboundTLSOp
 func buildV2RayTransport(network string, networkSettings json.RawMessage) (option.V2RayTransportOptions, error) {
 	t := option.V2RayTransportOptions{Type: network}
 	switch network {
-	case "tcp":
+	case "", "tcp":
+		// An empty network is what a panel sends for a plain TCP node.
 		t.Type = ""
 		if len(networkSettings) == 0 {
 			return t, nil
@@ -196,7 +199,12 @@ func buildV2RayTransport(network string, networkSettings json.RawMessage) (optio
 			Host: cfg.Host,
 		}
 	default:
-		t.Type = ""
+		// Falling back to plain TCP here would bring the listener up on a
+		// transport no client is speaking: the node looks healthy and every
+		// connection fails, with nothing in the log pointing at the cause.
+		return option.V2RayTransportOptions{}, fmt.Errorf(
+			"the %q transport is not supported by the sing core (supported: tcp, ws, grpc, httpupgrade); serve this node with the xray core",
+			network)
 	}
 	return t, nil
 }
@@ -312,10 +320,16 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		}
 		// TUIC runs over QUIC, so the TLS layer must advertise h3.
 		tls.ALPN = append(tls.ALPN, "h3")
+		timings, err := tuicTimings(info.Tuic, c)
+		if err != nil {
+			return option.Inbound{}, err
+		}
 		in.Type = "tuic"
 		in.Options = &option.TUICInboundOptions{
 			ListenOptions:              listen,
-			CongestionControl:          info.Tuic.CongestionControl,
+			CongestionControl:          timings.congestionControl,
+			AuthTimeout:                badoption.Duration(timings.authTimeout),
+			Heartbeat:                  badoption.Duration(timings.heartbeat),
 			ZeroRTTHandshake:           info.Tuic.ZeroRTTHandshake,
 			InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{TLS: &tls},
 		}
@@ -323,17 +337,26 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		if info.Hysteria == nil {
 			return option.Inbound{}, fmt.Errorf("missing hysteria node settings")
 		}
+		tuning := hysteriaQUICTuning(info.Hysteria, c)
 		in.Type = "hysteria"
 		in.Options = &option.HysteriaInboundOptions{
 			ListenOptions:              listen,
 			UpMbps:                     info.Hysteria.UpMbps,
 			DownMbps:                   info.Hysteria.DownMbps,
 			Obfs:                       info.Hysteria.Obfs,
+			ReceiveWindowConn:          tuning.receiveWindowConn,
+			ReceiveWindowClient:        tuning.receiveWindowClient,
+			MaxConnClient:              tuning.maxConnClient,
+			DisableMTUDiscovery:        tuning.disableMTUDiscovery,
 			InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{TLS: &tls},
 		}
 	case "hysteria2":
 		if info.Hysteria2 == nil {
 			return option.Inbound{}, fmt.Errorf("missing hysteria2 node settings")
+		}
+		masquerade, err := buildHysteria2Masquerade(info.Hysteria2, c)
+		if err != nil {
+			return option.Inbound{}, err
 		}
 		in.Type = "hysteria2"
 		in.Options = &option.Hysteria2InboundOptions{
@@ -342,12 +365,141 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 			DownMbps:                   info.Hysteria2.DownMbps,
 			IgnoreClientBandwidth:      info.Hysteria2.IgnoreClientBandwidth,
 			Obfs:                       buildHysteria2Obfs(info.Hysteria2),
+			Masquerade:                 masquerade,
+			BrutalDebug:                hysteriaOptions(c).BrutalDebug,
 			InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{TLS: &tls},
 		}
 	default:
 		return option.Inbound{}, fmt.Errorf("unsupported node type: %s", info.Type)
 	}
 	return in, nil
+}
+
+// hysteriaOptions returns the node-local Hysteria settings, or an empty set
+// when the deployment configured none.
+func hysteriaOptions(c *conf.Options) conf.HysteriaOptions {
+	if c.SingOptions == nil || c.SingOptions.HysteriaOptions == nil {
+		return conf.HysteriaOptions{}
+	}
+	return *c.SingOptions.HysteriaOptions
+}
+
+// tuicSettings are the TUIC knobs resolved from the panel and the local config.
+type tuicSettings struct {
+	congestionControl string
+	authTimeout       time.Duration
+	heartbeat         time.Duration
+}
+
+// tuicTimings resolves the TUIC connection settings. The panel wins on every
+// field it sends; the local config fills the rest, which is what lets an
+// operator tune heartbeat and auth timeout on a panel that cannot express
+// them.
+func tuicTimings(n *panel.TuicNode, c *conf.Options) (tuicSettings, error) {
+	settings := tuicSettings{
+		congestionControl: n.CongestionControl,
+		authTimeout:       time.Duration(n.AuthTimeout),
+		heartbeat:         time.Duration(n.Heartbeat),
+	}
+	if c.SingOptions == nil || c.SingOptions.TuicOptions == nil {
+		return settings, nil
+	}
+	o := c.SingOptions.TuicOptions
+	if settings.congestionControl == "" {
+		settings.congestionControl = o.CongestionControl
+	}
+	if settings.authTimeout == 0 {
+		parsed, err := parseConfigDuration(o.AuthTimeout, "TuicOptions.AuthTimeout")
+		if err != nil {
+			return tuicSettings{}, err
+		}
+		settings.authTimeout = parsed
+	}
+	if settings.heartbeat == 0 {
+		parsed, err := parseConfigDuration(o.Heartbeat, "TuicOptions.Heartbeat")
+		if err != nil {
+			return tuicSettings{}, err
+		}
+		settings.heartbeat = parsed
+	}
+	return settings, nil
+}
+
+// parseConfigDuration reads a duration out of the node config. An empty value
+// means "not set" rather than zero, so the core keeps its own default.
+func parseConfigDuration(value, field string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %q is not a duration: %w", field, value, err)
+	}
+	return parsed, nil
+}
+
+// hysteriaTuning are the QUIC flow control knobs of a Hysteria v1 node.
+type hysteriaTuning struct {
+	receiveWindowConn   uint64
+	receiveWindowClient uint64
+	maxConnClient       int
+	disableMTUDiscovery bool
+}
+
+// hysteriaQUICTuning resolves the v1 flow control settings, panel first. Zero
+// stays zero: sing-box reads that as "use my default".
+func hysteriaQUICTuning(n *panel.HysteriaNode, c *conf.Options) hysteriaTuning {
+	tuning := hysteriaTuning{
+		receiveWindowConn:   n.ReceiveWindowConn,
+		receiveWindowClient: n.ReceiveWindowClient,
+		maxConnClient:       n.MaxConnClient,
+		disableMTUDiscovery: n.DisableMTUDiscovery,
+	}
+	o := hysteriaOptions(c)
+	if tuning.receiveWindowConn == 0 {
+		tuning.receiveWindowConn = o.ReceiveWindowConn
+	}
+	if tuning.receiveWindowClient == 0 {
+		tuning.receiveWindowClient = o.ReceiveWindowClient
+	}
+	if tuning.maxConnClient == 0 {
+		tuning.maxConnClient = o.MaxConnClient
+	}
+	if !tuning.disableMTUDiscovery {
+		tuning.disableMTUDiscovery = o.DisableMTUDiscovery
+	}
+	return tuning
+}
+
+// buildHysteria2Masquerade resolves what the node answers ordinary HTTP
+// requests with.
+//
+// The panel's value is passed to sing-box untouched, so both forms it accepts
+// work: a bare URL string ("https://example.com", "file:///var/www") and the
+// full object. The local config only offers the URL form, which is what an
+// operator writes by hand.
+func buildHysteria2Masquerade(n *panel.Hysteria2Node, c *conf.Options) (*option.Hysteria2Masquerade, error) {
+	raw := n.Masquerade
+	if len(raw) == 0 {
+		configured := strings.TrimSpace(hysteriaOptions(c).Masquerade)
+		if configured == "" {
+			return nil, nil
+		}
+		encoded, err := json.Marshal(configured)
+		if err != nil {
+			return nil, fmt.Errorf("encode masquerade %q: %w", configured, err)
+		}
+		raw = encoded
+	}
+	masquerade := &option.Hysteria2Masquerade{}
+	if err := json.Unmarshal(raw, masquerade); err != nil {
+		return nil, fmt.Errorf("decode masquerade error: %w", err)
+	}
+	if masquerade.Type == "" {
+		return nil, nil
+	}
+	return masquerade, nil
 }
 
 // buildHysteria2Obfs reads the panel's obfuscation settings. Panels differ on

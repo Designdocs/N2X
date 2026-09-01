@@ -27,7 +27,7 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	switch nodeInfo.Type {
 	case "vmess", "vless":
 		err = buildV2ray(option, nodeInfo, in)
-		network = nodeInfo.VAllss.Network
+		network = normalizeTransport(nodeInfo.VAllss.Network)
 	case "anytls":
 		err = buildAnyTLS(nodeInfo, in)
 		network = "tcp"
@@ -36,11 +36,7 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 		network = "tcp"
 	case "trojan":
 		err = buildTrojan(option, nodeInfo, in)
-		if nodeInfo.Trojan.Network != "" {
-			network = nodeInfo.Trojan.Network
-		} else {
-			network = "tcp"
-		}
+		network = normalizeTransport(nodeInfo.Trojan.Network)
 	case "shadowsocks":
 		err = buildShadowsocks(option, nodeInfo, in)
 		network = "tcp"
@@ -116,40 +112,44 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 			in.StreamSetting.TLSSettings = tlsConfig
 		}
 	case panel.Reality:
-		// Reality
+		// REALITY is a stream-level camouflage, so it is configured the same
+		// way whichever proxy protocol runs on top of it.
+		tlsSettings, realityConfig, ok := nodeInfo.RealityParams()
+		if !ok {
+			return nil, fmt.Errorf("the %s node type carries no reality settings", nodeInfo.Type)
+		}
 		in.StreamSetting.Security = "reality"
-		v := nodeInfo.VAllss
-		dest := v.TlsSettings.Dest
+		dest := tlsSettings.Dest
 		if dest == "" {
-			dest = v.TlsSettings.ServerName
+			dest = tlsSettings.ServerName
 		}
-		xver := v.TlsSettings.Xver
+		xver := tlsSettings.Xver
 		if xver == 0 {
-			xver = v.RealityConfig.Xver
+			xver = realityConfig.Xver
 		}
-		minClientVer := v.RealityConfig.MinClientVer
+		minClientVer := realityConfig.MinClientVer
 		if minClientVer == "" {
 			minClientVer = "0.0.0"
 		}
 		d, err := json.Marshal(fmt.Sprintf(
 			"%s:%s",
 			dest,
-			v.TlsSettings.ServerPort))
+			tlsSettings.ServerPort))
 		if err != nil {
 			return nil, fmt.Errorf("marshal reality dest error: %s", err)
 		}
-		mtd, _ := time.ParseDuration(v.RealityConfig.MaxTimeDiff)
+		mtd, _ := time.ParseDuration(realityConfig.MaxTimeDiff)
 		in.StreamSetting.REALITYSettings = &coreConf.REALITYConfig{
 			Dest:         d,
 			Xver:         xver,
 			Show:         false,
-			ServerNames:  []string{v.TlsSettings.ServerName},
-			PrivateKey:   v.TlsSettings.PrivateKey,
+			ServerNames:  []string{tlsSettings.ServerName},
+			PrivateKey:   tlsSettings.PrivateKey,
 			MinClientVer: minClientVer,
-			MaxClientVer: v.RealityConfig.MaxClientVer,
+			MaxClientVer: realityConfig.MaxClientVer,
 			MaxTimeDiff:  uint64(mtd.Microseconds()),
-			ShortIds:     []string{v.TlsSettings.ShortId},
-			Mldsa65Seed:  v.TlsSettings.Mldsa65Seed,
+			ShortIds:     []string{tlsSettings.ShortId},
+			Mldsa65Seed:  tlsSettings.Mldsa65Seed,
 		}
 	default:
 		break
@@ -338,42 +338,53 @@ func buildV2ray(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCon
 		}
 		inbound.Settings = (*json.RawMessage)(&s)
 	}
-	if len(v.NetworkSettings) == 0 {
+	return buildStreamSettings(v.Network, v.NetworkSettings, inbound)
+}
+
+// buildStreamSettings configures the inbound's transport from the panel's
+// network settings.
+//
+// The stream is always set, even when the panel sent no settings for it: the
+// caller reads StreamSetting unconditionally to apply proxy protocol and TLS,
+// and a nil stream there is a crash rather than a misconfiguration. An
+// unrecognised transport is an error, never a silent fallback to plain TCP —
+// that fallback produces a listener no client can reach.
+func buildStreamSettings(network string, networkSettings json.RawMessage, inbound *coreConf.InboundDetourConfig) error {
+	network = normalizeTransport(network)
+	t := coreConf.TransportProtocol(network)
+	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
+
+	var settings any
+	switch network {
+	case "tcp":
+		settings = &inbound.StreamSetting.TCPSettings
+	case "ws":
+		settings = &inbound.StreamSetting.WSSettings
+	case "grpc":
+		settings = &inbound.StreamSetting.GRPCSettings
+	case "httpupgrade":
+		settings = &inbound.StreamSetting.HTTPUPGRADESettings
+	case "splithttp", "xhttp":
+		settings = &inbound.StreamSetting.SplitHTTPSettings
+	default:
+		return fmt.Errorf("the %q transport is not supported (supported: tcp, ws, grpc, httpupgrade, xhttp)", network)
+	}
+	if len(networkSettings) == 0 {
 		return nil
 	}
-
-	t := coreConf.TransportProtocol(v.Network)
-	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
-	switch v.Network {
-	case "tcp":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.TCPSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal tcp settings error: %s", err)
-		}
-	case "ws":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.WSSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal ws settings error: %s", err)
-		}
-	case "grpc":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.GRPCSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal grpc settings error: %s", err)
-		}
-	case "httpupgrade":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.HTTPUPGRADESettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal httpupgrade settings error: %s", err)
-		}
-	case "splithttp", "xhttp":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.SplitHTTPSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal xhttp settings error: %s", err)
-		}
-	default:
-		return errors.New("the network type is not vail")
+	if err := json.Unmarshal(networkSettings, settings); err != nil {
+		return fmt.Errorf("unmarshal %s settings error: %w", network, err)
 	}
 	return nil
+}
+
+// normalizeTransport maps the absent transport a panel sends for a plain TCP
+// node onto the name the rest of the builder switches on.
+func normalizeTransport(network string) string {
+	if network == "" {
+		return "tcp"
+	}
+	return network
 }
 
 func buildTrojan(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
@@ -396,32 +407,9 @@ func buildTrojan(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCo
 		s := []byte("{}")
 		inbound.Settings = (*json.RawMessage)(&s)
 	}
-	network := v.Network
-	if network == "" {
-		network = "tcp"
-	}
-	t := coreConf.TransportProtocol(network)
-	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
-	switch network {
-	case "tcp":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.TCPSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal tcp settings error: %s", err)
-		}
-	case "ws":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.WSSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal ws settings error: %s", err)
-		}
-	case "grpc":
-		err := json.Unmarshal(v.NetworkSettings, &inbound.StreamSetting.GRPCSettings)
-		if err != nil {
-			return fmt.Errorf("unmarshal grpc settings error: %s", err)
-		}
-	default:
-		return errors.New("the network type is not vail")
-	}
-	return nil
+	// Trojan runs over the same stream transports as vmess/vless, http-based
+	// ones included.
+	return buildStreamSettings(v.Network, v.NetworkSettings, inbound)
 }
 
 func buildShadowsocks(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {

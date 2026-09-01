@@ -122,6 +122,110 @@ recreates the inbound whenever that set changes. Consequences:
 
 If that trade-off is unacceptable for a deployment, do not use naive nodes.
 
+## Transports the sing core cannot serve
+
+`buildV2RayTransport` in `core/sing/inbound.go` maps a panel's `network` onto a
+sing-box V2Ray transport. It knows `tcp` (an empty network means TCP), `ws`,
+`grpc` and `httpupgrade`, and it **rejects everything else** — `xhttp`,
+`splithttp`, `kcp`, `quic`, `h2`.
+
+That rejection is deliberate. Falling back to plain TCP, which is what this
+code used to do, brings the listener up on a transport no client is speaking:
+the node looks healthy, every connection fails, and nothing in the log points
+at the cause. An xhttp node belongs on the xray core — pin it with
+`"Core": "xray"`.
+
+## Hysteria port hopping is a firewall rule
+
+Port hopping is a client-side behaviour: the client keeps moving the
+destination port around inside a range so a censor cannot pin the flow to one
+UDP port. The server has nothing to negotiate — it only has to answer on every
+port in the range.
+
+sing-box has no server-side option for this. `server_ports` and `hop_interval`
+exist on the Hysteria **outbound** only (`option/hysteria2.go`), and binding
+one listener per port would cost a UDP socket per port. So N2X does what
+Hysteria's own documentation does: a nat PREROUTING rule that redirects the
+whole range to the port the node listens on.
+
+`common/porthop` owns those rules. Each carries a `N2X:porthop:<tag>` comment,
+which is what makes removal exact and a node reload idempotent. The rules are
+installed after the inbound is up (`AddNode`), removed with the node
+(`DelNode`), and cleared for every node on shutdown (`Close`).
+
+The range comes from the panel's `server_ports` on a `hysteria`/`hysteria2`
+node — a string, a list, or bare numbers all decode — and falls back to
+`SingOptions.HysteriaOptions.PortHopping` for panels that cannot express it:
+
+```json
+"HysteriaOptions": {
+  "PortHopping": ["20000-30000"]
+}
+```
+
+Two consequences worth knowing before turning it on:
+
+- **Linux only, and N2X must be able to run `iptables`.** `ip6tables` is used
+  too when present; a host without it configures IPv4 only. Anywhere else,
+  a node that asks for port hopping fails to start rather than coming up
+  quietly without the redirect.
+- **A node whose redirect cannot be installed is taken back down.** Serving
+  hysteria on one port while clients hop across a range reaches the operator
+  as unexplained packet loss, which is worse than a node that says why it
+  stopped.
+
+## Protocol parameters: panel first, config second
+
+Several protocol settings have no place in a panel's node payload, or have one
+only on some panels. Each of them therefore resolves the same way: **what the
+panel sends wins, and the node-local config fills what it left empty.** The
+resolvers live next to the inbound they configure (`tuicTimings`,
+`hysteriaQUICTuning`, `buildHysteria2Masquerade`, `buildHandshakeForServerName`).
+
+| Setting | Panel field | Local config |
+| --- | --- | --- |
+| Hysteria port hopping | `server_ports` | `HysteriaOptions.PortHopping` |
+| Hysteria2 masquerade | `masquerade` | `HysteriaOptions.Masquerade` |
+| Brutal debug logging | — | `HysteriaOptions.BrutalDebug` |
+| Hysteria v1 QUIC windows | `recv_window_conn`, `recv_window_client`, `max_conn_client`, `disable_mtu_discovery` | the same names under `HysteriaOptions` |
+| TUIC auth timeout / heartbeat | `auth_timeout`, `heartbeat` | `TuicOptions.AuthTimeout`, `TuicOptions.Heartbeat` |
+| TUIC congestion control | `congestion_control` | `TuicOptions.CongestionControl` |
+| ShadowTLS per-SNI handshake | `handshake_for_server_name` | `ShadowTLSOptions.HandshakeForServerName` |
+
+Panel durations decode from either form — `"10s"` or a bare number of seconds
+(`panel.Duration`) — and port ranges from a string, a list, or bare numbers
+(`panel.PortRanges`).
+
+```json
+"HysteriaOptions": {
+  "PortHopping": ["20000-30000"],
+  "Masquerade": "https://news.example.com",
+  "ReceiveWindowConn": 15728640,
+  "MaxConnClient": 1024
+},
+"TuicOptions": {
+  "AuthTimeout": "3s",
+  "Heartbeat": "10s",
+  "CongestionControl": "bbr"
+},
+"ShadowTLSOptions": {
+  "HandshakeForServerName": {
+    "www.apple.com": { "Server": "www.apple.com", "ServerPort": 443 }
+  }
+}
+```
+
+Two details worth knowing:
+
+- **The Hysteria2 masquerade is handed to sing-box untouched.** Both forms it
+  accepts work from the panel — a URL string (`"https://example.com"` reverse
+  proxies that site, `"file:///var/www"` serves a directory) and the object
+  form with `status_code`/`headers`/`content`. The local config offers the URL
+  form only, which is what an operator writes by hand. An unusable value fails
+  the node rather than starting it without camouflage.
+- **The QUIC window settings are Hysteria v1 only.** Hysteria2 manages its own
+  windows; sing-box's Hysteria2 inbound has no equivalent options.
+
 ## Why the dependency pins are what they are
 
 `go.mod` pins three sing-box-adjacent modules. They are load-bearing, and

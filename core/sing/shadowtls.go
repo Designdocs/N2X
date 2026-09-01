@@ -3,10 +3,12 @@ package sing
 import (
 	"fmt"
 	"net/netip"
+	"sort"
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common/json/badjson"
 	"github.com/sagernet/sing/common/json/badoption"
 )
 
@@ -73,8 +75,9 @@ func buildShadowTLSInbounds(tag string, info *panel.NodeInfo, c *conf.Options) (
 				ServerPort: handshakePort,
 			},
 		},
-		StrictMode:  strictMode,
-		WildcardSNI: parseWildcardSNI(wildcardSNI),
+		StrictMode:             strictMode,
+		WildcardSNI:            parseWildcardSNI(wildcardSNI),
+		HandshakeForServerName: buildHandshakeForServerName(n.HandshakeForServerName, c),
 	}
 	// v2 authenticates with a single shared password; v3 uses a user list.
 	switch version {
@@ -102,6 +105,51 @@ func buildShadowTLSInbounds(tag string, info *panel.NodeInfo, c *conf.Options) (
 		Options: shadowTLSOptions,
 	}
 	return []option.Inbound{detour, public}, nil
+}
+
+// buildHandshakeForServerName maps client SNIs onto their own camouflage
+// handshake targets, so one listener can pose as several sites.
+//
+// The panel's map is the base and the node-local config overrides individual
+// entries, matching how the primary handshake target is resolved above. A
+// target with no port gets 443, the port a camouflage site is reachable on.
+func buildHandshakeForServerName(panelTargets map[string]panel.ShadowTLSHandshake, c *conf.Options) *badjson.TypedMap[string, option.ShadowTLSHandshakeOptions] {
+	targets := make(map[string]option.ServerOptions, len(panelTargets))
+	for serverName, handshake := range panelTargets {
+		targets[serverName] = option.ServerOptions{
+			Server:     handshake.Server,
+			ServerPort: uint16(handshake.ServerPort),
+		}
+	}
+	if o := c.SingOptions.ShadowTLSOptions; o != nil {
+		for serverName, handshake := range o.HandshakeForServerName {
+			targets[serverName] = option.ServerOptions{
+				Server:     handshake.Server,
+				ServerPort: handshake.ServerPort,
+			}
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+
+	// sing-box keeps this map ordered, so build it in a stable order rather
+	// than in Go's randomised map order.
+	serverNames := make([]string, 0, len(targets))
+	for serverName := range targets {
+		serverNames = append(serverNames, serverName)
+	}
+	sort.Strings(serverNames)
+
+	handshakes := new(badjson.TypedMap[string, option.ShadowTLSHandshakeOptions])
+	for _, serverName := range serverNames {
+		target := targets[serverName]
+		if target.ServerPort == 0 {
+			target.ServerPort = 443
+		}
+		handshakes.Put(serverName, option.ShadowTLSHandshakeOptions{ServerOptions: target})
+	}
+	return handshakes
 }
 
 // buildDetourListenOptions returns listen options for an internal inbound.

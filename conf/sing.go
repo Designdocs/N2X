@@ -48,6 +48,8 @@ type SingOptions struct {
 	Multiplex                *MultiplexConfig       `json:"MultiplexConfig"`
 	ShadowTLSOptions         *ShadowTLSOptions      `json:"ShadowTLSOptions"`
 	NaiveOptions             *NaiveOptions          `json:"NaiveOptions"`
+	HysteriaOptions          *HysteriaOptions       `json:"HysteriaOptions"`
+	TuicOptions              *TuicOptions           `json:"TuicOptions"`
 }
 
 type FallBackConfigForSing struct {
@@ -72,6 +74,58 @@ type BrutalOptions struct {
 	DownMbps int  `json:"DownMbps"`
 }
 
+// HysteriaOptions holds the node-local Hysteria settings a panel cannot
+// express.
+type HysteriaOptions struct {
+	// PortHopping lists the UDP port ranges redirected to the node's listen
+	// port, e.g. ["20000-30000"]. It is the fallback for panels that do not
+	// send server_ports themselves; the panel's value wins when both are set.
+	//
+	// The redirect is a nat PREROUTING rule, so this only works on Linux and
+	// only when N2X can run iptables.
+	PortHopping []string `json:"PortHopping"`
+
+	// Masquerade is what a Hysteria2 node answers ordinary HTTP requests
+	// with, so an active prober sees a website instead of a proxy. Either a
+	// site to reverse proxy ("https://news.example.com") or a directory to
+	// serve ("file:///var/www/html"). The panel's value wins when both are
+	// set.
+	Masquerade string `json:"Masquerade"`
+
+	// BrutalDebug logs the Brutal congestion controller's decisions. Debug
+	// only: it is noisy under load.
+	BrutalDebug bool `json:"BrutalDebug"`
+
+	// QUIC flow control and connection limits for Hysteria v1 nodes. Zero
+	// keeps the sing-box default, and the panel's value wins when both are
+	// set. These do not apply to Hysteria2, which manages its own windows.
+	ReceiveWindowConn   uint64 `json:"ReceiveWindowConn"`
+	ReceiveWindowClient uint64 `json:"ReceiveWindowClient"`
+	MaxConnClient       int    `json:"MaxConnClient"`
+	DisableMTUDiscovery bool   `json:"DisableMTUDiscovery"`
+}
+
+// TuicOptions holds the node-local TUIC settings a panel cannot express. Every
+// field falls back to what the panel sent when left empty.
+type TuicOptions struct {
+	// AuthTimeout is how long a new connection has to authenticate before it
+	// is dropped, as a duration string ("3s").
+	AuthTimeout string `json:"AuthTimeout"`
+	// Heartbeat is the keep-alive interval for an idle connection ("10s").
+	// Raising it saves battery on mobile clients; lowering it detects a dead
+	// peer sooner.
+	Heartbeat string `json:"Heartbeat"`
+	// CongestionControl is "cubic", "new_reno" or "bbr".
+	CongestionControl string `json:"CongestionControl"`
+}
+
+// ShadowTLSHandshakeTarget is one camouflage handshake upstream. A zero port
+// means 443.
+type ShadowTLSHandshakeTarget struct {
+	Server     string `json:"Server"`
+	ServerPort uint16 `json:"ServerPort"`
+}
+
 // ShadowTLSOptions holds the local overrides for a ShadowTLS node. Every field
 // falls back to the value the panel supplied when left empty, so a deployment
 // only needs to set what the panel cannot express.
@@ -87,6 +141,11 @@ type ShadowTLSOptions struct {
 	// records do not match the handshake target. Recommended when the
 	// camouflage target is under your control.
 	StrictMode bool `json:"StrictMode"`
+	// HandshakeForServerName relays the camouflage handshake to a different
+	// upstream depending on the SNI the client asked for. Entries here
+	// override the panel's for the same server name; anything not listed
+	// falls back to the primary handshake target.
+	HandshakeForServerName map[string]ShadowTLSHandshakeTarget `json:"HandshakeForServerName"`
 	// WildcardSNI is "off", "authed" or "all".
 	WildcardSNI string `json:"WildcardSNI"`
 }
