@@ -148,10 +148,21 @@ one listener per port would cost a UDP socket per port. So N2X does what
 Hysteria's own documentation does: a nat PREROUTING rule that redirects the
 whole range to the port the node listens on.
 
-`common/porthop` owns those rules. Each carries a `N2X:porthop:<tag>` comment,
-which is what makes removal exact and a node reload idempotent. The rules are
-installed after the inbound is up (`AddNode`), removed with the node
-(`DelNode`), and cleared for every node on shutdown (`Close`).
+`common/porthop` owns those rules. Each carries a `N2X:porthop:<tag>` comment.
+That comment is what makes removal exact — and it is also the only thing
+removal matches on, so a redirect an operator installed by hand carries none of
+ours and is never touched. The rules are installed after the inbound is up
+(`AddNode`), removed with the node (`DelNode`), and cleared for every node on
+shutdown (`Close`).
+
+Before installing, `Apply` reads the chain back (`iptables -t nat -S
+PREROUTING`) and deletes every rule carrying this node's comment, not just the
+ones this process remembers installing. A node killed with `SIGKILL`, an OOM
+kill or a power cut leaves its redirect in the table, and appending a second
+copy on the next start would grow the chain by one stale rule per unclean
+restart. One case is still left to the operator: a node deleted from the panel
+while N2X was down keeps its rule, because nothing asks about that tag again.
+Find those with `iptables -t nat -S PREROUTING | grep N2X:porthop`.
 
 The range comes from the panel's `server_ports` on a `hysteria`/`hysteria2`
 node — a string, a list, or bare numbers all decode — and falls back to
@@ -217,12 +228,21 @@ Panel durations decode from either form — `"10s"` or a bare number of seconds
 
 Two details worth knowing:
 
-- **The Hysteria2 masquerade is handed to sing-box untouched.** Both forms it
-  accepts work from the panel — a URL string (`"https://example.com"` reverse
-  proxies that site, `"file:///var/www"` serves a directory) and the object
-  form with `status_code`/`headers`/`content`. The local config offers the URL
-  form only, which is what an operator writes by hand. An unusable value fails
-  the node rather than starting it without camouflage.
+- **The Hysteria2 masquerade reaches sing-box as written, with one
+  exception.** Both forms it accepts work from the panel — a URL string
+  (`"https://example.com"` reverse proxies that site, `"file:///var/www"`
+  serves a directory) and the object form with `status_code`/`headers`/
+  `content`. The local config offers the URL form only, which is what an
+  operator writes by hand. An unusable value fails the node rather than
+  starting it without camouflage: sing-box accepts `file`, `http` and `https`
+  URLs only.
+
+  The exception is `n2x://decoy`, the same selector an xray fallback takes
+  (`core/sing/decoy_masquerade.go`). It expands to the origin of the companion
+  web service installed on this host — `http://127.0.0.1:60443/` by default,
+  or whatever `N2X_ARTX_DECOY_LISTEN` points at — so the masquerade site and
+  the fallback site are the same page, configured in one place. Both spellings
+  work: the bare string, and the object form with `"url": "n2x://decoy"`.
 - **The QUIC window settings are Hysteria v1 only.** Hysteria2 manages its own
   windows; sing-box's Hysteria2 inbound has no equivalent options.
 

@@ -475,10 +475,12 @@ func hysteriaQUICTuning(n *panel.HysteriaNode, c *conf.Options) hysteriaTuning {
 // buildHysteria2Masquerade resolves what the node answers ordinary HTTP
 // requests with.
 //
-// The panel's value is passed to sing-box untouched, so both forms it accepts
+// The panel's value reaches sing-box as written, so both forms it accepts
 // work: a bare URL string ("https://example.com", "file:///var/www") and the
 // full object. The local config only offers the URL form, which is what an
-// operator writes by hand.
+// operator writes by hand. The one value that is rewritten is the companion
+// web service selector "n2x://decoy", which becomes the origin of the site
+// installed alongside this node.
 func buildHysteria2Masquerade(n *panel.Hysteria2Node, c *conf.Options) (*option.Hysteria2Masquerade, error) {
 	raw := n.Masquerade
 	if len(raw) == 0 {
@@ -492,12 +494,19 @@ func buildHysteria2Masquerade(n *panel.Hysteria2Node, c *conf.Options) (*option.
 		}
 		raw = encoded
 	}
+	raw, err := expandDecoyMasquerade(raw)
+	if err != nil {
+		return nil, err
+	}
 	masquerade := &option.Hysteria2Masquerade{}
 	if err := json.Unmarshal(raw, masquerade); err != nil {
 		return nil, fmt.Errorf("decode masquerade error: %w", err)
 	}
 	if masquerade.Type == "" {
 		return nil, nil
+	}
+	if err := expandDecoyMasqueradeProxy(masquerade); err != nil {
+		return nil, err
 	}
 	return masquerade, nil
 }
