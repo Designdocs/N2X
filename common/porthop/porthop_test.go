@@ -2,6 +2,7 @@ package porthop
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -53,6 +54,9 @@ type fakeRunner struct {
 	calls   [][]string
 	fail    func(name string, args []string) error
 	missing map[string]bool
+	// listing is what "iptables -S PREROUTING" reports, per command.
+	listing   map[string]string
+	listFails bool
 }
 
 func (f *fakeRunner) run(name string, args ...string) error {
@@ -61,6 +65,14 @@ func (f *fakeRunner) run(name string, args ...string) error {
 		return f.fail(name, args)
 	}
 	return nil
+}
+
+func (f *fakeRunner) output(name string, args ...string) (string, error) {
+	f.calls = append(f.calls, append([]string{name}, args...))
+	if f.listFails {
+		return "", errors.New("iptables: permission denied")
+	}
+	return f.listing[name], nil
 }
 
 func (f *fakeRunner) lookPath(name string) error {
@@ -74,6 +86,7 @@ func newTestManager(r *fakeRunner) *Manager {
 	m := NewManager()
 	m.goos = "linux"
 	m.run = r.run
+	m.output = r.output
 	m.lookPath = r.lookPath
 	return m
 }
@@ -126,10 +139,16 @@ func TestApplyCoversIPv6WhenAvailable(t *testing.T) {
 // Applying twice must not stack duplicate rules: the stale ones are deleted
 // first, so a node reload leaves the firewall exactly as it found it.
 func TestApplyClearsStaleRulesFirst(t *testing.T) {
-	r := &fakeRunner{missing: map[string]bool{ip6tablesCommand: true}}
+	tag := "hy2-1"
+	r := &fakeRunner{
+		missing: map[string]bool{ip6tablesCommand: true},
+		listing: map[string]string{
+			iptablesCommand: listedRule(tag, "20000:30000", 8443),
+		},
+	}
 	m := newTestManager(r)
 
-	rule := Redirect{Tag: "hy2-1", ListenPort: 8443, Ranges: []Range{{From: 20000, To: 30000}}}
+	rule := Redirect{Tag: tag, ListenPort: 8443, Ranges: []Range{{From: 20000, To: 30000}}}
 	if err := m.Apply(rule); err != nil {
 		t.Fatalf("first Apply() error = %v", err)
 	}
@@ -141,6 +160,107 @@ func TestApplyClearsStaleRulesFirst(t *testing.T) {
 	out := joined(r.calls)
 	if !strings.Contains(out, "-D PREROUTING") {
 		t.Fatalf("stale rule was not deleted before re-adding:\n%s", out)
+	}
+}
+
+// listedRule renders one rule the way "iptables -t nat -S PREROUTING" prints
+// it, comment quoting included.
+func listedRule(tag, dport string, listenPort int) string {
+	return fmt.Sprintf(
+		`-A PREROUTING -p udp -m udp --dport %s -m comment --comment %q -j REDIRECT --to-ports %d`,
+		dport, comment(tag), listenPort)
+}
+
+// The rules an earlier run left behind are the whole reason the chain is read
+// back: this process installed nothing, so only the listing can find them.
+func TestApplyRemovesRulesLeftByAnEarlierRun(t *testing.T) {
+	tag := "[https://panel.example.com]-hysteria2:12"
+	r := &fakeRunner{
+		missing: map[string]bool{ip6tablesCommand: true},
+		listing: map[string]string{
+			iptablesCommand: strings.Join([]string{
+				// Someone else's redirect, and a hand written one with no
+				// comment: neither may be touched.
+				`-A PREROUTING -p udp -m udp --dport 20000:30000 -j REDIRECT --to-ports 10443`,
+				listedRule("[https://panel.example.com]-hysteria2:99", "40000:41000", 9443),
+				// Two copies of our own rule, from two unclean restarts.
+				listedRule(tag, "20000:30000", 10443),
+				listedRule(tag, "20000:30000", 10443),
+			}, "\n"),
+		},
+	}
+	m := newTestManager(r)
+
+	if err := m.Apply(Redirect{Tag: tag, ListenPort: 10443, Ranges: []Range{{From: 20000, To: 30000}}}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	var deletes int
+	for _, call := range r.calls {
+		if contains(call, "-D") {
+			deletes++
+			if !contains(call, comment(tag)) {
+				t.Fatalf("a rule that is not ours was deleted: %v", call)
+			}
+		}
+	}
+	// One delete per listed copy: iptables removes a single rule per -D.
+	if deletes != 2 {
+		t.Fatalf("deleted %d leftover rules, want 2:\n%s", deletes, joined(r.calls))
+	}
+	if !strings.Contains(joined(r.calls), "-t nat -A PREROUTING") {
+		t.Fatalf("the redirect was not installed after the cleanup:\n%s", joined(r.calls))
+	}
+}
+
+// A chain that cannot even be read means the node cannot be sure its redirect
+// is the only one, so it says so instead of adding a rule on top.
+func TestApplyFailsWhenTheChainCannotBeRead(t *testing.T) {
+	r := &fakeRunner{missing: map[string]bool{ip6tablesCommand: true}, listFails: true}
+	m := newTestManager(r)
+
+	err := m.Apply(Redirect{Tag: "hy2-1", ListenPort: 8443, Ranges: []Range{{From: 20000, To: 30000}}})
+	if err == nil {
+		t.Fatal("Apply() error = nil, want the listing failure")
+	}
+	if strings.Contains(joined(r.calls), "-A PREROUTING") {
+		t.Fatalf("a rule was installed although the chain was unreadable:\n%s", joined(r.calls))
+	}
+}
+
+func TestStaleRulesMatchesOnlyTheTagsOwnRules(t *testing.T) {
+	tag := "hy2-1"
+	listing := strings.Join([]string{
+		"-P PREROUTING ACCEPT",
+		`-A PREROUTING -p udp -m udp --dport 20000:30000 -j REDIRECT --to-ports 8443`,
+		listedRule("hy2-2", "40000:41000", 9443),
+		listedRule(tag, "20000:30000", 8443),
+	}, "\n")
+
+	rules := staleRules(listing, comment(tag))
+	if len(rules) != 1 {
+		t.Fatalf("staleRules() = %v, want exactly the tag's own rule", rules)
+	}
+	want := []string{"-p", "udp", "-m", "udp", "--dport", "20000:30000", "-m", "comment", "--comment", comment(tag), "-j", "REDIRECT", "--to-ports", "8443"}
+	if !reflect.DeepEqual(rules[0], want) {
+		t.Fatalf("staleRules() = %v, want %v", rules[0], want)
+	}
+}
+
+// A node tag carries the panel URL in brackets, so iptables prints the comment
+// quoted; splitting on spaces alone would never match it back.
+func TestTokenizeRuleKeepsQuotedComments(t *testing.T) {
+	tag := "[https://panel.example.com]-hysteria2:12"
+	tokens := tokenizeRule(listedRule(tag, "20000:30000", 10443))
+
+	var found bool
+	for i, token := range tokens {
+		if token == "--comment" {
+			found = tokens[i+1] == comment(tag)
+		}
+	}
+	if !found {
+		t.Fatalf("the quoted comment did not survive tokenizing: %v", tokens)
 	}
 }
 

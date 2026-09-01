@@ -10,8 +10,11 @@
 // done where Hysteria's own documentation puts it: a nat PREROUTING rule that
 // sends the whole range to the port the node actually listens on.
 //
-// Every rule carries a comment naming the node tag that owns it, which is what
-// makes removal exact and a restart idempotent.
+// Every rule carries a comment naming the node tag that owns it. That comment
+// is what makes removal exact — rules an operator added by hand carry none and
+// are never touched — and it is also how a restart stays idempotent: the chain
+// is read back and matched on the comment, so a node killed without a chance to
+// clean up does not leave a second copy of its redirect behind.
 package porthop
 
 import (
@@ -109,6 +112,7 @@ type Manager struct {
 	// Injected for tests; the defaults talk to the host.
 	goos     string
 	run      func(name string, args ...string) error
+	output   func(name string, args ...string) (string, error)
 	lookPath func(name string) error
 }
 
@@ -117,6 +121,7 @@ func NewManager() *Manager {
 		applied:  make(map[string]Redirect),
 		goos:     runtime.GOOS,
 		run:      runCommand,
+		output:   commandOutput,
 		lookPath: lookPath,
 	}
 }
@@ -131,6 +136,16 @@ func runCommand(name string, args ...string) error {
 		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, message)
 	}
 	return nil
+}
+
+// commandOutput runs a command that is read rather than applied, so its output
+// is the result instead of part of an error message.
+func commandOutput(name string, args ...string) (string, error) {
+	out, err := exec.Command(name, args...).Output()
+	if err != nil {
+		return "", fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+	}
+	return string(out), nil
 }
 
 func lookPath(name string) error {
@@ -162,9 +177,15 @@ func (m *Manager) Apply(r Redirect) error {
 		return errors.New("hysteria port hopping needs the node listen port")
 	}
 
-	// A previous run of this node may still own rules; drop them so a reload
-	// does not stack duplicates.
-	m.remove(r.Tag)
+	// Drop whatever this tag already owns so a reload does not stack
+	// duplicates. The chain itself is the source of truth here, not this
+	// process's memory: rules an earlier run never got to clean up have to go
+	// too, and deleting only what the chain actually reports means a table an
+	// operator flushed by hand does not fail the node.
+	m.forget(r.Tag)
+	if err := m.removeStale(r.Tag); err != nil {
+		return err
+	}
 
 	var installed []installedRule
 	for _, command := range m.commands() {
@@ -215,6 +236,13 @@ func (m *Manager) Applied(tag string) bool {
 	defer m.mu.Unlock()
 	_, ok := m.applied[tag]
 	return ok
+}
+
+// forget drops the record of a tag without touching the firewall.
+func (m *Manager) forget(tag string) {
+	m.mu.Lock()
+	delete(m.applied, tag)
+	m.mu.Unlock()
 }
 
 func (m *Manager) remove(tag string) error {
@@ -273,4 +301,109 @@ func ruleArgs(action string, portRange Range, listenPort uint16, tag string) []s
 		"-m", "comment", "--comment", comment(tag),
 		"-j", "REDIRECT", "--to-ports", strconv.Itoa(int(listenPort)),
 	}
+}
+
+// removeStale deletes every nat PREROUTING rule carrying this node's comment,
+// whether or not this process installed it.
+//
+// The in-memory record only covers rules this run put in place. A node stopped
+// with SIGKILL, an OOM kill or a power cut leaves its redirect in the table,
+// and without this the next start would simply append a second copy of it —
+// harmless in effect, since the first match wins and both point at the same
+// listen port, but the chain grows one stale rule per unclean restart. Reading
+// the chain back and matching on the comment is what makes a restart truly
+// idempotent.
+//
+// Rules an operator wrote by hand carry no comment of ours and are never
+// matched, so a manually installed redirect survives this untouched.
+func (m *Manager) removeStale(tag string) error {
+	if m.goos != "linux" {
+		return nil
+	}
+	if err := m.lookPath(iptablesCommand); err != nil {
+		return nil
+	}
+
+	var errs []error
+	for _, command := range m.commands() {
+		listing, err := m.output(command, "-t", "nat", "-S", "PREROUTING")
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read the nat PREROUTING chain: %w", err))
+			continue
+		}
+		for _, rule := range staleRules(listing, comment(tag)) {
+			args := append([]string{"-t", "nat", "-D", "PREROUTING"}, rule...)
+			if err := m.run(command, args...); err != nil {
+				errs = append(errs, fmt.Errorf("remove leftover port hopping rule %q: %w", strings.Join(rule, " "), err))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// staleRules picks the rules in an "iptables -S PREROUTING" listing that carry
+// the given comment, returning each one as the arguments that delete it.
+//
+// Duplicates appear as separate lines, and each needs its own delete: iptables
+// removes one rule per -D, so returning them all is what clears an accumulated
+// stack in a single pass.
+func staleRules(listing, want string) [][]string {
+	var rules [][]string
+	for _, line := range strings.Split(listing, "\n") {
+		tokens := tokenizeRule(line)
+		if len(tokens) < 2 || tokens[0] != "-A" || tokens[1] != "PREROUTING" {
+			continue
+		}
+		for i, token := range tokens {
+			if token != "--comment" || i+1 >= len(tokens) || tokens[i+1] != want {
+				continue
+			}
+			rules = append(rules, tokens[2:])
+			break
+		}
+	}
+	return rules
+}
+
+// tokenizeRule splits one listed rule into arguments.
+//
+// iptables quotes any comment that is not plain enough to print bare, and a
+// node tag holds the panel URL in brackets, so the quoted form is the one that
+// shows up in practice: --comment "N2X:porthop:[https://panel]-hysteria2:1".
+// Splitting on spaces alone would tear that in half and the rule would never
+// be recognised as ours.
+func tokenizeRule(line string) []string {
+	var (
+		tokens  []string
+		current strings.Builder
+		quoted  bool
+		escaped bool
+		started bool
+	)
+	for _, r := range line {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			escaped = false
+		case r == '\\':
+			escaped = true
+			started = true
+		case r == '"':
+			quoted = !quoted
+			started = true
+		case r == ' ' && !quoted:
+			if started {
+				tokens = append(tokens, current.String())
+				current.Reset()
+				started = false
+			}
+		default:
+			current.WriteRune(r)
+			started = true
+		}
+	}
+	if started {
+		tokens = append(tokens, current.String())
+	}
+	return tokens
 }
