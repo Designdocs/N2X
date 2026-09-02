@@ -325,6 +325,7 @@ jobs:
           name: N2X-${{ steps.get_filename.outputs.ASSET_NAME }}
           path: |
             ./N2X-${{ steps.get_filename.outputs.ASSET_NAME }}/*
+          retention-days: 1
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
