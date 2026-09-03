@@ -245,6 +245,15 @@ func (c *Client) wsSend(event string, data any) error {
 	return driver.Send(event, data)
 }
 
+// InvalidateNodeInfoCache is the exported form of invalidateNodeInfoCache,
+// for callers that have to force a re-pull without a panel push. A reload
+// that aborts halfway leaves the node without an inbound, and GetNodeInfo
+// short-circuits on the body hash it already stored, so without this the
+// retry would never come.
+func (c *Client) InvalidateNodeInfoCache() {
+	c.invalidateNodeInfoCache()
+}
+
 // invalidateNodeInfoCache clears the HTTP ETag state so the next GetNodeInfo
 // call bypasses the 304 shortcut. Called when the panel pushes sync.config.
 func (c *Client) invalidateNodeInfoCache() {

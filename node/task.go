@@ -85,6 +85,29 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	}
 }
 
+// abortReload gives up on the current reload without taking the process
+// down with it.
+//
+// Two things used to go wrong here. The DelNode and AddNode failures were
+// logged at Panic level, and nothing in N2X recovers, so one node failing to
+// rebind its listener killed the whole process — every other node on the same
+// machine, plus the panel WebSocket session, went with it. And every early
+// return in this block happens *after* DelNode, i.e. with the node already
+// unbound, while GetNodeInfo has already stored the new body hash; the next
+// poll would therefore see "nothing changed" and never rebuild the node,
+// leaving it silently dark until an operator restarted N2X.
+//
+// So: log it, drop the cached hash so the next tick re-pulls and retries the
+// whole reload, and return nil to keep the periodic task alive.
+func (c *Controller) abortReload(reason string, cause error) error {
+	log.WithFields(log.Fields{
+		"tag": c.tag,
+		"err": cause,
+	}).Errorf("%s, node left unbound; retrying on the next pull", reason)
+	c.apiClient.InvalidateNodeInfoCache()
+	return nil
+}
+
 func (c *Controller) nodeInfoMonitor() (err error) {
 	// get node info
 	newN, err := c.apiClient.GetNodeInfo()
@@ -124,11 +147,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		log.WithField("tag", c.tag).Info("Node changed, reload")
 		err = c.server.DelNode(c.tag)
 		if err != nil {
-			log.WithFields(log.Fields{
-				"tag": c.tag,
-				"err": err,
-			}).Panic("Delete node failed")
-			return nil
+			return c.abortReload("Delete node failed", err)
 		}
 
 		// Update limiter
@@ -149,33 +168,21 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		// Update rule
 		err = c.limiter.UpdateRule(&newN.Rules)
 		if err != nil {
-			log.WithFields(log.Fields{
-				"tag": c.tag,
-				"err": err,
-			}).Error("Update Rule failed")
-			return nil
+			return c.abortReload("Update Rule failed", err)
 		}
 
 		// check cert
 		if newN.Security == panel.Tls {
 			err = c.requestCert(newN)
 			if err != nil {
-				log.WithFields(log.Fields{
-					"tag": c.tag,
-					"err": err,
-				}).Error("Request cert failed")
-				return nil
+				return c.abortReload("Request cert failed", err)
 			}
 		}
 		c.prepareHTTPSRedirect(newN)
 		// add new node
 		err = c.server.AddNode(c.tag, newN, c.Options)
 		if err != nil {
-			log.WithFields(log.Fields{
-				"tag": c.tag,
-				"err": err,
-			}).Panic("Add node failed")
-			return nil
+			return c.abortReload("Add node failed", err)
 		}
 		_, err = c.server.AddUsers(&vCore.AddUsersParams{
 			Tag:      c.tag,
@@ -183,11 +190,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			NodeInfo: newN,
 		})
 		if err != nil {
-			log.WithFields(log.Fields{
-				"tag": c.tag,
-				"err": err,
-			}).Error("Add users failed")
-			return nil
+			return c.abortReload("Add users failed", err)
 		}
 		c.refreshHTTPSRedirect(newN)
 		c.publishArtXUserRates()
