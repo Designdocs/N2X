@@ -136,6 +136,15 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}).Error("Get alive list failed")
 		return nil
 	}
+	if newN != nil && artXFlowControlOnlyChange(c.info, newN) && c.retierArtXFlowControl(newN) {
+		// The ArtX flow-control tier is the only thing that moved and the
+		// running inbound has taken it in place. Adopt the new body and
+		// fall through to the user diff below, so an operator changing a
+		// tier no longer costs the node its listener and every session on
+		// it.
+		c.info = newN
+		newN = nil
+	}
 	if newN != nil {
 		c.info = newN
 		// nodeInfo changed

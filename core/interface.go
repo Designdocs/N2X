@@ -48,6 +48,11 @@ type ArtXFlowControlProvider interface {
 	// policy it installs is usable either way, with every rejected or zero
 	// field falling back to the core default.
 	ConfigureArtXWindowBudget(policy ArtXWindowBudgetPolicy) error
+	// SetArtXFlowControl retiers a running ArtX inbound in place. Changing
+	// the tier through the panel would otherwise mean DelNode + AddNode,
+	// which unbinds the listener and drops every session on it; this lets
+	// the agent apply the new tier to subsequent negotiations instead.
+	SetArtXFlowControl(tag string, node *panel.ArtXNode) error
 }
 
 // ArtXWindowBudgetPolicy is the operator-tunable slice of host memory ArtX may

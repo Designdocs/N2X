@@ -73,6 +73,20 @@ type artXFlowControlCore struct {
 	// budgetErr is what ConfigureArtXWindowBudget reports back, standing in
 	// for the core rejecting an out-of-range percentage.
 	budgetErr error
+	tiers     []string
+	// tierErr stands in for the core failing to reach a live inbound, which
+	// is what sends a retier back to the full reload path.
+	tierErr error
+}
+
+func (core *artXFlowControlCore) SetArtXFlowControl(_ string, node *panel.ArtXNode) error {
+	core.mu.Lock()
+	defer core.mu.Unlock()
+	if core.tierErr != nil {
+		return core.tierErr
+	}
+	core.tiers = append(core.tiers, node.FlowControl)
+	return nil
 }
 
 func (core *artXFlowControlCore) SetArtXUserRates(tag string, rates map[string]uint64) {

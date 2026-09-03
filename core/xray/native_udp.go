@@ -1,7 +1,6 @@
 package xray
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -15,8 +14,6 @@ import (
 	"github.com/apernet/quic-go/http3"
 	"github.com/apernet/quic-go/qlog"
 	log "github.com/sirupsen/logrus"
-	"github.com/xtls/xray-core/proxy"
-	"github.com/xtls/xray-core/proxy/artx"
 )
 
 type nativeUDPService struct {
@@ -54,17 +51,9 @@ func (c *Xray) startNativeUDP(tag string, info *panel.NodeInfo, options *conf.Op
 			c.recordNativeUDPError(tag, "native_listener_start_failed")
 		}
 	}()
-	inboundHandler, err := c.ihm.GetHandler(context.Background(), tag)
+	artXServer, err := c.artXInbound(tag)
 	if err != nil {
 		return err
-	}
-	getter, ok := inboundHandler.(proxy.GetInbound)
-	if !ok {
-		return errors.New("ArtX inbound does not expose its proxy")
-	}
-	artXServer, ok := getter.GetInbound().(*artx.Server)
-	if !ok {
-		return errors.New("ArtX inbound proxy has an unexpected type")
 	}
 	handler, err := artXServer.NewNativeUDPHandler(c.dispatcher, tag)
 	if err != nil {

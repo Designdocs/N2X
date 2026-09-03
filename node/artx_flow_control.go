@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"reflect"
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
@@ -70,6 +71,59 @@ func (c *Controller) artXFlowControlProvider(info *panel.NodeInfo) vCore.ArtXFlo
 	}
 	provider, _ := c.server.(vCore.ArtXFlowControlProvider)
 	return provider
+}
+
+// artXFlowControlOnlyChange reports whether the panel's new node body differs
+// from the running one in nothing but the ArtX flow-control tier.
+//
+// That case is worth singling out because the generic reload path answers any
+// change to a node body with DelNode + AddNode, which unbinds the listener and
+// kills every session on it. An operator flipping a tier in the admin panel has
+// no reason to expect the node to drop — but until the tier became mutable at
+// runtime, dropping it was the only way to apply one.
+//
+// The comparison is deliberately exact: anything else that moved, however
+// small, sends the node down the full reload path where it belongs.
+func artXFlowControlOnlyChange(old, updated *panel.NodeInfo) bool {
+	if !usesNativeArtXWire(old) || !usesNativeArtXWire(updated) {
+		return false
+	}
+	if old.ArtX.FlowControl == updated.ArtX.FlowControl {
+		return false
+	}
+	return reflect.DeepEqual(maskArtXFlowControl(old), maskArtXFlowControl(updated))
+}
+
+// maskArtXFlowControl copies a node body with the flow-control tier blanked, so
+// the two bodies can be compared on everything except the field under test.
+// Both copies are shallow apart from the ArtX block, which is the only one
+// being rewritten; the originals are left untouched.
+func maskArtXFlowControl(info *panel.NodeInfo) *panel.NodeInfo {
+	masked := *info
+	artX := *info.ArtX
+	artX.FlowControl = ""
+	masked.ArtX = &artX
+	return &masked
+}
+
+// retierArtXFlowControl applies a new tier to the running inbound, reporting
+// whether it took. A false answer is not fatal: the caller falls back to the
+// full reload, which rebuilds the inbound with the new tier baked in.
+func (c *Controller) retierArtXFlowControl(info *panel.NodeInfo) bool {
+	provider := c.artXFlowControlProvider(info)
+	if provider == nil {
+		return false
+	}
+	if err := provider.SetArtXFlowControl(c.tag, info.ArtX); err != nil {
+		log.WithFields(log.Fields{"tag": c.tag, "err": err}).
+			Warn("Retier ArtX flow control in place failed, falling back to a full reload")
+		return false
+	}
+	log.WithFields(log.Fields{
+		"tag":          c.tag,
+		"flow_control": info.ArtX.FlowControl,
+	}).Info("ArtX flow control retiered in place, node kept online")
+	return true
 }
 
 // publishArtXUserRates hands the core the plan rate of every user on this node
