@@ -12,6 +12,12 @@ on:
         required: false
         type: boolean
         default: false
+      targets:
+        description: "Which targets to build. auto = all when publishing, linux-only otherwise."
+        required: false
+        type: choice
+        default: auto
+        options: [auto, linux, all]
   # No push or pull_request trigger on purpose: every commit to main used to
   # spend runner minutes building 27 targets nobody had asked for. Builds are
   # started by hand from the Actions tab instead. The release trigger stays so
@@ -83,80 +89,48 @@ jobs:
           name: ${{ steps.resolve.outputs.version }}
           generate_release_notes: true
 
+  resolve-matrix:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+      scope: ${{ steps.pick.outputs.scope }}
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v4
+      - name: Pick build targets
+        id: pick
+        shell: bash
+        run: |
+          set -euo pipefail
+          scope="${{ inputs.targets }}"
+          if [[ -z "$scope" || "$scope" == "auto" ]]; then
+            # A release has to carry every asset; a plain manual build almost
+            # never does, and 24 of the 27 targets are never downloaded.
+            if [[ "${{ github.event_name }}" == "release" || "${{ inputs.publish_release }}" == "true" ]]; then
+              scope="all"
+            else
+              scope="linux"
+            fi
+          fi
+          matrix="$(jq -c --arg scope "$scope" '.[$scope] // empty' .github/build/build-targets.json)"
+          if [[ -z "$matrix" ]]; then
+            echo "Unknown target scope: $scope" >&2
+            exit 1
+          fi
+          count="$(jq -r '.include | length' <<<"$matrix")"
+          echo "Build scope: $scope ($count targets)"
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   build:
-    needs: [prepare-release]
-    if: ${{ always() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped') }}
+    needs: [prepare-release, resolve-matrix]
+    if: ${{ always() && needs.resolve-matrix.result == 'success' && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped') }}
     strategy:
-      matrix:
-        # Include amd64 on all platforms.
-        goos: [windows, freebsd, linux, darwin, openbsd]
-        goarch: [amd64, 386]
-        exclude:
-          # Exclude i386 on darwin.
-          - goarch: 386
-            goos: darwin
-        include:
-          # BEIGIN MacOS ARM64
-          - goos: darwin
-            goarch: arm64
-          # END MacOS ARM64
-          # BEGIN OpenBSD extra arches
-          - goos: openbsd
-            goarch: arm64
-          - goos: openbsd
-            goarch: arm
-            goarm: 7
-          # END OpenBSD
-          # BEGIN Linux ARM 5 6 7
-          - goos: linux
-            goarch: arm
-            goarm: 7
-          - goos: linux
-            goarch: arm
-            goarm: 6
-          - goos: linux
-            goarch: arm
-            goarm: 5
-          # END Linux ARM 5 6 7
-          # BEGIN Android ARM 8
-          - goos: android
-            goarch: arm64
-          # END Android ARM 8
-          # BEGIN Other architectures
-          # BEGIN riscv64 & ARM64
-          - goos: linux
-            goarch: arm64
-          - goos: linux
-            goarch: riscv64
-          # END riscv64 & ARM64
-          # BEGIN MIPS
-          - goos: linux
-            goarch: mips64
-          - goos: linux
-            goarch: mips64le
-          - goos: linux
-            goarch: mipsle
-          - goos: linux
-            goarch: mips
-          # END MIPS
-          # BEGIN PPC
-          - goos: linux
-            goarch: ppc64
-          - goos: linux
-            goarch: ppc64le
-          # END PPC
-          # BEGIN FreeBSD ARM
-          - goos: freebsd
-            goarch: arm64
-          - goos: freebsd
-            goarch: arm
-            goarm: 7
-          # END FreeBSD ARM
-          # BEGIN S390X
-          - goos: linux
-            goarch: s390x
-          # END S390X
-          # END Other architectures
+      # Target list lives in .github/build/build-targets.json and is resolved
+      # by the resolve-matrix job above.
+      matrix: ${{ fromJSON(needs.resolve-matrix.outputs.matrix) }}
       fail-fast: false
 
     runs-on: ubuntu-latest
@@ -309,7 +283,10 @@ jobs:
           mv build_assets N2X-$ASSET_NAME
       - name: Upload files to Artifacts
         uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        # Skipped when publishing: the very same zips go to the GitHub Release
+        # one step below, and release assets are free while artifacts are billed
+        # against the 2 GB/month Actions storage allowance.
+        if: ${{ !(github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)) }}
         with:
           name: N2X-${{ steps.get_filename.outputs.ASSET_NAME }}
           path: |

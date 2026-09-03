@@ -1,0 +1,168 @@
+{
+  "_comment": [
+    "Build scopes for .github/workflows/release.yml.",
+    "'all' is every target the release matrix has ever shipped (27).",
+    "'linux' is the handful actually deployed on nodes: amd64, arm64, armv7.",
+    "The workflow's default scope is 'auto': 'all' when publishing a release,",
+    "'linux' for a plain manual build, which keeps 24 idle cross-compiles and",
+    "~870 MiB of unread artifacts off the Actions bill."
+  ],
+  "all": {
+    "include": [
+      {
+        "goos": "windows",
+        "goarch": "amd64",
+        "goarm": ""
+      },
+      {
+        "goos": "windows",
+        "goarch": "386",
+        "goarm": ""
+      },
+      {
+        "goos": "freebsd",
+        "goarch": "amd64",
+        "goarm": ""
+      },
+      {
+        "goos": "freebsd",
+        "goarch": "386",
+        "goarm": ""
+      },
+      {
+        "goos": "freebsd",
+        "goarch": "arm64",
+        "goarm": ""
+      },
+      {
+        "goos": "freebsd",
+        "goarch": "arm",
+        "goarm": "7"
+      },
+      {
+        "goos": "openbsd",
+        "goarch": "amd64",
+        "goarm": ""
+      },
+      {
+        "goos": "openbsd",
+        "goarch": "386",
+        "goarm": ""
+      },
+      {
+        "goos": "openbsd",
+        "goarch": "arm64",
+        "goarm": ""
+      },
+      {
+        "goos": "openbsd",
+        "goarch": "arm",
+        "goarm": "7"
+      },
+      {
+        "goos": "darwin",
+        "goarch": "amd64",
+        "goarm": ""
+      },
+      {
+        "goos": "darwin",
+        "goarch": "arm64",
+        "goarm": ""
+      },
+      {
+        "goos": "android",
+        "goarch": "arm64",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "amd64",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "386",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "arm64",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "arm",
+        "goarm": "7"
+      },
+      {
+        "goos": "linux",
+        "goarch": "arm",
+        "goarm": "6"
+      },
+      {
+        "goos": "linux",
+        "goarch": "arm",
+        "goarm": "5"
+      },
+      {
+        "goos": "linux",
+        "goarch": "riscv64",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "s390x",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "mips64",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "mips64le",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "mipsle",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "mips",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "ppc64",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "ppc64le",
+        "goarm": ""
+      }
+    ]
+  },
+  "linux": {
+    "include": [
+      {
+        "goos": "linux",
+        "goarch": "amd64",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "arm64",
+        "goarm": ""
+      },
+      {
+        "goos": "linux",
+        "goarch": "arm",
+        "goarm": "7"
+      }
+    ]
+  }
+}

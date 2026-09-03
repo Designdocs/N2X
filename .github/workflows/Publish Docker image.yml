@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
   release:
     types: [published]
-  pull_request:
-    branches:
-      - 'main'
+  # No pull_request trigger: building and pushing the image on every PR spent
+  # runner minutes on an image nobody pulled.
 
 env:
   REGISTRY: ghcr.io

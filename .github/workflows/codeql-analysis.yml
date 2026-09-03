@@ -12,11 +12,10 @@
 name: "CodeQL"
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ main ]
+  # Analysing on every push to main meant a full autobuild of the tree (with the
+  # sing/xray/quic/grpc/gvisor tags) for each commit. The weekly scan plus an
+  # on-demand button covers the same ground at a fraction of the runner minutes.
+  workflow_dispatch:
   schedule:
     - cron: '43 22 * * 3'
 
