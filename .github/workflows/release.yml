@@ -12,21 +12,10 @@ on:
         required: false
         type: boolean
         default: false
-  push:
-    branches:
-      - main
-    paths:
-      - "**/*.go"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/release.yml"
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - "**/*.go"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/release.yml"
+  # No push or pull_request trigger on purpose: every commit to main used to
+  # spend runner minutes building 27 targets nobody had asked for. Builds are
+  # started by hand from the Actions tab instead. The release trigger stays so
+  # a release published by another workflow still gets its binaries attached.
   release:
     types: [published]
 
