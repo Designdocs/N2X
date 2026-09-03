@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"testing"
 
+	"encoding/json/v2"
+
 	"github.com/Designdocs/N2X/conf"
 )
 
@@ -242,5 +244,46 @@ func TestNormalizeArtXNodeForcesLegacyFlowControlOutsideWire(t *testing.T) {
 
 	if node.FlowControl != "legacy" {
 		t.Fatalf("expected non-wire underlay to use legacy flow control, got %q", node.FlowControl)
+	}
+}
+
+func TestNodeMetricsArtXSerialisesAutoFlowControlFields(t *testing.T) {
+	payload, err := json.Marshal(&NodeMetricsArtX{
+		ConfiguredFlowControl:      ArtXFlowControlAuto,
+		MaxWindowScale:             ArtXAutoWindowScale,
+		FlowControlNegotiated:      9,
+		FlowControlScales:          []int{1, 0, 4, 3, 1},
+		FlowControlPressureCeiling: 3,
+		FlowControlAutoFallback:    2,
+	})
+	if err != nil {
+		t.Fatalf("marshal node metrics failed: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal node metrics failed: %v", err)
+	}
+	if decoded["configured_flow_control"] != "auto" {
+		t.Fatalf("configured_flow_control = %#v, want auto", decoded["configured_flow_control"])
+	}
+	scales, ok := decoded["flow_control_scales"].([]any)
+	if !ok || len(scales) != 5 || scales[2] != float64(4) {
+		t.Fatalf("flow_control_scales = %#v, want a five-element array", decoded["flow_control_scales"])
+	}
+	if decoded["flow_control_pressure_ceiling"] != float64(3) {
+		t.Fatalf("flow_control_pressure_ceiling = %#v, want 3", decoded["flow_control_pressure_ceiling"])
+	}
+	if decoded["flow_control_auto_fallback"] != float64(2) {
+		t.Fatalf("flow_control_auto_fallback = %#v, want 2", decoded["flow_control_auto_fallback"])
+	}
+}
+
+func TestNormalizeArtXNodeKeepsAutoFlowControlOnWire(t *testing.T) {
+	node := &ArtXNode{Underlay: "artx-wire", FlowControl: " auto "}
+
+	normalizeArtXNode(node)
+
+	if node.FlowControl != ArtXFlowControlAuto {
+		t.Fatalf("flow control = %q, want auto", node.FlowControl)
 	}
 }

@@ -40,15 +40,28 @@ func artXRuntimeStats(manager featurestats.Manager, tag string) vCore.RuntimeSta
 			FallbackHits:          stats.FallbackHits,
 			FallbackErrors:        stats.FallbackErrors,
 			FlowControlNegotiated: stats.FlowControlNegotiated,
-			NativeActive:          stats.NativeActive,
-			NativeAccepted:        stats.NativeAccepted,
-			NativeRejected:        stats.NativeRejected,
-			NativeDatagramsUp:     stats.NativeDatagramsUp,
-			NativeDatagramsDown:   stats.NativeDatagramsDown,
-			NativeBytesUp:         stats.NativeBytesUp,
-			NativeBytesDown:       stats.NativeBytesDown,
-			NativeTransportErrors: stats.NativeTransportErrors,
-			NativeTargetErrors:    stats.NativeTargetErrors,
+			// The core's histogram is artx.MaxWindowScale+1 long and vCore
+			// restates that width as ArtXFlowControlScaleBuckets. Copying
+			// element-wise makes a future core-side widening a compile
+			// error here rather than a silently truncated report.
+			FlowControlScales: [vCore.ArtXFlowControlScaleBuckets]uint64{
+				stats.FlowControlScales[0],
+				stats.FlowControlScales[1],
+				stats.FlowControlScales[2],
+				stats.FlowControlScales[3],
+				stats.FlowControlScales[4],
+			},
+			FlowControlPressureCeiling: stats.FlowControlPressureCeiling,
+			FlowControlAutoFallback:    stats.FlowControlAutoFallback,
+			NativeActive:               stats.NativeActive,
+			NativeAccepted:             stats.NativeAccepted,
+			NativeRejected:             stats.NativeRejected,
+			NativeDatagramsUp:          stats.NativeDatagramsUp,
+			NativeDatagramsDown:        stats.NativeDatagramsDown,
+			NativeBytesUp:              stats.NativeBytesUp,
+			NativeBytesDown:            stats.NativeBytesDown,
+			NativeTransportErrors:      stats.NativeTransportErrors,
+			NativeTargetErrors:         stats.NativeTargetErrors,
 		},
 	}
 }

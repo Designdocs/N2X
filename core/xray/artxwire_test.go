@@ -281,3 +281,80 @@ func TestBuildArtXWireInboundRejectsUnsupportedProfileVersions(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildArtXWireInboundEnablesAutoFlowControl(t *testing.T) {
+	options := &conf.Options{CertConfig: &conf.CertConfig{
+		CertMode: "file",
+		CertFile: "/panel/cert.pem",
+		KeyFile:  "/panel/key.pem",
+	}}
+	nodeInfo := &panel.NodeInfo{
+		Type:     "artx",
+		Security: panel.Tls,
+		ArtX: &panel.ArtXNode{
+			Underlay:       artXUnderlayWire,
+			WireVersion:    artXWireVersion,
+			ProfileVersion: artXWireDefaultProfileVersion,
+			FlowControl:    panel.ArtXFlowControlAuto,
+		},
+	}
+	inbound := &coreConf.InboundDetourConfig{}
+
+	if err := buildArtX(options, nodeInfo, inbound); err != nil {
+		t.Fatalf("buildArtX returned error: %v", err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(*inbound.Settings, &settings); err != nil {
+		t.Fatalf("unmarshal ArtX wire settings failed: %v", err)
+	}
+	if settings["maxWindowScale"] != float64(panel.ArtXAutoWindowScale) {
+		t.Fatalf("maxWindowScale = %#v, want %d", settings["maxWindowScale"], panel.ArtXAutoWindowScale)
+	}
+	if settings["flowControlAuto"] != true {
+		t.Fatalf("flowControlAuto = %#v, want true", settings["flowControlAuto"])
+	}
+}
+
+func TestBuildArtXWireInboundLeavesFlowControlAutoUnsetForFixedPolicies(t *testing.T) {
+	options := &conf.Options{CertConfig: &conf.CertConfig{
+		CertMode: "file",
+		CertFile: "/panel/cert.pem",
+		KeyFile:  "/panel/key.pem",
+	}}
+	nodeInfo := &panel.NodeInfo{
+		Type:     "artx",
+		Security: panel.Tls,
+		ArtX: &panel.ArtXNode{
+			Underlay:       artXUnderlayWire,
+			WireVersion:    artXWireVersion,
+			ProfileVersion: artXWireDefaultProfileVersion,
+			FlowControl:    panel.ArtXFlowControlHighLatency,
+		},
+	}
+	inbound := &coreConf.InboundDetourConfig{}
+
+	if err := buildArtX(options, nodeInfo, inbound); err != nil {
+		t.Fatalf("buildArtX returned error: %v", err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(*inbound.Settings, &settings); err != nil {
+		t.Fatalf("unmarshal ArtX wire settings failed: %v", err)
+	}
+	if auto, present := settings["flowControlAuto"]; present && auto != false {
+		t.Fatalf("flowControlAuto = %#v, want absent or false", auto)
+	}
+}
+
+func TestArtXWireBuildObservationReportsAutoPolicy(t *testing.T) {
+	observation := newArtXWireBuildObservation(&panel.ArtXNode{
+		Underlay:       artXUnderlayWire,
+		FlowControl:    panel.ArtXFlowControlAuto,
+		ProfileVersion: artXWireDefaultProfileVersion,
+	}, false)
+
+	if observation.FlowControl != panel.ArtXFlowControlAuto ||
+		observation.MaxWindowScale != panel.ArtXAutoWindowScale ||
+		!observation.FlowControlAuto {
+		t.Fatalf("unexpected auto flow-control observation: %+v", observation)
+	}
+}

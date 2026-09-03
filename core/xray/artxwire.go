@@ -23,7 +23,7 @@ func buildArtXWireInbound(option *conf.Options, nodeInfo *panel.NodeInfo, inboun
 	if nodeInfo.ArtX.ProfileVersion != artXWireDefaultProfileVersion && nodeInfo.ArtX.ProfileVersion != 3 {
 		return fmt.Errorf("unsupported artx profile version: %d", nodeInfo.ArtX.ProfileVersion)
 	}
-	maxWindowScale, err := artXMaxWindowScale(nodeInfo.ArtX)
+	maxWindowScale, flowControlAuto, err := artXFlowControlPolicy(nodeInfo.ArtX)
 	if err != nil {
 		return err
 	}
@@ -43,12 +43,13 @@ func buildArtXWireInbound(option *conf.Options, nodeInfo *panel.NodeInfo, inboun
 	t := coreConf.TransportProtocol("tcp")
 	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
 	settings := &coreConf.ArtXServerConfig{
-		TLSSettings:    tlsSettings,
-		WireVersion:    uint32(nodeInfo.ArtX.WireVersion),
-		ProfileVersion: uint32(nodeInfo.ArtX.ProfileVersion),
-		UDPEnabled:     nodeInfo.ArtX.UDP,
-		MaxWindowScale: maxWindowScale,
-		Fallback:       fallback,
+		TLSSettings:     tlsSettings,
+		WireVersion:     uint32(nodeInfo.ArtX.WireVersion),
+		ProfileVersion:  uint32(nodeInfo.ArtX.ProfileVersion),
+		UDPEnabled:      nodeInfo.ArtX.UDP,
+		MaxWindowScale:  maxWindowScale,
+		FlowControlAuto: flowControlAuto,
+		Fallback:        fallback,
 	}
 	rawSettings, err := json.Marshal(settings)
 	if err != nil {
@@ -65,12 +66,13 @@ type artXWireBuildObservation struct {
 	ProfileVersion    int    `json:"profile_version"`
 	FlowControl       string `json:"flow_control"`
 	MaxWindowScale    int    `json:"max_window_scale"`
+	FlowControlAuto   bool   `json:"flow_control_auto"`
 	FallbackMode      string `json:"fallback_mode"`
 	FallbackAvailable bool   `json:"fallback_available"`
 }
 
 func newArtXWireBuildObservation(node *panel.ArtXNode, fallbackAvailable bool) artXWireBuildObservation {
-	maxWindowScale, _ := artXMaxWindowScale(node)
+	maxWindowScale, flowControlAuto, _ := artXFlowControlPolicy(node)
 	fallbackMode := "disabled"
 	if node.Fallback.Enabled {
 		fallbackMode = "https-origin"
@@ -85,6 +87,7 @@ func newArtXWireBuildObservation(node *panel.ArtXNode, fallbackAvailable bool) a
 		ProfileVersion:    node.ProfileVersion,
 		FlowControl:       canonicalArtXFlowControl(node.FlowControl),
 		MaxWindowScale:    int(maxWindowScale),
+		FlowControlAuto:   flowControlAuto,
 		FallbackMode:      fallbackMode,
 		FallbackAvailable: fallbackAvailable,
 	}
@@ -97,21 +100,31 @@ func logArtXWireBuildObservation(observation artXWireBuildObservation) {
 		"profile_version":    observation.ProfileVersion,
 		"flow_control":       observation.FlowControl,
 		"max_window_scale":   observation.MaxWindowScale,
+		"flow_control_auto":  observation.FlowControlAuto,
 		"fallback_mode":      observation.FallbackMode,
 		"fallback_available": observation.FallbackAvailable,
 	}).Info("artx wire inbound observation")
 }
 
-func artXMaxWindowScale(node *panel.ArtXNode) (uint32, error) {
+// artXFlowControlPolicy maps the panel's flow-control name onto the two
+// settings the core takes: the window scale and whether that scale is a fixed
+// setting or an upper bound the core sizes down from per connection.
+//
+// The auto policy needs both a rate lookup and host pressure samples to do
+// anything useful; without them the core falls back to its own defaults, so
+// the mapping stays valid even when the agent has not published either yet.
+func artXFlowControlPolicy(node *panel.ArtXNode) (maxWindowScale uint32, auto bool, err error) {
 	switch canonicalArtXFlowControl(node.FlowControl) {
 	case panel.ArtXFlowControlLegacy:
-		return 0, nil
+		return 0, false, nil
 	case panel.ArtXFlowControlMediumLatency:
-		return panel.ArtXMediumLatencyWindowScale, nil
+		return panel.ArtXMediumLatencyWindowScale, false, nil
 	case panel.ArtXFlowControlHighLatency:
-		return panel.ArtXHighLatencyWindowScale, nil
+		return panel.ArtXHighLatencyWindowScale, false, nil
+	case panel.ArtXFlowControlAuto:
+		return panel.ArtXAutoWindowScale, true, nil
 	default:
-		return 0, fmt.Errorf("unsupported artx flow control: %s", node.FlowControl)
+		return 0, false, fmt.Errorf("unsupported artx flow control: %s", node.FlowControl)
 	}
 }
 

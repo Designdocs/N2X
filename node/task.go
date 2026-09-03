@@ -46,6 +46,10 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	}
 	log.WithField("tag", c.tag).Info("Start report node metrics")
 	_ = c.nodeMetricsReportPeriodic.Start(true)
+	// Host pressure feeds the ArtX auto flow-control ceiling. It runs on its
+	// own cadence rather than on the report path so the blocking CPU probe
+	// is never stacked onto a panel round trip.
+	c.startArtXPressureSampler(node)
 	if node.Security == panel.Tls {
 		certConfig := c.effectiveCertConfig(node)
 		certMode := ""
@@ -133,6 +137,9 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			c.tag = c.buildNodeTag(newN)
 		}
 		limiter.DeleteLimiter(oldTag)
+		// The rate table is keyed by tag, so a renamed node has to release
+		// its old slice before publishing under the new one.
+		c.clearArtXUserRatesForTag(oldTag)
 		c.limiter = limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, newA)
 		c.limiter.SetDeviceTolerance(newN.DeviceLimitTolerance)
 		// update alive list
@@ -183,6 +190,11 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			return nil
 		}
 		c.refreshHTTPSRedirect(newN)
+		c.publishArtXUserRates()
+		// The replacement node may have switched into or out of native
+		// ArtX wire, so the sampler is rebuilt rather than left running.
+		c.stopArtXPressureSampler()
+		c.startArtXPressureSampler(newN)
 		// Check interval
 		if c.nodeInfoMonitorPeriodic.Interval != newN.PullInterval &&
 			newN.PullInterval != 0 {
@@ -246,6 +258,9 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}
 	}
 	c.userList = newU
+	// Republish unconditionally: a plan-rate edit changes no membership, so
+	// it shows up as an empty change set that still has to reach the core.
+	c.publishArtXUserRates()
 	if len(changes.added)+len(changes.deleted)+len(changes.limiterAdded)+len(changes.limiterDeleted) != 0 {
 		log.WithField("tag", c.tag).
 			Infof("%d user deleted, %d user added, %d limiter updated",

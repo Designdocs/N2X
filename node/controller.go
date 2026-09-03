@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -33,6 +34,12 @@ type Controller struct {
 	nodeStatusReportPeriodic  *task.Task
 	nodeMetricsReportPeriodic *task.Task
 	httpsRedirectManager      *httpsRedirectManager
+
+	// artXPressureCancel stops the host-pressure sampler that feeds the
+	// ArtX auto flow-control governor. Nil when no sampler is running,
+	// which is every node that is not native ArtX wire. Touched only from
+	// the controller's own lifecycle calls, which run serialised.
+	artXPressureCancel context.CancelFunc
 
 	// cumulative byte counters maintained by reportUserTrafficTask and
 	// drained by reportNodeMetricsTask to derive inbound/outbound rates
@@ -120,6 +127,10 @@ func (c *Controller) Start() error {
 	}
 	log.WithField("tag", c.tag).Infof("Added %d new users", added)
 	c.info = node
+	// The rate table has to be published before the sampler starts feeding
+	// pressure: a governor ceiling with no per-user rates would size every
+	// window from the default rate instead of the user's plan.
+	c.publishArtXUserRates()
 	c.refreshHTTPSRedirect(node)
 	c.startTasks(node)
 	return nil
@@ -129,6 +140,8 @@ func (c *Controller) Start() error {
 func (c *Controller) Close() error {
 	c.apiClient.SetAliveUpdateHook(nil)
 	c.apiClient.SetKickedUpdateHook(nil)
+	c.stopArtXPressureSampler()
+	c.clearArtXUserRates()
 	limiter.DeleteLimiter(c.tag)
 	if c.nodeInfoMonitorPeriodic != nil {
 		c.nodeInfoMonitorPeriodic.Close()

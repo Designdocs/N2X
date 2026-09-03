@@ -347,8 +347,14 @@ const (
 	ArtXFlowControlLegacy        = "legacy"
 	ArtXFlowControlMediumLatency = "medium_latency"
 	ArtXFlowControlHighLatency   = "high_latency"
+	// ArtXFlowControlAuto lets the core size each connection's window from
+	// the measured bandwidth-delay product. The scale below is an upper
+	// bound rather than a fixed setting: the core clamps it further by the
+	// client offer, the user's plan rate and the host pressure ceiling.
+	ArtXFlowControlAuto          = "auto"
 	ArtXMediumLatencyWindowScale = 3
 	ArtXHighLatencyWindowScale   = 4
+	ArtXAutoWindowScale          = 4
 )
 
 type ArtXFallback struct {

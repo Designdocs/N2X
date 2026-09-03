@@ -222,22 +222,28 @@ func (c *Controller) applyProtocolRuntimeStats(metrics *panel.NodeMetrics) {
 		FallbackHits:          boundedMetricInt(stats.ArtX.FallbackHits),
 		FallbackErrors:        boundedMetricInt(stats.ArtX.FallbackErrors),
 		FlowControlNegotiated: boundedMetricInt(stats.ArtX.FlowControlNegotiated),
-		RequestedUDPMode:      stats.ArtX.RequestedUDPMode,
-		ActiveUDPMode:         stats.ArtX.ActiveUDPMode,
-		NativeListenerReady:   stats.ArtX.NativeListenerReady,
-		NativeActive:          boundedMetricInt(stats.ArtX.NativeActive),
-		NativeAccepted:        boundedMetricInt(stats.ArtX.NativeAccepted),
-		NativeRejected:        boundedMetricInt(stats.ArtX.NativeRejected),
-		NativeDatagramsUp:     boundedMetricInt(stats.ArtX.NativeDatagramsUp),
-		NativeDatagramsDown:   boundedMetricInt(stats.ArtX.NativeDatagramsDown),
-		NativeBytesUp:         boundedMetricInt(stats.ArtX.NativeBytesUp),
-		NativeBytesDown:       boundedMetricInt(stats.ArtX.NativeBytesDown),
-		NativeTransportErrors: boundedMetricInt(stats.ArtX.NativeTransportErrors),
-		NativeTargetErrors:    boundedMetricInt(stats.ArtX.NativeTargetErrors),
-		NativeCleanupFailures: boundedMetricInt(stats.ArtX.NativeCleanupFailures),
-		NativeCleanupMillis:   boundedMetricInt(stats.ArtX.NativeCleanupMillis),
-		LastErrorCode:         stats.ArtX.LastErrorCode,
-		LastErrorUnix:         stats.ArtX.LastErrorUnix,
+		// FlowControlScales is a histogram, FlowControlPressureCeiling a
+		// gauge of the last negotiation's ceiling — the panel must not sum
+		// the latter across ticks.
+		FlowControlScales:          artXFlowControlScales(stats.ArtX.FlowControlScales),
+		FlowControlPressureCeiling: boundedMetricInt(stats.ArtX.FlowControlPressureCeiling),
+		FlowControlAutoFallback:    boundedMetricInt(stats.ArtX.FlowControlAutoFallback),
+		RequestedUDPMode:           stats.ArtX.RequestedUDPMode,
+		ActiveUDPMode:              stats.ArtX.ActiveUDPMode,
+		NativeListenerReady:        stats.ArtX.NativeListenerReady,
+		NativeActive:               boundedMetricInt(stats.ArtX.NativeActive),
+		NativeAccepted:             boundedMetricInt(stats.ArtX.NativeAccepted),
+		NativeRejected:             boundedMetricInt(stats.ArtX.NativeRejected),
+		NativeDatagramsUp:          boundedMetricInt(stats.ArtX.NativeDatagramsUp),
+		NativeDatagramsDown:        boundedMetricInt(stats.ArtX.NativeDatagramsDown),
+		NativeBytesUp:              boundedMetricInt(stats.ArtX.NativeBytesUp),
+		NativeBytesDown:            boundedMetricInt(stats.ArtX.NativeBytesDown),
+		NativeTransportErrors:      boundedMetricInt(stats.ArtX.NativeTransportErrors),
+		NativeTargetErrors:         boundedMetricInt(stats.ArtX.NativeTargetErrors),
+		NativeCleanupFailures:      boundedMetricInt(stats.ArtX.NativeCleanupFailures),
+		NativeCleanupMillis:        boundedMetricInt(stats.ArtX.NativeCleanupMillis),
+		LastErrorCode:              stats.ArtX.LastErrorCode,
+		LastErrorUnix:              stats.ArtX.LastErrorUnix,
 	}
 	if current, err := process.NewProcess(int32(os.Getpid())); err == nil {
 		if times, timesErr := current.Times(); timesErr == nil {
@@ -258,9 +264,25 @@ func configuredArtXWindowScale(node *panel.ArtXNode) int {
 		return panel.ArtXMediumLatencyWindowScale
 	case panel.ArtXFlowControlHighLatency:
 		return panel.ArtXHighLatencyWindowScale
+	case panel.ArtXFlowControlAuto:
+		// Under the auto policy this is the ceiling the core may reach,
+		// not the scale it settles on; flow_control_scales reports what
+		// was actually negotiated.
+		return panel.ArtXAutoWindowScale
 	default:
 		return 0
 	}
+}
+
+// artXFlowControlScales renders the per-scale negotiation histogram as the
+// fixed-length array the panel expects, so a scale nobody hit still reports 0
+// rather than shortening the array and shifting every later index.
+func artXFlowControlScales(scales [vCore.ArtXFlowControlScaleBuckets]uint64) []int {
+	rendered := make([]int, len(scales))
+	for i := range scales {
+		rendered[i] = boundedMetricInt(scales[i])
+	}
+	return rendered
 }
 
 func usesNativeArtXWire(info *panel.NodeInfo) bool {
