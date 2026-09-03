@@ -130,8 +130,8 @@ func (c *Controller) stopArtXPressureSampler() {
 func runArtXPressureSampler(
 	ctx context.Context,
 	interval time.Duration,
-	sample func() (cpuPercent, memoryPercent float64, ok bool),
-	observe func(cpuPercent, memoryPercent float64),
+	sample func() (vCore.ArtXHostPressureSample, bool),
+	observe func(vCore.ArtXHostPressureSample),
 ) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -143,30 +143,41 @@ func runArtXPressureSampler(
 			// A failed probe is dropped rather than reported as zero
 			// load: zero would read as an idle host and let the
 			// governor raise the ceiling on no evidence.
-			if cpuPercent, memoryPercent, ok := sample(); ok {
-				observe(cpuPercent, memoryPercent)
+			if observation, ok := sample(); ok {
+				observe(observation)
 			}
 		}
 	}
 }
 
-// sampleHostPressure reads one CPU/memory utilisation pair. A sample counts as
-// usable if either probe succeeded; the governor judges on whichever value is
-// higher, so a missing half reported as 0 cannot inflate the result.
-func sampleHostPressure() (cpuPercent, memoryPercent float64, ok bool) {
+// sampleHostPressure reads one host utilisation observation. A sample counts
+// as usable if either probe succeeded; the governor judges the ladder on
+// whichever percentage is higher, so a missing half reported as 0 cannot
+// inflate the result.
+//
+// The memory probe also reports Total and Available in bytes, which feed the
+// core's per-connection window budget. Available — not Free — is the right
+// figure: reclaimable cache is memory ArtX may legitimately spend a window on.
+// They stay zero when the probe fails, and zero is exactly how the core spells
+// "memory size unknown, leave the budget clamp inactive".
+func sampleHostPressure() (vCore.ArtXHostPressureSample, bool) {
+	var sample vCore.ArtXHostPressureSample
+	ok := false
 	if percents, err := cpu.Percent(artXPressureCPUWindow, false); err == nil && len(percents) > 0 {
-		cpuPercent = clampPercent(percents[0])
+		sample.CPUPercent = clampPercent(percents[0])
 		ok = true
 	} else if err != nil {
 		log.WithField("err", err).Debug("sample artx cpu pressure failed")
 	}
 	if vm, err := mem.VirtualMemory(); err == nil {
-		memoryPercent = clampPercent(vm.UsedPercent)
+		sample.MemoryPercent = clampPercent(vm.UsedPercent)
+		sample.MemoryTotalBytes = vm.Total
+		sample.MemoryAvailableBytes = vm.Available
 		ok = true
 	} else {
 		log.WithField("err", err).Debug("sample artx memory pressure failed")
 	}
-	return cpuPercent, memoryPercent, ok
+	return sample, ok
 }
 
 func clampPercent(value float64) float64 {

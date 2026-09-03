@@ -40,9 +40,21 @@ type ArtXFlowControlProvider interface {
 	SetArtXUserRates(tag string, rates map[string]uint64)
 	// ClearArtXUserRates drops a node tag's slice of that table.
 	ClearArtXUserRates(tag string)
-	// ObserveArtXHostPressure feeds one host utilisation sample, both
-	// values percentages in [0, 100], to the window-ceiling governor.
-	ObserveArtXHostPressure(cpuPercent, memoryPercent float64)
+	// ObserveArtXHostPressure feeds one host utilisation sample to the
+	// window-ceiling governor.
+	ObserveArtXHostPressure(sample ArtXHostPressureSample)
+}
+
+// ArtXHostPressureSample is one host utilisation observation. CPUPercent and
+// MemoryPercent are percentages in [0, 100] and drive the sustained-load
+// ladder. MemoryTotalBytes and MemoryAvailableBytes carry the same memory
+// reading in absolute bytes and drive the instantaneous per-connection window
+// budget; a zero in either means "unknown", which leaves that budget inactive.
+type ArtXHostPressureSample struct {
+	CPUPercent           float64
+	MemoryPercent        float64
+	MemoryTotalBytes     uint64
+	MemoryAvailableBytes uint64
 }
 
 type ArtXRuntimeStats struct {

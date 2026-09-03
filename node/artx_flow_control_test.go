@@ -67,7 +67,7 @@ type artXFlowControlCore struct {
 	mu       sync.Mutex
 	rates    map[string]map[string]uint64
 	cleared  []string
-	pressure [][2]float64
+	pressure []vCore.ArtXHostPressureSample
 }
 
 func (core *artXFlowControlCore) SetArtXUserRates(tag string, rates map[string]uint64) {
@@ -85,10 +85,10 @@ func (core *artXFlowControlCore) ClearArtXUserRates(tag string) {
 	core.cleared = append(core.cleared, tag)
 }
 
-func (core *artXFlowControlCore) ObserveArtXHostPressure(cpuPercent, memoryPercent float64) {
+func (core *artXFlowControlCore) ObserveArtXHostPressure(sample vCore.ArtXHostPressureSample) {
 	core.mu.Lock()
 	defer core.mu.Unlock()
-	core.pressure = append(core.pressure, [2]float64{cpuPercent, memoryPercent})
+	core.pressure = append(core.pressure, sample)
 }
 
 func TestPublishArtXUserRatesSkipsNonWireNodes(t *testing.T) {
@@ -154,25 +154,32 @@ func TestClearArtXUserRatesReleasesTheTag(t *testing.T) {
 }
 
 func TestRunArtXPressureSamplerObservesUntilCancelled(t *testing.T) {
-	observed := make(chan [2]float64, 8)
+	observed := make(chan vCore.ArtXHostPressureSample, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 
+	probe := vCore.ArtXHostPressureSample{
+		CPUPercent:           42.5,
+		MemoryPercent:        61.25,
+		MemoryTotalBytes:     1004535808,
+		MemoryAvailableBytes: 402653184,
+	}
 	go func() {
 		defer close(done)
 		runArtXPressureSampler(ctx, time.Millisecond,
-			func() (float64, float64, bool) { return 42.5, 61.25, true },
-			func(cpuPercent, memoryPercent float64) {
+			func() (vCore.ArtXHostPressureSample, bool) { return probe, true },
+			func(sample vCore.ArtXHostPressureSample) {
 				select {
-				case observed <- [2]float64{cpuPercent, memoryPercent}:
+				case observed <- sample:
 				default:
 				}
 			})
 	}()
 
-	sample := <-observed
-	if sample[0] != 42.5 || sample[1] != 61.25 {
-		t.Fatalf("observed = %v, want [42.5 61.25]", sample)
+	// The absolute memory sizes must survive the hop as well: they are what
+	// the core's per-connection window budget is computed from.
+	if sample := <-observed; sample != probe {
+		t.Fatalf("observed = %+v, want %+v", sample, probe)
 	}
 
 	cancel()
@@ -192,14 +199,14 @@ func TestRunArtXPressureSamplerSkipsFailedProbes(t *testing.T) {
 	go func() {
 		defer close(done)
 		runArtXPressureSampler(ctx, time.Millisecond,
-			func() (float64, float64, bool) {
+			func() (vCore.ArtXHostPressureSample, bool) {
 				select {
 				case probes <- struct{}{}:
 				default:
 				}
-				return 0, 0, false
+				return vCore.ArtXHostPressureSample{}, false
 			},
-			func(float64, float64) { observations++ })
+			func(vCore.ArtXHostPressureSample) { observations++ })
 	}()
 
 	<-probes
@@ -254,5 +261,30 @@ func TestArtXPressureSamplerNotStartedForNonWireNodes(t *testing.T) {
 
 	if controller.artXPressureCancel != nil {
 		t.Fatal("non-wire node started a pressure sampler")
+	}
+}
+
+func TestSampleHostPressureReportsAbsoluteMemorySizes(t *testing.T) {
+	sample, ok := sampleHostPressure()
+	if !ok {
+		t.Skip("no host utilisation probe succeeded in this environment")
+	}
+	// gopsutil reports memory on every platform this agent builds for, so a
+	// usable sample must carry sizes the window budget can divide up. Zero
+	// would silently disable the clamp everywhere.
+	if sample.MemoryTotalBytes == 0 {
+		t.Fatal("MemoryTotalBytes = 0, want the host memory size")
+	}
+	if sample.MemoryAvailableBytes == 0 {
+		t.Fatal("MemoryAvailableBytes = 0, want the available memory size")
+	}
+	if sample.MemoryAvailableBytes > sample.MemoryTotalBytes {
+		t.Fatalf("available %d exceeds total %d", sample.MemoryAvailableBytes, sample.MemoryTotalBytes)
+	}
+	if sample.MemoryPercent < 0 || sample.MemoryPercent > 100 {
+		t.Fatalf("MemoryPercent = %v, want [0, 100]", sample.MemoryPercent)
+	}
+	if sample.CPUPercent < 0 || sample.CPUPercent > 100 {
+		t.Fatalf("CPUPercent = %v, want [0, 100]", sample.CPUPercent)
 	}
 }

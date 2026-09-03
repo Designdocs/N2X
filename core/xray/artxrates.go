@@ -105,9 +105,11 @@ func (c *Xray) ClearArtXUserRates(tag string) {
 
 // ObserveArtXHostPressure implements vCore.ArtXFlowControlProvider. The core
 // timestamps the sample itself and creates the governor on first use.
-func (c *Xray) ObserveArtXHostPressure(cpuPercent, memoryPercent float64) {
+func (c *Xray) ObserveArtXHostPressure(sample vCore.ArtXHostPressureSample) {
 	artx.ObserveHostPressure(artx.PressureSample{
-		CPUPercent:    cpuPercent,
-		MemoryPercent: memoryPercent,
+		CPUPercent:           sample.CPUPercent,
+		MemoryPercent:        sample.MemoryPercent,
+		MemoryTotalBytes:     sample.MemoryTotalBytes,
+		MemoryAvailableBytes: sample.MemoryAvailableBytes,
 	})
 }
