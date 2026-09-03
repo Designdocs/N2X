@@ -6,7 +6,7 @@
       "module": "github.com/xtls/xray-core",
       "upstream": "https://github.com/wyx2685/Xray-core",
       "strategy": "commit",
-      "ref": "13357f3bc706dbae675223a42016a57ed27c3510",
+      "ref": "83ad74c463351e01c7cde391abfd9dded9e78300",
       "group": "core",
       "notes": "Track wyx2685/Xray-core main commits and keep the replace pinned to an exact commit."
     },
