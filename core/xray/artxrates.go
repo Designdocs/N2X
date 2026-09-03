@@ -113,3 +113,17 @@ func (c *Xray) ObserveArtXHostPressure(sample vCore.ArtXHostPressureSample) {
 		MemoryAvailableBytes: sample.MemoryAvailableBytes,
 	})
 }
+
+// ConfigureArtXWindowBudget implements vCore.ArtXFlowControlProvider. The core
+// normalizes the policy itself, so an out-of-range value still leaves a usable
+// budget in place; the error only exists so the agent can say which value it
+// ignored.
+func (c *Xray) ConfigureArtXWindowBudget(policy vCore.ArtXWindowBudgetPolicy) error {
+	converted := artx.WindowBudgetPolicy{
+		SharePercent:   policy.SharePercent,
+		ReservePercent: policy.ReservePercent,
+	}
+	err := converted.Validate()
+	artx.SetSharedWindowBudgetPolicy(converted)
+	return err
+}

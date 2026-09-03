@@ -110,10 +110,39 @@ func (c *Controller) startArtXPressureSampler(info *panel.NodeInfo) {
 	if provider == nil || c.artXPressureCancel != nil {
 		return
 	}
+	c.configureArtXWindowBudget(provider)
 	ctx, cancel := context.WithCancel(context.Background())
 	c.artXPressureCancel = cancel
 	go runArtXPressureSampler(ctx, artXPressureSampleInterval, sampleHostPressure, provider.ObserveArtXHostPressure)
 	log.WithField("tag", c.tag).Info("Start ArtX host pressure sampling")
+}
+
+// configureArtXWindowBudget installs this node's window budget policy on the
+// core before the first probe can land, so the very first connection is
+// negotiated against the configured budget rather than the default one.
+//
+// The budget is a host-level resource shared by every ArtX inbound in the
+// process, so the policy is process-wide: with two native ArtX wire nodes on
+// one host, the last sampler to start wins. Give them the same block, or set
+// it on neither and take the default.
+func (c *Controller) configureArtXWindowBudget(provider vCore.ArtXFlowControlProvider) {
+	var policy vCore.ArtXWindowBudgetPolicy
+	if c.Options != nil && c.ArtXOptions != nil {
+		policy.SharePercent = c.ArtXOptions.WindowBudgetSharePercent
+		policy.ReservePercent = c.ArtXOptions.WindowBudgetReservePercent
+	}
+	if err := provider.ConfigureArtXWindowBudget(policy); err != nil {
+		log.WithFields(log.Fields{"tag": c.tag, "err": err}).
+			Warn("Ignore out-of-range ArtX window budget value, using the core default instead")
+	}
+	if policy == (vCore.ArtXWindowBudgetPolicy{}) {
+		return
+	}
+	log.WithFields(log.Fields{
+		"tag":             c.tag,
+		"share_percent":   policy.SharePercent,
+		"reserve_percent": policy.ReservePercent,
+	}).Info("Apply configured ArtX window budget")
 }
 
 func (c *Controller) stopArtXPressureSampler() {

@@ -43,6 +43,19 @@ type ArtXFlowControlProvider interface {
 	// ObserveArtXHostPressure feeds one host utilisation sample to the
 	// window-ceiling governor.
 	ObserveArtXHostPressure(sample ArtXHostPressureSample)
+	// ConfigureArtXWindowBudget installs the receive-window memory budget
+	// policy. It returns the values it had to reject as out of range; the
+	// policy it installs is usable either way, with every rejected or zero
+	// field falling back to the core default.
+	ConfigureArtXWindowBudget(policy ArtXWindowBudgetPolicy) error
+}
+
+// ArtXWindowBudgetPolicy is the operator-tunable slice of host memory ArtX may
+// commit to receive windows. Both fields are percentages of total memory and
+// both are optional: 0 selects the core default (25% share, 20% reserve).
+type ArtXWindowBudgetPolicy struct {
+	SharePercent   uint64
+	ReservePercent uint64
 }
 
 // ArtXHostPressureSample is one host utilisation observation. CPUPercent and

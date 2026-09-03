@@ -181,6 +181,26 @@
         "CertFile": "/etc/N2X/fullchain-naive.example.com.cer",
         "KeyFile": "/etc/N2X/cert-naive.example.com.key"
       }
+    },
+    {
+      "Core": "xray",
+      "ApiHost": "${N2X_API_HOST:-http://127.0.0.1}",
+      "ApiKey": "${N2X_API_KEY}",
+      "NodeID": 40,
+      "NodeType": "artx",
+      "Timeout": 30,
+      "ListenIP": "0.0.0.0",
+      "SendIP": "0.0.0.0",
+      "ArtXOptions": {
+        "WindowBudgetSharePercent": 25,
+        "WindowBudgetReservePercent": 20
+      },
+      "CertConfig": {
+        "CertMode": "file",
+        "CertDomain": "artx.example.com",
+        "CertFile": "/etc/N2X/fullchain-artx.example.com.cer",
+        "KeyFile": "/etc/N2X/cert-artx.example.com.key"
+      }
     }
   ],
   "_help": {
@@ -202,6 +222,7 @@
     "Nodes.SingOptions": "仅 sing 核心使用。EnableSniff/SniffOverrideDestination 控制流量嗅探；DomainStrategy 可填 as_is/prefer_ipv4/prefer_ipv6/ipv4_only/ipv6_only；MultiplexConfig 控制 mux；FallBackConfigs 仅 trojan 使用。",
     "Nodes.ShadowTLSOptions": "仅 shadowtls 节点使用，用于覆盖面板下发值。Version 建议填 3；HandshakeServer/HandshakeServerPort 必须指向一个真实且支持 TLS1.3 的站点；StrictMode=true 时校验更严格；WildcardSNI 可填 off/authed/all。用户鉴权在内部 Shadowsocks 层完成，因此增删用户不会中断连接。",
     "Nodes.NaiveOptions": "仅 naive 节点使用。Network 留空表示同时监听 TCP(HTTP/2) 与 UDP(HTTP/3)，也可填 tcp 或 udp。注意：naive 无法在线增删用户，用户变更会重建监听器并短暂断开已有连接，因此 naive 节点必须配置真实证书。",
+    "Nodes.ArtXOptions": "仅 artx 节点使用，且只对面板下发 underlay=artx-wire 的节点生效。WindowBudgetSharePercent 是 ArtX 接收窗口最多可占用的宿主机内存比例（1-100，默认 25）；WindowBudgetReservePercent 是必须留给系统其它进程的可用内存比例（1-99，默认 20）。预算 = min(总内存 × Share%, 可用内存 - 总内存 × Reserve%)，在新连接握手时按当前活跃连接数均分，决定单连接窗口档位——人少时给满档提速，人多时自动降档，已建立的连接不受影响。两项均可省略或填 0 表示用默认值；预算是宿主机级共享资源，同机多个 artx-wire 节点以最后启动者为准。",
     "Nodes.CertConfig": "CertMode 可填 none/file/http/dns/self：file 使用现有证书，http/dns 自动申请，self 生成自签证书；RejectUnknownSni=true 时拒绝未知 SNI。hysteria2/tuic/naive 必须具备可用证书；shadowtls 不需要自己的证书，填 none 即可。",
     "Nodes.CertPaths": "http/dns/self 模式的 CertFile 和 KeyFile 支持 {domain}；file 模式请填写现有证书的实际绝对路径。",
     "Nodes.CertProvider": "Provider 和 DNSEnv 仅 dns 模式使用；Provider 填 lego 支持的名称，例如 cloudflare、alidns。"

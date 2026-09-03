@@ -140,6 +140,7 @@ type Options struct {
 	RawOptions             json.RawMessage `json:"RawOptions"`
 	XrayOptions            *XrayOptions    `json:"XrayOptions"`
 	SingOptions            *SingOptions    `json:"SingOptions"`
+	ArtXOptions            *ArtXOptions    `json:"ArtXOptions"`
 	CertConfig             *CertConfig     `json:"CertConfig"`
 }
 

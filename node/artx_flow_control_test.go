@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -68,6 +69,10 @@ type artXFlowControlCore struct {
 	rates    map[string]map[string]uint64
 	cleared  []string
 	pressure []vCore.ArtXHostPressureSample
+	budgets  []vCore.ArtXWindowBudgetPolicy
+	// budgetErr is what ConfigureArtXWindowBudget reports back, standing in
+	// for the core rejecting an out-of-range percentage.
+	budgetErr error
 }
 
 func (core *artXFlowControlCore) SetArtXUserRates(tag string, rates map[string]uint64) {
@@ -89,6 +94,23 @@ func (core *artXFlowControlCore) ObserveArtXHostPressure(sample vCore.ArtXHostPr
 	core.mu.Lock()
 	defer core.mu.Unlock()
 	core.pressure = append(core.pressure, sample)
+}
+
+func (core *artXFlowControlCore) ConfigureArtXWindowBudget(policy vCore.ArtXWindowBudgetPolicy) error {
+	core.mu.Lock()
+	defer core.mu.Unlock()
+	core.budgets = append(core.budgets, policy)
+	return core.budgetErr
+}
+
+// observedBudgets returns the policies the core was handed, and how many
+// pressure samples had already arrived when the first one landed. The budget
+// has to be installed before any probe, so the first configure must precede
+// every observation.
+func (core *artXFlowControlCore) observedBudgets() ([]vCore.ArtXWindowBudgetPolicy, int) {
+	core.mu.Lock()
+	defer core.mu.Unlock()
+	return core.budgets, len(core.pressure)
 }
 
 func TestPublishArtXUserRatesSkipsNonWireNodes(t *testing.T) {
@@ -286,5 +308,103 @@ func TestSampleHostPressureReportsAbsoluteMemorySizes(t *testing.T) {
 	}
 	if sample.CPUPercent < 0 || sample.CPUPercent > 100 {
 		t.Fatalf("CPUPercent = %v, want [0, 100]", sample.CPUPercent)
+	}
+}
+
+func TestStartArtXPressureSamplerConfiguresTheWindowBudget(t *testing.T) {
+	wireNode := func() *panel.NodeInfo {
+		return &panel.NodeInfo{Type: "artx", ArtX: &panel.ArtXNode{
+			Underlay:    "artx-wire",
+			FlowControl: panel.ArtXFlowControlAuto,
+		}}
+	}
+	tests := []struct {
+		name    string
+		options *conf.Options
+		want    vCore.ArtXWindowBudgetPolicy
+	}{
+		{
+			name:    "absent block takes the core default",
+			options: &conf.Options{},
+			want:    vCore.ArtXWindowBudgetPolicy{},
+		},
+		{
+			name: "configured block is forwarded verbatim",
+			options: &conf.Options{ArtXOptions: &conf.ArtXOptions{
+				WindowBudgetSharePercent:   40,
+				WindowBudgetReservePercent: 15,
+			}},
+			want: vCore.ArtXWindowBudgetPolicy{SharePercent: 40, ReservePercent: 15},
+		},
+		{
+			name: "a zero field is forwarded as zero, i.e. the core default",
+			options: &conf.Options{ArtXOptions: &conf.ArtXOptions{
+				WindowBudgetSharePercent: 40,
+			}},
+			want: vCore.ArtXWindowBudgetPolicy{SharePercent: 40},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := &artXFlowControlCore{}
+			controller := &Controller{
+				server:  server,
+				tag:     "artx-canary",
+				info:    wireNode(),
+				Options: test.options,
+			}
+
+			controller.startArtXPressureSampler(controller.info)
+			t.Cleanup(controller.stopArtXPressureSampler)
+
+			budgets, samples := server.observedBudgets()
+			if len(budgets) != 1 {
+				t.Fatalf("configure calls = %d, want exactly 1", len(budgets))
+			}
+			if budgets[0] != test.want {
+				t.Fatalf("policy = %+v, want %+v", budgets[0], test.want)
+			}
+			if samples != 0 {
+				t.Fatalf("%d pressure samples arrived before the budget was configured", samples)
+			}
+		})
+	}
+}
+
+func TestStartArtXPressureSamplerSurvivesARejectedBudget(t *testing.T) {
+	// A rejected percentage is logged and dropped: the core keeps a usable
+	// default, so the sampler must still come up.
+	server := &artXFlowControlCore{budgetErr: errors.New("share percent 200 is above 100")}
+	controller := &Controller{
+		server: server,
+		tag:    "artx-canary",
+		info: &panel.NodeInfo{Type: "artx", ArtX: &panel.ArtXNode{
+			Underlay:    "artx-wire",
+			FlowControl: panel.ArtXFlowControlAuto,
+		}},
+		Options: &conf.Options{ArtXOptions: &conf.ArtXOptions{WindowBudgetSharePercent: 200}},
+	}
+
+	controller.startArtXPressureSampler(controller.info)
+	t.Cleanup(controller.stopArtXPressureSampler)
+
+	if controller.artXPressureCancel == nil {
+		t.Fatal("a rejected budget value stopped the sampler from starting")
+	}
+}
+
+func TestArtXPressureSamplerNotConfiguredForNonWireNodes(t *testing.T) {
+	server := &artXFlowControlCore{}
+	controller := &Controller{
+		server:  server,
+		tag:     "artx-canary",
+		info:    &panel.NodeInfo{Type: "artx", ArtX: &panel.ArtXNode{Underlay: "anytls"}},
+		Options: &conf.Options{ArtXOptions: &conf.ArtXOptions{WindowBudgetSharePercent: 40}},
+	}
+
+	controller.startArtXPressureSampler(controller.info)
+
+	if budgets, _ := server.observedBudgets(); len(budgets) != 0 {
+		t.Fatalf("non-wire node configured the window budget: %+v", budgets)
 	}
 }
