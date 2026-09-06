@@ -241,6 +241,11 @@ naive inbound answer two kinds of client on one port with one user list:
   origins are forwarded through the router, and a missing or wrong
   `Proxy-Authorization` gets a `407` with a `Basic` challenge, which is the only
   way a browser learns to send credentials at all.
+- An origin-form request (`GET /` addressed to the node host itself) is not a
+  proxy request. It is answered with a plain `404` and no challenge: the
+  extension measures latency with exactly such a request, and Chromium refuses
+  a `407` that arrives outside a proxy exchange (`ERR_UNEXPECTED_PROXY_AUTH`).
+  A bare visit to the port therefore looks like an empty web server.
 
 Both paths reach the router with the same user attribution, so limits and
 traffic accounting do not distinguish them. The trade-off is that an
