@@ -229,7 +229,7 @@ nothing to do on this side until upstream adds the field.
 
 ## Naive nodes also serve plain HTTPS proxy clients
 
-The pinned sing-box fork (`Designdocs/sing-box_mod`, commit 5356a2e6) makes the
+The pinned sing-box fork (`Designdocs/sing-box_mod`, commit a7039e06) makes the
 naive inbound answer two kinds of client on one port with one user list:
 
 - A request carrying the naive `Padding` header is a naive client and gets the
@@ -237,21 +237,29 @@ naive inbound answer two kinds of client on one port with one user list:
   bad request or wrong credentials.
 - A request without it is a plain HTTPS proxy client: a browser extension,
   `curl -x https://…`, anything speaking RFC 9110 CONNECT with Basic auth.
-  CONNECT tunnels carry no padding frames, absolute-URI requests for `http://`
-  origins are forwarded through the router, and a missing or wrong
-  `Proxy-Authorization` gets a `407` with a `Basic` challenge, which is the only
-  way a browser learns to send credentials at all.
+  CONNECT tunnels carry no padding frames and absolute-URI requests for
+  `http://` origins are forwarded through the router, on HTTP/1.1 and HTTP/2
+  alike.
+- A plain request with a missing or wrong `Proxy-Authorization` is answered
+  `404` with **no challenge**, CONNECT included, so an active prober that holds
+  no credentials sees an empty web server and never learns a proxy is there.
+  The one exception is the client's own *probe host*: the first 16 hex
+  characters of `sha256("<username>:<password>")` followed by `.invalid`. A
+  request for it earns the `407 Basic` challenge a browser needs before it
+  will send credentials at all; once authenticated it is answered `204` and
+  never routed. The browser extension derives the same host, requests it right
+  after applying its proxy policy, and from then on the browser sends
+  `Proxy-Authorization` pre-emptively on every CONNECT. The derivation is a
+  contract pinned by `TestProbeHostDerivationIsPinned` on the fork side.
 - An origin-form request (`GET /` addressed to the node host itself) is not a
-  proxy request. It is answered with a plain `404` and no challenge: the
-  extension measures latency with exactly such a request, and Chromium refuses
-  a `407` that arrives outside a proxy exchange (`ERR_UNEXPECTED_PROXY_AUTH`).
-  A bare visit to the port therefore looks like an empty web server.
+  proxy request either and is answered `404`: the extension measures latency
+  with exactly such a request, and Chromium refuses a `407` that arrives
+  outside a proxy exchange (`ERR_UNEXPECTED_PROXY_AUTH`).
 
 Both paths reach the router with the same user attribution, so limits and
-traffic accounting do not distinguish them. The trade-off is that an
-unauthenticated probe sending a padding-less CONNECT now sees a `407` where it
-used to see a closed connection; naive-only stealth on the same port is gone.
-Nothing in N2X changes: the node's users, port and certificate are shared.
+traffic accounting do not distinguish them. Nothing in N2X changes: the node's
+users, port and certificate are shared, and the probe host index is built from
+the same user list the inbound is rebuilt with.
 
 ## Protocol parameters: panel first, config second
 
