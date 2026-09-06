@@ -185,6 +185,48 @@ Two consequences worth knowing before turning it on:
   as unexplained packet loss, which is worse than a node that says why it
   stopped.
 
+## Multiplex Brutal is a kernel module, not a sing-box feature
+
+`buildMultiplex` in `core/sing/inbound.go` passes `SingOptions.Multiplex.Brutal`
+through to sing-box as `option.BrutalOptions`. What that eventually performs is
+a pair of `setsockopt` calls on the server side of the multiplex connection:
+sing-mux sets `TCP_CONGESTION` to `brutal`, then writes a `TCP_BRUTAL_PARAMS`
+struct. Both fail unless the [tcp-brutal](https://github.com/HyNetworks/tcp-brutal)
+kernel module is installed on the node. The xray core has no equivalent — there
+is no `TCP_BRUTAL` anywhere in it — so this setting means something only on a
+`"Core": "sing"` node.
+
+Failure is quiet by design. When the `setsockopt` fails, sing-mux answers the
+client's brutal request with `WriteBrutalResponse(conn, 0, false, ...)` and the
+session continues as ordinary multiplex without brutal. Nothing surfaces in the
+node's log. "Brutal is enabled and changes nothing" is what a missing — or
+refusing — module looks like from the outside.
+
+### tcp-brutal v2 on the node
+
+v2 still accepts the 12-byte v1 parameter struct that sing-mux writes, so
+upgrading the module on a node changes nothing above. Two of its new behaviours
+are worth knowing before an operator reaches for them:
+
+- **Destination rules lock the connection, which switches mux brutal off.**
+  `brutalctl add <prefix> <mbps>` installs a route carrying
+  `congctl lock brutal`. On a connection covered by it, sing-mux's
+  `setsockopt(TCP_CONGESTION, "brutal")` returns `EPERM` — brutal is already
+  running, but the socket may no longer say so — and the quiet fallback above
+  takes over. The "destination" of a proxy server's traffic is the client's own
+  address, so a rule added to speed one client up is exactly the rule that
+  disables that client's mux brutal. Use `brutalctl add ... nolock` on nodes
+  serving mux brutal clients, or leave those clients unruled.
+- **Destination rules do not replace the limiter.** They key on destination
+  prefix, i.e. client IP: dynamic, shared by every user behind one NAT, gone
+  after a reboot, and needing a root-side `brutalctl` sync on each user change.
+  Per-user speed limits stay where they are, in `limiter/limiter.go`.
+
+v2's `group_id` — several connections sharing one rate without multiplexing
+being involved at all — is the part that would map onto N2X's per-user model,
+but sing-mux's `TCPBrutalParams` carries only `Rate` and `CwndGain`. There is
+nothing to do on this side until upstream adds the field.
+
 ## Naive nodes also serve plain HTTPS proxy clients
 
 The pinned sing-box fork (`Designdocs/sing-box_mod`, commit 5356a2e6) makes the
