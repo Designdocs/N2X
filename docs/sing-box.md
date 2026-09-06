@@ -185,6 +185,27 @@ Two consequences worth knowing before turning it on:
   as unexplained packet loss, which is worse than a node that says why it
   stopped.
 
+## Naive nodes also serve plain HTTPS proxy clients
+
+The pinned sing-box fork (`Designdocs/sing-box_mod`, commit 5356a2e6) makes the
+naive inbound answer two kinds of client on one port with one user list:
+
+- A request carrying the naive `Padding` header is a naive client and gets the
+  padded tunnel exactly as before, including the silent connection drop on a
+  bad request or wrong credentials.
+- A request without it is a plain HTTPS proxy client: a browser extension,
+  `curl -x https://…`, anything speaking RFC 9110 CONNECT with Basic auth.
+  CONNECT tunnels carry no padding frames, absolute-URI requests for `http://`
+  origins are forwarded through the router, and a missing or wrong
+  `Proxy-Authorization` gets a `407` with a `Basic` challenge, which is the only
+  way a browser learns to send credentials at all.
+
+Both paths reach the router with the same user attribution, so limits and
+traffic accounting do not distinguish them. The trade-off is that an
+unauthenticated probe sending a padding-less CONNECT now sees a `407` where it
+used to see a closed connection; naive-only stealth on the same port is gone.
+Nothing in N2X changes: the node's users, port and certificate are shared.
+
 ## Protocol parameters: panel first, config second
 
 Several protocol settings have no place in a panel's node payload, or have one

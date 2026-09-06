@@ -92,6 +92,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/Designdocs/Xray-core v0.0.0-20260904054250-fe1d7adfe7d7 h1:MWh1h/eYLumMh2g5No6m/eNVSYL7lYq9g2k1NRjCdzI=
 github.com/Designdocs/Xray-core v0.0.0-20260904054250-fe1d7adfe7d7/go.mod h1:N5ZCCozyZuusahZ1VBCzlDGp7QRTo64G2KVHQhKL2zo=
+github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20260906092502-5356a2e65d39 h1:J6D8Pr13uJAeRQwqZGNdDCLelK1xRO2AwuF0l20PMb0=
+github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20260906092502-5356a2e65d39/go.mod h1:1VDZd5lZAsxv7d1OdVyyKyv/qZ/zkxID6PAjYGVR6Ok=
 github.com/HdrHistogram/hdrhistogram-go v1.1.0/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/HdrHistogram/hdrhistogram-go v1.1.2/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
@@ -1061,8 +1063,6 @@ github.com/vultr/govultr/v3 v3.21.1 h1:0cnA8fXiqayPGbAlNHaW+5oCQjpDNkkAm3Nt3LOHp
 github.com/vultr/govultr/v3 v3.21.1/go.mod h1:9WwnWGCKnwDlNjHjtt+j+nP+0QWq6hQXzaHgddqrLWY=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
-github.com/wyx2685/sing-box_mod v1.13.0-alpha.5.0.20251202212447-8d054dcd8bfe h1:q+4N8P/fC4m4skraTRKP4Tlx98+Q5YhyoNjPdozDw2k=
-github.com/wyx2685/sing-box_mod v1.13.0-alpha.5.0.20251202212447-8d054dcd8bfe/go.mod h1:1VDZd5lZAsxv7d1OdVyyKyv/qZ/zkxID6PAjYGVR6Ok=
 github.com/wyx2685/sing-vmess v0.0.0-20250723121437-95d5ab59ff92 h1:A5/G1mY1M3h+j6D3BgfRlngbsfTUGwE8S3UuyR9VfbU=
 github.com/wyx2685/sing-vmess v0.0.0-20250723121437-95d5ab59ff92/go.mod h1:ZvICtYzgNgbRy2fgKTVmG4o+6pP92dzY5GhwSlfya8Q=
 github.com/xdg-go/pbkdf2 v1.0.0/go.mod h1:jrpuAogTd400dnrH08LKmI/xc1MbPOebTwRqcT5RDeI=
