@@ -132,3 +132,11 @@ func textResponse(req *http.Request, status int, body string) *http.Response {
 		Request:    req,
 	}
 }
+
+func TestDeviceSyncExcludesCloudflare(t *testing.T) {
+	raw := json.RawMessage(`{"users":{"1":["172.70.247.212:443","[2606:4700::1234]:443","::ffff:162.158.111.155","::ffff:a29e:6f9b","203.0.113.4","203.0.113.4:443"],"2":{"0":"104.16.0.1","1":"2001:db8::1"}}}`)
+	alive, err := decodeDeviceAliveMap(raw)
+	if err != nil || alive[1] != 1 || alive[2] != 1 {
+		t.Fatalf("unexpected device counts: %v, %v", alive, err)
+	}
+}

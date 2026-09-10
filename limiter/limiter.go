@@ -2,13 +2,14 @@ package limiter
 
 import (
 	"errors"
+	"net/netip"
 	"regexp"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
+	"github.com/Designdocs/N2X/common/cloudflare"
 	"github.com/Designdocs/N2X/common/format"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/juju/ratelimit"
@@ -216,8 +217,11 @@ func (l *Limiter) isKicked(uid int, ip string) bool {
 }
 
 func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool) (Bucket *ratelimit.Bucket, Reject bool) {
-	// check if ipv4 mapped ipv6
-	ip = strings.TrimPrefix(ip, "::ffff:")
+	// Normalize mapped IPv4 so tracking and panel-issued kicks use one key.
+	if addr, err := netip.ParseAddr(ip); err == nil {
+		ip = addr.Unmap().String()
+	}
+	isCloudflare := cloudflare.IsProxyIP(ip)
 
 	// check and gen speed limit Bucket
 	nodeLimit := l.SpeedLimit
@@ -264,7 +268,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 					if v.(int) == uid {
 						l.OldUserOnline.Delete(ip)
 					}
-				} else if deviceLimit > 0 {
+				} else if deviceLimit > 0 && !isCloudflare {
 					if effectiveLimit <= aliveIp {
 						oldipMap.Delete(ip)
 						return nil, true
@@ -276,7 +280,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 				l.OldUserOnline.Delete(ip)
 			}
 		} else {
-			if deviceLimit > 0 {
+			if deviceLimit > 0 && !isCloudflare {
 				if effectiveLimit <= aliveIp {
 					l.UserOnlineIP.Delete(taguuid)
 					return nil, true
@@ -330,8 +334,10 @@ func (l *Limiter) CountOnlineIP() int {
 		if !ok || ipMap == nil {
 			return true
 		}
-		ipMap.Range(func(_, _ interface{}) bool {
-			count++
+		ipMap.Range(func(key, _ interface{}) bool {
+			if !cloudflare.IsProxyIP(key.(string)) {
+				count++
+			}
 			return true
 		})
 		return true

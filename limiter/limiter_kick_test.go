@@ -109,3 +109,38 @@ func TestCheckLimitKnownIPStillAdmitted(t *testing.T) {
 		t.Fatal("an ip carried over from the previous cycle must stay admitted")
 	}
 }
+
+func TestCloudflareIsReportedWithoutDeviceAccounting(t *testing.T) {
+	for _, ip := range []string{"172.70.247.212", "162.158.111.155", "2606:4700::1234", "::ffff:172.70.247.212", "::ffff:ac46:f7d4"} {
+		t.Run(ip, func(t *testing.T) {
+			l := newDeviceLimitLimiter(t, 1, 9)
+			l.SpeedLimit = 1
+			bucket, reject := l.CheckLimit(tagUUID(t), ip, true, true)
+			if reject || bucket == nil {
+				t.Fatal("CDN must bypass only device accounting and retain speed limiting")
+			}
+			if _, reject := l.CheckLimit(tagUUID(t), "104.16.0.10", true, true); reject {
+				t.Fatal("second CDN IP rejected on existing online map")
+			}
+			if got := l.CountOnlineIP(); got != 0 {
+				t.Fatalf("CDN counted as %d devices", got)
+			}
+			online, err := l.GetOnlineDevice()
+			if err != nil || len(*online) != 2 {
+				t.Fatalf("CDN display report missing: %v, %v", online, err)
+			}
+			if _, reject := l.CheckLimit("unknown-user", ip, true, true); !reject {
+				t.Fatal("unknown user admitted")
+			}
+			for _, entry := range *online {
+				l.MergeKickedList(map[int]map[string]int64{1: {entry.IP: 600}})
+			}
+			if _, reject := l.CheckLimit(tagUUID(t), ip, true, true); !reject {
+				t.Fatal("CDN kick bypassed")
+			}
+			if _, reject := l.CheckLimit(tagUUID(t), "203.0.113.4", true, true); !reject {
+				t.Fatal("direct device limit bypassed")
+			}
+		})
+	}
+}
