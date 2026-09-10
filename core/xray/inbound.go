@@ -47,6 +47,15 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	if err != nil {
 		return nil, err
 	}
+	if transportDecoyFallbackNetworks[strings.ToLower(strings.TrimSpace(network))] {
+		origin, err := transportFallbackOrigin(option.XrayOptions, network)
+		if err != nil {
+			return nil, err
+		}
+		// Always write an explicit value: an off node must not inherit the core's
+		// legacy process environment setting.
+		in.StreamSetting.DecoyFallbackOrigin = &origin
+	}
 	// Set network protocol
 	// Set server port
 	in.PortList = &coreConf.PortList{

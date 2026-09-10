@@ -3,9 +3,7 @@ package xray
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
-	"sync"
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
@@ -48,75 +46,6 @@ func transportFallbackOrigin(options *conf.XrayOptions, network string) (string,
 		return "", nil
 	}
 	return decoyTransportFallbackOrigin()
-}
-
-func nodeTransportFallbackOrigin(options *conf.Options, info *panel.NodeInfo) (string, error) {
-	var network string
-	switch info.Type {
-	case "vless", "vmess":
-		network = info.VAllss.Network
-	case "trojan":
-		network = info.Trojan.Network
-	}
-	return transportFallbackOrigin(options.XrayOptions, network)
-}
-
-type transportFallbackNode struct {
-	core *Xray
-	tag  string
-}
-
-// The core hook is process wide. Track successful node registrations, including
-// separate Xray instances, so removing one node cannot disable another's site.
-var transportFallbackState = struct {
-	sync.Mutex
-	nodes       map[transportFallbackNode]string
-	previous    string
-	previousSet bool
-}{nodes: make(map[transportFallbackNode]string)}
-
-func (c *Xray) setTransportFallback(tag, origin string) error {
-	transportFallbackState.Lock()
-	defer transportFallbackState.Unlock()
-	key := transportFallbackNode{c, tag}
-	if origin != "" {
-		if len(transportFallbackState.nodes) == 0 {
-			transportFallbackState.previous, transportFallbackState.previousSet = os.LookupEnv(decoyfallback.OriginEnvironment)
-		}
-		if err := os.Setenv(decoyfallback.OriginEnvironment, origin); err != nil {
-			return err
-		}
-		transportFallbackState.nodes[key] = origin
-		return nil
-	}
-	if _, exists := transportFallbackState.nodes[key]; !exists {
-		return nil
-	}
-	delete(transportFallbackState.nodes, key)
-	for _, remaining := range transportFallbackState.nodes {
-		return os.Setenv(decoyfallback.OriginEnvironment, remaining)
-	}
-	if transportFallbackState.previousSet {
-		return os.Setenv(decoyfallback.OriginEnvironment, transportFallbackState.previous)
-	}
-	return os.Unsetenv(decoyfallback.OriginEnvironment)
-}
-
-func (c *Xray) clearTransportFallbacks() error {
-	transportFallbackState.Lock()
-	var tags []string
-	for node := range transportFallbackState.nodes {
-		if node.core == c {
-			tags = append(tags, node.tag)
-		}
-	}
-	transportFallbackState.Unlock()
-	for _, tag := range tags {
-		if err := c.setTransportFallback(tag, ""); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // decoyTransportFallbackOrigin builds the origin URL of the installed companion

@@ -291,7 +291,7 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20260904054250-fe1d7adfe7d7
+replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20260910100458-56ad0ec08cc9
 
 replace github.com/sagernet/sing-box => github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20260906145048-605a401f82a3
 

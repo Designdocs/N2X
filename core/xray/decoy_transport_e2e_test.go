@@ -131,14 +131,6 @@ func TestXhttpNodeServesTheDecoyToABrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildInbound() error = %v", err)
 	}
-	owner := &Xray{}
-	if err := owner.setTransportFallback("e2e", "http://"+decoyAddress+"/"); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = owner.clearTransportFallbacks() })
-	if !decoyfallback.Enabled() {
-		t.Fatal("the core reports no usable decoy origin after registration")
-	}
 
 	startXrayWithInbound(t, inbound)
 	nodeAddress := fmt.Sprintf("127.0.0.1:%d", nodePort)
@@ -188,8 +180,9 @@ func TestXhttpNodeServesTheDecoyToABrowser(t *testing.T) {
 // Without the switch the node keeps the empty 404 it had before, so an operator
 // who never opts in sees no behaviour change.
 func TestXhttpNodeWithoutDecoyFallbackStillReturns404(t *testing.T) {
-	t.Setenv(decoy.ListenAddressEnvironment, "")
-	t.Setenv(decoyfallback.OriginEnvironment, "")
+	decoyAddress := startDecoyService(t)
+	t.Setenv(decoy.ListenAddressEnvironment, decoyAddress)
+	t.Setenv(decoyfallback.OriginEnvironment, "http://"+decoyAddress+"/")
 
 	nodePort := freeLoopbackPort(t)
 	inbound, err := buildInbound(
@@ -245,26 +238,39 @@ func TestPanelDecoyFallbackNodeLifecycle(t *testing.T) {
 	node := func(enabled *bool) *panel.NodeInfo {
 		return &panel.NodeInfo{Type: "vless", Common: &panel.CommonNode{ServerPort: freeLoopbackPort(t), DecoyFallback: enabled}, VAllss: &panel.VAllssNode{Network: "xhttp", NetworkSettings: json.RawMessage(`{"path":"/transport"}`)}}
 	}
-	first, second := node(new(true)), node(new(true))
+	first, second := node(new(true)), node(new(false))
 	if err := server.AddNode("first", first, options); err != nil {
 		t.Fatal(err)
 	}
 	if err := server.AddNode("second", second, options); err != nil {
 		t.Fatal(err)
 	}
+	// Reuse HTTP connections: a reload must also retire the previous handler.
+	client := &http.Client{Timeout: 5 * time.Second}
 	assertPage := func(info *panel.NodeInfo, expected int) {
 		t.Helper()
-		client := &http.Client{Timeout: 5 * time.Second}
 		response, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", info.Common.ServerPort))
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer response.Body.Close()
+		if _, err := io.Copy(io.Discard, response.Body); err != nil {
+			t.Fatal(err)
+		}
 		if response.StatusCode != expected {
 			t.Fatalf("page status = %d, want %d", response.StatusCode, expected)
 		}
 	}
 	assertPage(first, http.StatusOK)
+	assertPage(second, http.StatusNotFound)
+	if err := server.DelNode("second"); err != nil {
+		t.Fatal(err)
+	}
+	second.Common.DecoyFallback = new(true)
+	if err := server.AddNode("second", second, options); err != nil {
+		t.Fatal(err)
+	}
+	assertPage(second, http.StatusOK)
 	if err := server.DelNode("first"); err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +278,8 @@ func TestPanelDecoyFallbackNodeLifecycle(t *testing.T) {
 	if err := server.AddNode("first", first, options); err != nil {
 		t.Fatal(err)
 	}
-	assertPage(first, http.StatusOK) // The other node still contributes to the shared hook.
+	assertPage(first, http.StatusNotFound)
+	assertPage(second, http.StatusOK) // Reloading one node cannot affect its neighbour.
 	if err := server.DelNode("second"); err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +296,7 @@ func TestPanelDecoyFallbackNodeLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if decoyfallback.Enabled() {
-		t.Fatal("last removal left fallback enabled")
+		t.Fatal("node lifecycle changed the process environment")
 	}
 
 	invalid := *options
@@ -299,7 +306,7 @@ func TestPanelDecoyFallbackNodeLifecycle(t *testing.T) {
 		t.Fatal("expected invalid outbound to fail")
 	}
 	if decoyfallback.Enabled() {
-		t.Fatal("failed AddNode changed shared fallback")
+		t.Fatal("failed AddNode changed the process environment")
 	}
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", failed.Common.ServerPort))
 	if err != nil {
@@ -309,10 +316,33 @@ func TestPanelDecoyFallbackNodeLifecycle(t *testing.T) {
 	if err := server.AddNode("first", first, options); err != nil {
 		t.Fatal(err)
 	}
+	otherService, err := New(&conf.CoreConfig{XrayConfig: conf.NewXrayConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := otherService.(*Xray)
+	if err := other.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = other.Close() })
+	third := node(new(false))
+	if err := other.AddNode("first", third, options); err != nil {
+		t.Fatal(err)
+	}
+	assertPage(first, http.StatusOK)
+	assertPage(third, http.StatusNotFound)
+	if err := other.DelNode("first"); err != nil {
+		t.Fatal(err)
+	}
+	third.Common.DecoyFallback = new(true)
+	if err := other.AddNode("first", third, options); err != nil {
+		t.Fatal(err)
+	}
 	if err := server.Close(); err != nil {
 		t.Fatal(err)
 	}
+	assertPage(third, http.StatusOK)
 	if decoyfallback.Enabled() {
-		t.Fatal("closing the core left fallback enabled")
+		t.Fatal("closing the core changed the process environment")
 	}
 }

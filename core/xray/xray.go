@@ -213,7 +213,7 @@ func (c *Xray) Close() error {
 	c.ihm = nil
 	c.ohm = nil
 	c.dispatcher = nil
-	return errors.Join(nativeUDPErr, c.Server.Close(), c.clearTransportFallbacks())
+	return errors.Join(nativeUDPErr, c.Server.Close())
 }
 
 func (c *Xray) Protocols() []string {

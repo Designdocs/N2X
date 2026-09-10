@@ -2,12 +2,14 @@ package xray
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/Designdocs/N2X/decoy"
+	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/transport/internet/decoyfallback"
 )
 
@@ -210,41 +212,36 @@ func TestPanelFallbackOptions(t *testing.T) {
 	}
 }
 
-func TestTransportFallbackRegistrations(t *testing.T) {
-	t.Setenv(decoyfallback.OriginEnvironment, "")
-	first, second := &Xray{}, &Xray{}
-	t.Cleanup(func() { _ = first.clearTransportFallbacks(); _ = second.clearTransportFallbacks() })
-	for _, owner := range []*Xray{first, second} {
-		if err := owner.setTransportFallback("same-tag", defaultDecoyOrigin); err != nil {
-			t.Fatal(err)
+func TestBuildInboundAlwaysSetsNodeFallbackOrigin(t *testing.T) {
+	t.Setenv(decoy.ListenAddressEnvironment, "")
+	t.Setenv(decoyfallback.OriginEnvironment, "http://127.0.0.1:61443/")
+	for _, protocol := range []string{"vless", "trojan"} {
+		for _, network := range []string{"ws", "xhttp", "splithttp"} {
+			for _, enabled := range []bool{false, true} {
+				t.Run(protocol+"/"+network+"/"+fmt.Sprint(enabled), func(t *testing.T) {
+					options := &conf.Options{ListenIP: "127.0.0.1", XrayOptions: &conf.XrayOptions{DecoyFallback: !enabled}}
+					node := &panel.NodeInfo{Type: protocol, Common: &panel.CommonNode{ServerPort: 443, DecoyFallback: new(enabled)}, VAllss: &panel.VAllssNode{Network: network}, Trojan: &panel.TrojanNode{Network: network}}
+					inbound, err := buildInbound(options, node, "test")
+					if err != nil {
+						t.Fatal(err)
+					}
+					settings, err := inbound.ReceiverSettings.GetInstance()
+					if err != nil {
+						t.Fatal(err)
+					}
+					origin := settings.(*proxyman.ReceiverConfig).StreamSettings.DecoyFallbackOrigin
+					want := ""
+					if enabled {
+						want = defaultDecoyOrigin
+					}
+					if origin == nil || *origin != want {
+						t.Fatalf("origin = %v, want explicit %q", origin, want)
+					}
+					if options.XrayOptions.DecoyFallback != !enabled {
+						t.Fatal("builder modified local defaults")
+					}
+				})
+			}
 		}
-	}
-	if err := first.setTransportFallback("same-tag", ""); err != nil {
-		t.Fatal(err)
-	}
-	if !decoyfallback.Enabled() {
-		t.Fatal("removing one owner disabled another")
-	}
-	if err := second.clearTransportFallbacks(); err != nil {
-		t.Fatal(err)
-	}
-	if decoyfallback.Enabled() {
-		t.Fatal("last owner removal left fallback enabled")
-	}
-}
-
-func TestTransportFallbackRestoresOperatorEnvironment(t *testing.T) {
-	const original = "http://127.0.0.1:61443/"
-	t.Setenv(decoyfallback.OriginEnvironment, original)
-	owner := &Xray{}
-	t.Cleanup(func() { _ = owner.clearTransportFallbacks() })
-	if err := owner.setTransportFallback("node", defaultDecoyOrigin); err != nil {
-		t.Fatal(err)
-	}
-	if err := owner.clearTransportFallbacks(); err != nil {
-		t.Fatal(err)
-	}
-	if got := os.Getenv(decoyfallback.OriginEnvironment); got != original {
-		t.Fatalf("operator origin = %q, want %q", got, original)
 	}
 }
