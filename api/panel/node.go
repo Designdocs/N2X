@@ -63,12 +63,13 @@ type NodeInfo struct {
 }
 
 type CommonNode struct {
-	Host       string           `json:"host"`
-	ServerPort int              `json:"server_port"`
-	ServerName string           `json:"server_name"`
-	Routes     []Route          `json:"routes"`
-	BaseConfig *BaseConfig      `json:"base_config"`
-	CertConfig *conf.CertConfig `json:"cert_config"`
+	DecoyFallback *bool            `json:"decoy_fallback,omitempty"`
+	Host          string           `json:"host"`
+	ServerPort    int              `json:"server_port"`
+	ServerName    string           `json:"server_name"`
+	Routes        []Route          `json:"routes"`
+	BaseConfig    *BaseConfig      `json:"base_config"`
+	CertConfig    *conf.CertConfig `json:"cert_config"`
 }
 
 type Route struct {

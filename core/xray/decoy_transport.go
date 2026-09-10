@@ -5,7 +5,9 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 
+	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/Designdocs/N2X/decoy"
 	"github.com/xtls/xray-core/transport/internet/decoyfallback"
@@ -25,32 +27,96 @@ var transportDecoyFallbackNetworks = map[string]bool{
 	"xhttp":     true,
 }
 
-// enableTransportDecoyFallback points the core's transport level fallback at the
-// installed companion web service.
-//
-// The switch travels in an environment variable rather than in the stream
-// settings because carrying it through the transport config would mean editing
-// two config.proto files and infra/conf/transport_internet.go in the core fork,
-// which is the part of that tree upstream rewrites most.
-//
-// The cost of that choice is that the setting is process wide: once any ws or
-// xhttp node turns it on, every ws and xhttp inbound in this process serves the
-// companion site on a rejection. Single node installs are homogeneous in
-// practice, and the alternative is a merge conflict on every upstream sync. See
-// scripts/decoy-transport-fallback.md in the core fork.
-func enableTransportDecoyFallback(options *conf.XrayOptions, network string) error {
-	if options == nil || !options.DecoyFallback {
-		return nil
+// panelFallbackOptions preserves local defaults when an older panel omits the
+// switch. Copy both structs so a reload can return to the original local value.
+func panelFallbackOptions(options *conf.Options, info *panel.NodeInfo) *conf.Options {
+	if (info.Type != "vless" && info.Type != "trojan") || info.Common == nil || info.Common.DecoyFallback == nil {
+		return options
 	}
-	if !transportDecoyFallbackNetworks[strings.ToLower(strings.TrimSpace(network))] {
-		return nil
+	resolved := *options
+	xray := conf.XrayOptions{}
+	if options.XrayOptions != nil {
+		xray = *options.XrayOptions
 	}
+	xray.DecoyFallback = *info.Common.DecoyFallback
+	resolved.XrayOptions = &xray
+	return &resolved
+}
 
-	origin, err := decoyTransportFallbackOrigin()
-	if err != nil {
-		return err
+func transportFallbackOrigin(options *conf.XrayOptions, network string) (string, error) {
+	if options == nil || !options.DecoyFallback || !transportDecoyFallbackNetworks[strings.ToLower(strings.TrimSpace(network))] {
+		return "", nil
 	}
-	return os.Setenv(decoyfallback.OriginEnvironment, origin)
+	return decoyTransportFallbackOrigin()
+}
+
+func nodeTransportFallbackOrigin(options *conf.Options, info *panel.NodeInfo) (string, error) {
+	var network string
+	switch info.Type {
+	case "vless", "vmess":
+		network = info.VAllss.Network
+	case "trojan":
+		network = info.Trojan.Network
+	}
+	return transportFallbackOrigin(options.XrayOptions, network)
+}
+
+type transportFallbackNode struct {
+	core *Xray
+	tag  string
+}
+
+// The core hook is process wide. Track successful node registrations, including
+// separate Xray instances, so removing one node cannot disable another's site.
+var transportFallbackState = struct {
+	sync.Mutex
+	nodes       map[transportFallbackNode]string
+	previous    string
+	previousSet bool
+}{nodes: make(map[transportFallbackNode]string)}
+
+func (c *Xray) setTransportFallback(tag, origin string) error {
+	transportFallbackState.Lock()
+	defer transportFallbackState.Unlock()
+	key := transportFallbackNode{c, tag}
+	if origin != "" {
+		if len(transportFallbackState.nodes) == 0 {
+			transportFallbackState.previous, transportFallbackState.previousSet = os.LookupEnv(decoyfallback.OriginEnvironment)
+		}
+		if err := os.Setenv(decoyfallback.OriginEnvironment, origin); err != nil {
+			return err
+		}
+		transportFallbackState.nodes[key] = origin
+		return nil
+	}
+	if _, exists := transportFallbackState.nodes[key]; !exists {
+		return nil
+	}
+	delete(transportFallbackState.nodes, key)
+	for _, remaining := range transportFallbackState.nodes {
+		return os.Setenv(decoyfallback.OriginEnvironment, remaining)
+	}
+	if transportFallbackState.previousSet {
+		return os.Setenv(decoyfallback.OriginEnvironment, transportFallbackState.previous)
+	}
+	return os.Unsetenv(decoyfallback.OriginEnvironment)
+}
+
+func (c *Xray) clearTransportFallbacks() error {
+	transportFallbackState.Lock()
+	var tags []string
+	for node := range transportFallbackState.nodes {
+		if node.core == c {
+			tags = append(tags, node.tag)
+		}
+	}
+	transportFallbackState.Unlock()
+	for _, tag := range tags {
+		if err := c.setTransportFallback(tag, ""); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // decoyTransportFallbackOrigin builds the origin URL of the installed companion

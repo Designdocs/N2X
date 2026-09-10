@@ -18,8 +18,12 @@ type DNSConfig struct {
 }
 
 func (c *Xray) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) error {
-	c.nodeReportMinTrafficBytes[tag] = config.ReportMinTraffic * 1024
-	err := updateDNSConfig(info)
+	config = panelFallbackOptions(config, info)
+	origin, err := nodeTransportFallbackOrigin(config, info)
+	if err != nil {
+		return fmt.Errorf("build transport fallback: %w", err)
+	}
+	err = updateDNSConfig(info)
 	if err != nil {
 		return fmt.Errorf("build dns error: %s", err)
 	}
@@ -27,13 +31,13 @@ func (c *Xray) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) e
 	if err != nil {
 		return fmt.Errorf("build inbound error: %s", err)
 	}
-	err = c.addInbound(inboundConfig)
-	if err != nil {
-		return fmt.Errorf("add inbound error: %s", err)
-	}
 	outBoundConfig, err := buildOutbound(config, tag)
 	if err != nil {
 		return fmt.Errorf("build outbound error: %s", err)
+	}
+	err = c.addInbound(inboundConfig)
+	if err != nil {
+		return fmt.Errorf("add inbound error: %s", err)
 	}
 	err = c.addOutbound(outBoundConfig)
 	if err != nil {
@@ -47,6 +51,10 @@ func (c *Xray) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) e
 			wrapRollbackError("remove inbound", c.removeInbound(tag)),
 		)
 	}
+	if err := c.setTransportFallback(tag, origin); err != nil {
+		return errors.Join(err, c.stopNativeUDP(tag), c.removeOutbound(tag), c.removeInbound(tag))
+	}
+	c.nodeReportMinTrafficBytes[tag] = config.ReportMinTraffic * 1024
 	return nil
 }
 
@@ -96,7 +104,10 @@ func wrapRollbackError(operation string, err error) error {
 }
 
 func (c *Xray) removeInbound(tag string) error {
-	return c.ihm.RemoveHandler(context.Background(), tag)
+	if err := c.ihm.RemoveHandler(context.Background(), tag); err != nil {
+		return err
+	}
+	return c.setTransportFallback(tag, "")
 }
 
 func (c *Xray) removeOutbound(tag string) error {

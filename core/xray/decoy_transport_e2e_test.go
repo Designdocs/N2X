@@ -131,8 +131,13 @@ func TestXhttpNodeServesTheDecoyToABrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildInbound() error = %v", err)
 	}
+	owner := &Xray{}
+	if err := owner.setTransportFallback("e2e", "http://"+decoyAddress+"/"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = owner.clearTransportFallbacks() })
 	if !decoyfallback.Enabled() {
-		t.Fatal("the core reports no usable decoy origin after buildInbound")
+		t.Fatal("the core reports no usable decoy origin after registration")
 	}
 
 	startXrayWithInbound(t, inbound)
@@ -220,5 +225,94 @@ func TestXhttpNodeWithoutDecoyFallbackStillReturns404(t *testing.T) {
 
 	if response.StatusCode != http.StatusNotFound || len(body) != 0 {
 		t.Fatalf("/ = %d %q, want an empty 404", response.StatusCode, body)
+	}
+}
+
+func TestPanelDecoyFallbackNodeLifecycle(t *testing.T) {
+	decoyAddress := startDecoyService(t)
+	t.Setenv(decoy.ListenAddressEnvironment, decoyAddress)
+	t.Setenv(decoyfallback.OriginEnvironment, "")
+	service, err := New(&conf.CoreConfig{XrayConfig: conf.NewXrayConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := service.(*Xray)
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	options := &conf.Options{ListenIP: "127.0.0.1", XrayOptions: &conf.XrayOptions{DecoyFallback: true}}
+	node := func(enabled *bool) *panel.NodeInfo {
+		return &panel.NodeInfo{Type: "vless", Common: &panel.CommonNode{ServerPort: freeLoopbackPort(t), DecoyFallback: enabled}, VAllss: &panel.VAllssNode{Network: "xhttp", NetworkSettings: json.RawMessage(`{"path":"/transport"}`)}}
+	}
+	first, second := node(new(true)), node(new(true))
+	if err := server.AddNode("first", first, options); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.AddNode("second", second, options); err != nil {
+		t.Fatal(err)
+	}
+	assertPage := func(info *panel.NodeInfo, expected int) {
+		t.Helper()
+		client := &http.Client{Timeout: 5 * time.Second}
+		response, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", info.Common.ServerPort))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != expected {
+			t.Fatalf("page status = %d, want %d", response.StatusCode, expected)
+		}
+	}
+	assertPage(first, http.StatusOK)
+	if err := server.DelNode("first"); err != nil {
+		t.Fatal(err)
+	}
+	first.Common.DecoyFallback = new(false)
+	if err := server.AddNode("first", first, options); err != nil {
+		t.Fatal(err)
+	}
+	assertPage(first, http.StatusOK) // The other node still contributes to the shared hook.
+	if err := server.DelNode("second"); err != nil {
+		t.Fatal(err)
+	}
+	assertPage(first, http.StatusNotFound)
+	if err := server.DelNode("first"); err != nil {
+		t.Fatal(err)
+	}
+	first.Common.DecoyFallback = nil
+	if err := server.AddNode("first", first, options); err != nil {
+		t.Fatal(err)
+	}
+	assertPage(first, http.StatusOK) // Returning to an older panel restores the unchanged local default.
+	if err := server.DelNode("first"); err != nil {
+		t.Fatal(err)
+	}
+	if decoyfallback.Enabled() {
+		t.Fatal("last removal left fallback enabled")
+	}
+
+	invalid := *options
+	invalid.XrayOptions = &conf.XrayOptions{DecoyFallback: true, EnableDNS: true, DNSType: "invalid"}
+	failed := node(new(true))
+	if err := server.AddNode("failed", failed, &invalid); err == nil {
+		t.Fatal("expected invalid outbound to fail")
+	}
+	if decoyfallback.Enabled() {
+		t.Fatal("failed AddNode changed shared fallback")
+	}
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", failed.Common.ServerPort))
+	if err != nil {
+		t.Fatalf("failed build left a listener: %v", err)
+	}
+	_ = listener.Close()
+	if err := server.AddNode("first", first, options); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if decoyfallback.Enabled() {
+		t.Fatal("closing the core left fallback enabled")
 	}
 }

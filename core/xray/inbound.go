@@ -21,6 +21,7 @@ import (
 
 // BuildInbound build Inbound config for different protocol
 func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerConfig, error) {
+	option = panelFallbackOptions(option, nodeInfo)
 	in := &coreConf.InboundDetourConfig{}
 	var err error
 	var network string
@@ -44,11 +45,6 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 		return nil, fmt.Errorf("unsupported node type: %s, only support: vmess, vless, anytls, artx, trojan, shadowsocks", nodeInfo.Type)
 	}
 	if err != nil {
-		return nil, err
-	}
-	// ws and xhttp reject an unmatched request inside the transport, so the
-	// protocol fallbacks built above never see a browser arriving on this port.
-	if err := enableTransportDecoyFallback(option.XrayOptions, network); err != nil {
 		return nil, err
 	}
 	// Set network protocol

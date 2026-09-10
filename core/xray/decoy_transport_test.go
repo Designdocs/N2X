@@ -13,7 +13,7 @@ import (
 
 const defaultDecoyOrigin = "http://127.0.0.1:60443/"
 
-func TestEnableTransportDecoyFallback(t *testing.T) {
+func TestTransportFallbackOrigin(t *testing.T) {
 	tests := []struct {
 		name    string
 		options *conf.XrayOptions
@@ -60,35 +60,37 @@ func TestEnableTransportDecoyFallback(t *testing.T) {
 			t.Setenv(decoy.ListenAddressEnvironment, "")
 			t.Setenv(decoyfallback.OriginEnvironment, "")
 
-			if err := enableTransportDecoyFallback(test.options, test.network); err != nil {
-				t.Fatalf("enableTransportDecoyFallback() error = %v", err)
+			got, err := transportFallbackOrigin(test.options, test.network)
+			if err != nil {
+				t.Fatalf("transportFallbackOrigin() error = %v", err)
 			}
 
-			if got := os.Getenv(decoyfallback.OriginEnvironment); got != test.want {
+			if got != test.want {
 				t.Fatalf("%s = %q, want %q", decoyfallback.OriginEnvironment, got, test.want)
 			}
 		})
 	}
 }
 
-func TestEnableTransportDecoyFallbackHonoursCustomListenAddress(t *testing.T) {
+func TestTransportFallbackOriginHonoursCustomListenAddress(t *testing.T) {
 	t.Setenv(decoy.ListenAddressEnvironment, "127.0.0.1:61443")
 	t.Setenv(decoyfallback.OriginEnvironment, "")
 
 	options := &conf.XrayOptions{DecoyFallback: true}
-	if err := enableTransportDecoyFallback(options, "xhttp"); err != nil {
-		t.Fatalf("enableTransportDecoyFallback() error = %v", err)
+	got, err := transportFallbackOrigin(options, "xhttp")
+	if err != nil {
+		t.Fatalf("transportFallbackOrigin() error = %v", err)
 	}
 
 	want := "http://127.0.0.1:61443/"
-	if got := os.Getenv(decoyfallback.OriginEnvironment); got != want {
+	if got != want {
 		t.Fatalf("%s = %q, want %q", decoyfallback.OriginEnvironment, got, want)
 	}
 }
 
 // A listen address the companion service itself would refuse must surface as a
 // startup error, not as a silently disabled fallback discovered months later.
-func TestEnableTransportDecoyFallbackRejectsUnusableListenAddress(t *testing.T) {
+func TestTransportFallbackOriginRejectsUnusableListenAddress(t *testing.T) {
 	tests := []struct {
 		name   string
 		listen string
@@ -104,8 +106,8 @@ func TestEnableTransportDecoyFallbackRejectsUnusableListenAddress(t *testing.T) 
 			t.Setenv(decoyfallback.OriginEnvironment, "")
 
 			options := &conf.XrayOptions{DecoyFallback: true}
-			if err := enableTransportDecoyFallback(options, "ws"); err == nil {
-				t.Fatal("enableTransportDecoyFallback() error = nil, want an error")
+			if _, err := transportFallbackOrigin(options, "ws"); err == nil {
+				t.Fatal("transportFallbackOrigin() error = nil, want an error")
 			}
 			if got := os.Getenv(decoyfallback.OriginEnvironment); got != "" {
 				t.Fatalf("%s = %q, want it left unset on error", decoyfallback.OriginEnvironment, got)
@@ -133,9 +135,8 @@ func TestTransportFallbackOriginIsAcceptedByTheCore(t *testing.T) {
 	}
 }
 
-// End to end through the real config builder: one DecoyFallback boolean on an
-// xhttp node is all an operator sets.
-func TestBuildInboundWiresTransportFallbackForXhttp(t *testing.T) {
+// Configuration construction must not publish a process-wide setting.
+func TestBuildInboundDoesNotActivateTransportFallback(t *testing.T) {
 	t.Setenv(decoy.ListenAddressEnvironment, "")
 	t.Setenv(decoyfallback.OriginEnvironment, "")
 
@@ -156,8 +157,8 @@ func TestBuildInboundWiresTransportFallbackForXhttp(t *testing.T) {
 		t.Fatalf("buildInbound() error = %v", err)
 	}
 
-	if got := os.Getenv(decoyfallback.OriginEnvironment); got != defaultDecoyOrigin {
-		t.Fatalf("%s = %q, want %q", decoyfallback.OriginEnvironment, got, defaultDecoyOrigin)
+	if got := os.Getenv(decoyfallback.OriginEnvironment); got != "" {
+		t.Fatalf("configuration construction changed shared fallback: %q", got)
 	}
 }
 
@@ -184,5 +185,66 @@ func TestBuildInboundLeavesTransportFallbackAloneForTcp(t *testing.T) {
 
 	if got := os.Getenv(decoyfallback.OriginEnvironment); got != "" {
 		t.Fatalf("%s = %q, want it left unset", decoyfallback.OriginEnvironment, got)
+	}
+}
+
+func TestPanelFallbackOptions(t *testing.T) {
+	for _, protocol := range []string{"vless", "trojan"} {
+		for _, local := range []bool{false, true} {
+			for _, remote := range []*bool{nil, new(false), new(true)} {
+				options := &conf.Options{XrayOptions: &conf.XrayOptions{DecoyFallback: local}}
+				node := &panel.NodeInfo{Type: protocol, Common: &panel.CommonNode{DecoyFallback: remote}}
+				got := panelFallbackOptions(options, node)
+				want := local
+				if remote != nil {
+					want = *remote
+				}
+				if got.XrayOptions.DecoyFallback != want {
+					t.Fatalf("%s: switch = %v, want %v", protocol, got.XrayOptions.DecoyFallback, want)
+				}
+				if options.XrayOptions.DecoyFallback != local {
+					t.Fatal("panel mutated local defaults")
+				}
+			}
+		}
+	}
+}
+
+func TestTransportFallbackRegistrations(t *testing.T) {
+	t.Setenv(decoyfallback.OriginEnvironment, "")
+	first, second := &Xray{}, &Xray{}
+	t.Cleanup(func() { _ = first.clearTransportFallbacks(); _ = second.clearTransportFallbacks() })
+	for _, owner := range []*Xray{first, second} {
+		if err := owner.setTransportFallback("same-tag", defaultDecoyOrigin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := first.setTransportFallback("same-tag", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !decoyfallback.Enabled() {
+		t.Fatal("removing one owner disabled another")
+	}
+	if err := second.clearTransportFallbacks(); err != nil {
+		t.Fatal(err)
+	}
+	if decoyfallback.Enabled() {
+		t.Fatal("last owner removal left fallback enabled")
+	}
+}
+
+func TestTransportFallbackRestoresOperatorEnvironment(t *testing.T) {
+	const original = "http://127.0.0.1:61443/"
+	t.Setenv(decoyfallback.OriginEnvironment, original)
+	owner := &Xray{}
+	t.Cleanup(func() { _ = owner.clearTransportFallbacks() })
+	if err := owner.setTransportFallback("node", defaultDecoyOrigin); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.clearTransportFallbacks(); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv(decoyfallback.OriginEnvironment); got != original {
+		t.Fatalf("operator origin = %q, want %q", got, original)
 	}
 }
