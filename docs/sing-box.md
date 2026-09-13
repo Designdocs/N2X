@@ -229,8 +229,9 @@ nothing to do on this side until upstream adds the field.
 
 ## Naive nodes also serve plain HTTPS proxy clients
 
-The pinned sing-box fork (`Designdocs/sing-box_mod`, commit a7039e06) makes the
-naive inbound answer two kinds of client on one port with one user list:
+The pinned sing-box fork (`Designdocs/sing-box_mod`, commit 605a401f — the
+pseudo-version in `go.mod`) makes the naive inbound answer two kinds of client
+on one port with one user list:
 
 - A request carrying the naive `Padding` header is a naive client and gets the
   padded tunnel exactly as before, including the silent connection drop on a
@@ -255,6 +256,21 @@ naive inbound answer two kinds of client on one port with one user list:
   proxy request either and is answered `404`: the extension measures latency
   with exactly such a request, and Chromium refuses a `407` that arrives
   outside a proxy exchange (`ERR_UNEXPECTED_PROXY_AUTH`).
+
+An unpadded HTTP/2 tunnel also forces `naiveH2Conn.WriterReplaceable()` to
+false: every write must be followed by a flush, and an unwrapped copy would
+write straight to the `ResponseWriter` and skip it, leaving anything smaller
+than the server's 4 KiB response buffer stuck until the stream ends — a TLS
+handshake through the tunnel, for one. The padded path used to get away with
+it because its counters never reached the replaceable state.
+
+A plain client is therefore not getting NaiveProxy. The padding is what blurs
+the length pattern the first frames of an inner TLS handshake leave in the
+outer stream — the TLS-in-TLS signature — so a browser tunnel is about as
+distinguishable as any other TLS-carried proxy, while a naive client keeps the
+defence. The outer TLS is the same real certificate either way, and probe
+resistance is shared; only the traffic-analysis story differs. Say so wherever
+a plain client is offered to users, rather than presenting the node as naive.
 
 Both paths reach the router with the same user attribution, so limits and
 traffic accounting do not distinguish them. Nothing in N2X changes: the node's
