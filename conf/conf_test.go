@@ -1,6 +1,8 @@
 package conf
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,9 +20,7 @@ func writeFile(t *testing.T, path, content string) {
 // newWatchedConfig returns a Conf and a config file for it to watch.
 func newWatchedConfig(t *testing.T) (*Conf, string) {
 	t.Helper()
-	config := filepath.Join(t.TempDir(), "config.json")
-	writeFile(t, config, "{}")
-	return New(), config
+	return New(), writeDoc(t, validDoc())
 }
 
 // promptWatch collapses Watch's debounce and settle delays so tests do not
@@ -51,7 +51,7 @@ func TestConf_LoadFromPath(t *testing.T) {
 
 func TestConf_WatchRejectsMissingFile(t *testing.T) {
 	c := New()
-	stop, err := c.Watch(filepath.Join(t.TempDir(), "does-not-exist.json"), "", func() {})
+	stop, err := c.Watch(filepath.Join(t.TempDir(), "does-not-exist.json"), "", ValidateOptions{}, func() {}, nil)
 	if err == nil {
 		stop()
 		t.Fatal("expected an error when watching a file that does not exist")
@@ -61,13 +61,15 @@ func TestConf_WatchRejectsMissingFile(t *testing.T) {
 	}
 }
 
-func TestConf_WatchRejectsMissingDNSFile(t *testing.T) {
+// A missing DNS file is watched through its directory; only a directory that
+// does not exist either fails.
+func TestConf_WatchRejectsDNSFileInMissingDirectory(t *testing.T) {
 	c, config := newWatchedConfig(t)
 
-	stop, err := c.Watch(config, filepath.Join(filepath.Dir(config), "missing-dns.json"), func() {})
+	stop, err := c.Watch(config, filepath.Join(filepath.Dir(config), "missing-dir", "dns.json"), ValidateOptions{}, func() {}, nil)
 	if err == nil {
 		stop()
-		t.Fatal("expected an error when the dns file does not exist")
+		t.Fatal("expected an error when the dns file directory does not exist")
 	}
 }
 
@@ -76,7 +78,7 @@ func TestConf_WatchLeavesNoGoroutineWhenItFails(t *testing.T) {
 	c, config := newWatchedConfig(t)
 	before := runtime.NumGoroutine()
 
-	if _, err := c.Watch(config, filepath.Join(filepath.Dir(config), "missing-dns.json"), func() {}); err == nil {
+	if _, err := c.Watch(config, filepath.Join(filepath.Dir(config), "missing-dir", "dns.json"), ValidateOptions{}, func() {}, nil); err == nil {
 		t.Fatal("expected Watch to fail")
 	}
 	waitForGoroutines(t, before)
@@ -86,7 +88,7 @@ func TestConf_WatchStopReleasesGoroutine(t *testing.T) {
 	c, config := newWatchedConfig(t)
 	before := runtime.NumGoroutine()
 
-	stop, err := c.Watch(config, "", func() {})
+	stop, err := c.Watch(config, "", ValidateOptions{}, func() {}, nil)
 	if err != nil {
 		t.Fatalf("watch: %v", err)
 	}
@@ -97,7 +99,7 @@ func TestConf_WatchStopReleasesGoroutine(t *testing.T) {
 func TestConf_WatchStopIsSafeToCallTwice(t *testing.T) {
 	c, config := newWatchedConfig(t)
 
-	stop, err := c.Watch(config, "", func() {})
+	stop, err := c.Watch(config, "", ValidateOptions{}, func() {}, nil)
 	if err != nil {
 		t.Fatalf("watch: %v", err)
 	}
@@ -110,9 +112,63 @@ func TestConf_WatchFiresReloadOnChange(t *testing.T) {
 	c, config := newWatchedConfig(t)
 
 	reloaded := make(chan struct{}, 1)
-	stop, err := c.Watch(config, "", func() {
+	stop, err := c.Watch(config, "", ValidateOptions{}, func() {
 		select {
 		case reloaded <- struct{}{}:
+		default:
+		}
+	}, nil)
+	if err != nil {
+		t.Fatalf("watch: %v", err)
+	}
+	defer stop()
+
+	writeFile(t, config, debugLevelConfig(t))
+
+	select {
+	case <-reloaded:
+	case <-time.After(30 * time.Second):
+		t.Fatal("reload callback did not fire after the file changed")
+	}
+	if c.LogConfig.Level != "debug" {
+		t.Errorf("reloaded config not applied: Log.Level = %q", c.LogConfig.Level)
+	}
+}
+
+// debugLevelConfig is a valid config that differs from validDoc only in its
+// log level.
+func debugLevelConfig(t *testing.T) string {
+	t.Helper()
+	doc := validDoc()
+	doc["Log"] = map[string]any{"Level": "debug"}
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal doc: %v", err)
+	}
+	return string(data)
+}
+
+// A broken edit must never replace the running config: the old one stays in
+// effect, reload is not called, and a later fixed edit still goes through.
+func TestConf_WatchKeepsRunningConfigWhenReloadIsInvalid(t *testing.T) {
+	promptWatch(t)
+	c, config := newWatchedConfig(t)
+	running, err := LoadValidated(config, ValidateOptions{})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	*c = *running
+
+	reloaded := make(chan struct{}, 1)
+	rejected := make(chan error, 1)
+	stop, err := c.Watch(config, "", ValidateOptions{}, func() {
+		select {
+		case reloaded <- struct{}{}:
+		default:
+		}
+	}, func(err error) {
+		select {
+		case rejected <- err:
 		default:
 		}
 	})
@@ -121,12 +177,30 @@ func TestConf_WatchFiresReloadOnChange(t *testing.T) {
 	}
 	defer stop()
 
-	writeFile(t, config, `{"Log":{"Level":"debug"}}`)
+	writeFile(t, config, `{"Log":{"Level":"debug"},"Cores":[{"Type":"xray"}],"Nodes":[{"NodeTyp":"vless"}]}`)
+	select {
+	case <-reloaded:
+		t.Fatal("reload fired for an invalid config")
+	case err := <-rejected:
+		var validationErr *ValidationError
+		if !errors.As(err, &validationErr) {
+			t.Fatalf("rejected got %T %v, want *ValidationError", err, err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("rejected was not called for an invalid config")
+	}
+	if c.LogConfig.Level != "info" || len(c.NodeConfig) != 1 {
+		t.Fatalf("running config was replaced by an invalid one: %+v", c.LogConfig)
+	}
 
+	writeFile(t, config, debugLevelConfig(t))
 	select {
 	case <-reloaded:
 	case <-time.After(30 * time.Second):
-		t.Fatal("reload callback did not fire after the file changed")
+		t.Fatal("reload did not fire once the config was fixed")
+	}
+	if c.LogConfig.Level != "debug" {
+		t.Errorf("fixed config not applied: Log.Level = %q", c.LogConfig.Level)
 	}
 }
 
@@ -135,23 +209,66 @@ func TestConf_WatchDoesNotReloadAfterStop(t *testing.T) {
 	c, config := newWatchedConfig(t)
 
 	reloaded := make(chan struct{}, 1)
-	stop, err := c.Watch(config, "", func() {
+	stop, err := c.Watch(config, "", ValidateOptions{}, func() {
 		select {
 		case reloaded <- struct{}{}:
 		default:
 		}
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("watch: %v", err)
 	}
 	stop()
 
-	writeFile(t, config, `{"Log":{"Level":"debug"}}`)
+	writeFile(t, config, debugLevelConfig(t))
 
 	select {
 	case <-reloaded:
 		t.Fatal("reload fired after the watcher was stopped")
 	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+// stop must not return while a reload is still swapping cores, or shutdown
+// would race the reload over the running core.
+func TestConf_WatchStopWaitsForRunningReload(t *testing.T) {
+	promptWatch(t)
+	c, config := newWatchedConfig(t)
+
+	started, release := make(chan struct{}, 1), make(chan struct{})
+	stop, err := c.Watch(config, "", ValidateOptions{}, func() {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-release
+	}, nil)
+	if err != nil {
+		t.Fatalf("watch: %v", err)
+	}
+
+	writeFile(t, config, debugLevelConfig(t))
+	select {
+	case <-started:
+	case <-time.After(30 * time.Second):
+		t.Fatal("reload did not start")
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		t.Fatal("stop returned while a reload was still running")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stop did not return after the reload finished")
 	}
 }
 

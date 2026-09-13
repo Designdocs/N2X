@@ -1,20 +1,20 @@
 package conf
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/Designdocs/N2X/common/json5"
-
-	"encoding/json/v2"
 )
 
 type Conf struct {
 	LogConfig   LogConfig    `json:"Log"`
 	CoresConfig []CoreConfig `json:"Cores"`
 	NodeConfig  []NodeConfig `json:"Nodes"`
+	// Warnings lists problems LoadValidated found that do not stop the config
+	// from being used. It is never read from the file.
+	Warnings []Issue `json:"-"`
 }
 
 func New() *Conf {
@@ -29,30 +29,18 @@ func New() *Conf {
 func (p *Conf) LoadFromPath(filePath string) error {
 	f, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("open config file error: %s", err)
+		return fmt.Errorf("open config file error: %w", err)
 	}
 	defer f.Close()
 
 	reader := json5.NewTrimNodeReader(f)
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return fmt.Errorf("read config file error: %s", err)
+		return fmt.Errorf("read config file error: %w", err)
 	}
 
-	resolved, err := resolveEnvPlaceholders(data)
-	if err != nil {
-		if errors.Is(err, ErrMissingEnvVar) {
-			// fallback to raw config values when env vars are missing
-			resolved = data
-		} else {
-			return fmt.Errorf("resolve env placeholders error: %s", err)
-		}
+	if err := p.decode(data); err != nil {
+		return fmt.Errorf("unmarshal config error: %w", err)
 	}
-
-	err = json.Unmarshal(resolved, p)
-	if err != nil {
-		return fmt.Errorf("unmarshal config error: %s", err)
-	}
-
 	return nil
 }

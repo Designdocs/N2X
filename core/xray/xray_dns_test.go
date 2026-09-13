@@ -70,3 +70,31 @@ func TestSaveDnsConfigKeepsCurrentFileWhenNewConfigReferencesMissingGeositeCode(
 		t.Fatalf("expected fallback notice, got %q", notice)
 	}
 }
+
+// A DnsConfigPath that does not exist yet only warns at startup, so the DNS
+// the panel sends must create the file rather than fail the node.
+func TestSaveDnsConfigCreatesMissingFile(t *testing.T) {
+	t.Setenv("N2X_DNS_FALLBACK_NOTICE_PATH", filepath.Join(t.TempDir(), "dns-fallback.notice"))
+	dnsPath := filepath.Join(t.TempDir(), "dns.json")
+	dns := []byte(`{"servers":["1.1.1.1","localhost"],"tag":"dns_inbound"}`)
+	if err := saveDnsConfig(dns, dnsPath); err != nil {
+		t.Fatalf("save to a missing file: %v", err)
+	}
+	written, err := os.ReadFile(dnsPath)
+	if err != nil {
+		t.Fatalf("read dns config: %v", err)
+	}
+	if string(written) != string(dns) {
+		t.Errorf("dns file = %q, want %q", written, dns)
+	}
+}
+
+// A DNS file that cannot be written must not look like a successful save.
+func TestSaveDnsConfigReportsWriteFailure(t *testing.T) {
+	t.Setenv("N2X_DNS_FALLBACK_NOTICE_PATH", filepath.Join(t.TempDir(), "dns-fallback.notice"))
+	dnsPath := filepath.Join(t.TempDir(), "missing-dir", "dns.json")
+	dns := []byte(`{"servers":["1.1.1.1","localhost"],"tag":"dns_inbound"}`)
+	if err := saveDnsConfig(dns, dnsPath); err == nil {
+		t.Fatal("saving into a missing directory returned nil")
+	}
+}

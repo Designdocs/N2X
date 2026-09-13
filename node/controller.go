@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -74,19 +73,19 @@ func (c *Controller) Start() error {
 	var err error
 	node, err := c.apiClient.GetNodeInfo()
 	if err != nil {
-		return fmt.Errorf("get node info error: %s", err)
+		return startError(StagePanel, "get node info error: %w", err)
 	}
 	// Update user
 	c.userList, err = c.apiClient.GetUserList()
 	if err != nil {
-		return fmt.Errorf("get user list error: %s", err)
+		return startError(StagePanel, "get user list error: %w", err)
 	}
 	if len(c.userList) == 0 {
-		return errors.New("add users error: not have any user")
+		return startError(StagePanel, "add users error: not have any user")
 	}
 	c.aliveMap, err = c.apiClient.GetUserAlive()
 	if err != nil {
-		return fmt.Errorf("failed to get user alive list: %s", err)
+		return startError(StagePanel, "failed to get user alive list: %w", err)
 	}
 	c.aliveMap = cloneAliveMap(c.aliveMap)
 	if len(c.Options.Name) == 0 {
@@ -100,7 +99,7 @@ func (c *Controller) Start() error {
 	l.SetDeviceTolerance(node.DeviceLimitTolerance)
 	// add rule limiter
 	if err = l.UpdateRule(&node.Rules); err != nil {
-		return fmt.Errorf("update rule error: %s", err)
+		return startError(StageCore, "update rule error: %w", err)
 	}
 	c.limiter = l
 	c.apiClient.SetAliveUpdateHook(c.setAliveMap)
@@ -108,14 +107,14 @@ func (c *Controller) Start() error {
 	if node.Security == panel.Tls {
 		err = c.requestCert(node)
 		if err != nil {
-			return fmt.Errorf("request cert error: %s", err)
+			return startError(StageCert, "request cert error: %w", err)
 		}
 	}
 	c.prepareHTTPSRedirect(node)
 	// Add new tag
 	err = c.server.AddNode(c.tag, node, c.Options)
 	if err != nil {
-		return fmt.Errorf("add new node error: %s", err)
+		return startError(StageCore, "add new node error: %w", err)
 	}
 	added, err := c.server.AddUsers(&vCore.AddUsersParams{
 		Tag:      c.tag,
@@ -123,7 +122,7 @@ func (c *Controller) Start() error {
 		NodeInfo: node,
 	})
 	if err != nil {
-		return fmt.Errorf("add users error: %s", err)
+		return startError(StageCore, "add users error: %w", err)
 	}
 	log.WithField("tag", c.tag).Infof("Added %d new users", added)
 	c.info = node

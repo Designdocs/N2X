@@ -14,6 +14,13 @@ const runExitProbeEnvironment = "N2X_TEST_RUN_EXIT_PROBE"
 
 func runExitProbe(t *testing.T, testName string, arguments ...string) int {
 	t.Helper()
+	code, _ := runExitProbeOutput(t, testName, arguments...)
+	return code
+}
+
+// runExitProbeOutput is runExitProbe that also returns what the probe printed.
+func runExitProbeOutput(t *testing.T, testName string, arguments ...string) (int, string) {
+	t.Helper()
 
 	command := exec.Command(os.Args[0], "-test.run=^"+testName+"$")
 	command.Env = append(os.Environ(), runExitProbeEnvironment+"=1")
@@ -24,14 +31,14 @@ func runExitProbe(t *testing.T, testName string, arguments ...string) int {
 	t.Logf("probe output:\n%s", output)
 
 	if err == nil {
-		return 0
+		return 0, string(output)
 	}
 	var exitError *exec.ExitError
 	if errors.As(err, &exitError) {
-		return exitError.ExitCode()
+		return exitError.ExitCode(), string(output)
 	}
 	t.Fatalf("run probe: %v", err)
-	return -1
+	return -1, string(output)
 }
 
 // A command that fails must exit non-zero. Without it a bad configuration looks

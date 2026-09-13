@@ -26,27 +26,31 @@ type CertConfig struct {
 	DNSEnv           map[string]string `json:"DNSEnv"`
 }
 
-func (c *CertConfig) UnmarshalJSON(data []byte) error {
-	var raw struct {
-		CertMode         string            `json:"CertMode"`
-		RejectUnknownSni bool              `json:"RejectUnknownSni"`
-		CertDomain       string            `json:"CertDomain"`
-		CertFile         string            `json:"CertFile"`
-		KeyFile          string            `json:"KeyFile"`
-		Provider         string            `json:"Provider"`
-		Email            string            `json:"Email"`
-		DNSEnv           map[string]string `json:"DNSEnv"`
+// certConfigJSON is every spelling CertConfig accepts. Validation reads the
+// allowed keys from it, so it must stay the single source of truth.
+type certConfigJSON struct {
+	CertMode         string            `json:"CertMode"`
+	RejectUnknownSni bool              `json:"RejectUnknownSni"`
+	CertDomain       string            `json:"CertDomain"`
+	CertFile         string            `json:"CertFile"`
+	KeyFile          string            `json:"KeyFile"`
+	Provider         string            `json:"Provider"`
+	Email            string            `json:"Email"`
+	DNSEnv           map[string]string `json:"DNSEnv"`
 
-		CertModeSnake         *string           `json:"cert_mode"`
-		Mode                  *string           `json:"mode"`
-		RejectUnknownSniSnake *bool             `json:"reject_unknown_sni"`
-		CertDomainSnake       *string           `json:"cert_domain"`
-		CertFileSnake         *string           `json:"cert_file"`
-		KeyFileSnake          *string           `json:"key_file"`
-		ProviderLower         *string           `json:"provider"`
-		EmailLower            *string           `json:"email"`
-		DNSEnvSnake           map[string]string `json:"dns_env"`
-	}
+	CertModeSnake         *string           `json:"cert_mode"`
+	Mode                  *string           `json:"mode"`
+	RejectUnknownSniSnake *bool             `json:"reject_unknown_sni"`
+	CertDomainSnake       *string           `json:"cert_domain"`
+	CertFileSnake         *string           `json:"cert_file"`
+	KeyFileSnake          *string           `json:"key_file"`
+	ProviderLower         *string           `json:"provider"`
+	EmailLower            *string           `json:"email"`
+	DNSEnvSnake           map[string]string `json:"dns_env"`
+}
+
+func (c *CertConfig) UnmarshalJSON(data []byte) error {
+	var raw certConfigJSON
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}

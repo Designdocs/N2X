@@ -1,9 +1,11 @@
 package conf
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -15,9 +17,15 @@ var ErrMissingEnvVar = errors.New("missing required env var")
 //	${VAR}           -> required env var
 //	${VAR:-default}  -> env var or default if missing/empty
 func resolveEnvPlaceholders(data []byte) ([]byte, error) {
+	// UseNumber keeps integers above 2^53 exact through the round trip.
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
 	var v any
-	if err := json.Unmarshal(data, &v); err != nil {
+	if err := decoder.Decode(&v); err != nil {
 		return nil, err
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("invalid character after top-level value")
 	}
 	out, err := walkAndSubst(v)
 	if err != nil {

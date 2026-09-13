@@ -2,6 +2,8 @@ package xray
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -61,7 +63,9 @@ func updateDNSConfig(node *panel.NodeInfo) (err error) {
 
 func saveDnsConfig(dns []byte, dnsPath string) (err error) {
 	currentData, err := os.ReadFile(dnsPath)
-	if err != nil {
+	// A configured DNS file that does not exist yet is only a config warning;
+	// it is created below. An empty path means no DNS file was configured.
+	if err != nil && (dnsPath == "" || !errors.Is(err, fs.ErrNotExist)) {
 		log.WithField("err", err).Error("Failed to read XRAY_DNS_PATH")
 		return err
 	}
@@ -72,21 +76,19 @@ func saveDnsConfig(dns []byte, dnsPath string) (err error) {
 			log.WithField("err", err).Error("Failed to unmarshal DNS config, keeping previous DNS config")
 			return nil
 		}
-		_, err := coreDnsConfig.Build()
-		if err != nil {
+		if _, err = coreDnsConfig.Build(); err != nil {
 			recordDNSFallbackNotice("新的 DNS 配置错误，已保留上一份配置", err)
 			log.WithField("err", err).Error("Failed to understand DNS config, keeping previous DNS config. Please check: https://xtls.github.io/config/dns.html for help")
 			return nil
 		}
-		if err = os.Truncate(dnsPath, 0); err != nil {
-			log.WithField("err", err).Error("Failed to clear XRAY DNS PATH file")
-		}
+		// WriteFile truncates, and unlike Truncate works on a missing file.
 		if err = os.WriteFile(dnsPath, dns, 0644); err != nil {
 			log.WithField("err", err).Error("Failed to write DNS to XRAY DNS PATH file")
+			return err
 		}
 		clearDNSFallbackNotice()
 	}
-	return err
+	return nil
 }
 
 func recordDNSFallbackNotice(message string, err error) {

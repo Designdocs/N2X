@@ -75,10 +75,10 @@ func (l *Lego) SetProvider() error {
 			return err
 		}
 	case "dns":
-		for k, v := range l.config.DNSEnv {
-			os.Setenv(k, v)
-		}
-		p, err := dns.NewDNSChallengeProviderByName(l.config.Provider)
+		p, err := newScopedDNSProvider(
+			l.config.Provider,
+			l.config.DNSEnv,
+			dns.NewDNSChallengeProviderByName)
 		if err != nil {
 			return fmt.Errorf("create dns challenge provider error: %s", err)
 		}
@@ -97,7 +97,7 @@ func (l *Lego) CreateCert() (err error) {
 	}
 	certificates, err := l.client.Certificate.Obtain(request)
 	if err != nil {
-		return fmt.Errorf("obtain certificate error: %s", err)
+		return fmt.Errorf("obtain certificate error: %w", err)
 	}
 	err = l.writeCert(certificates)
 	if err != nil {
