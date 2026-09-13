@@ -64,12 +64,13 @@ func New(c *conf.ApiConfig) (*Client, error) {
 	} else {
 		client.SetTimeout(5 * time.Second)
 	}
+	client.SetLogger(redactingLogger{})
 	client.OnError(func(req *resty.Request, err error) {
 		var v *resty.ResponseError
 		if errors.As(err, &v) {
 			// v.Response contains the last response from the server
-			// v.Err contains the original error
-			logrus.Error(v.Err)
+			// v.Err contains the original error, whose URL carries the key
+			logrus.Error(RedactToken(v.Err.Error()))
 		}
 	})
 	client.SetBaseURL(c.APIHost)
