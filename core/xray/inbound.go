@@ -284,19 +284,31 @@ func normalizeECHValue(value string, expectedPEMType string) (string, error) {
 	return strings.Join(strings.Fields(trimmed), ""), nil
 }
 
+const vlessDecryptionMLKEM = "mlkem768x25519plus"
+
 // resolveVlessDecryption builds the inbound decryption string from the panel
 // supplied encryption settings. Shared by the fallback and non-fallback paths
 // so enabling fallback can never silently downgrade the handshake.
+//
+// Panels either send a ready-made "decryption" string or the split
+// "encryption" + "encryption_settings" form. The ready-made string wins
+// because it is exactly what the panel shows to the operator.
 func resolveVlessDecryption(nodeInfo *panel.NodeInfo) (string, error) {
-	if nodeInfo.VAllss == nil || nodeInfo.VAllss.Encryption == "" {
+	if nodeInfo.VAllss == nil {
+		return "none", nil
+	}
+	if raw := strings.TrimSpace(nodeInfo.VAllss.Decryption); raw != "" && raw != "none" {
+		return validateVlessDecryptionString(raw)
+	}
+	if nodeInfo.VAllss.Encryption == "" {
 		return "none", nil
 	}
 
 	switch nodeInfo.VAllss.Encryption {
-	case "mlkem768x25519plus":
+	case vlessDecryptionMLKEM:
 		encSettings := nodeInfo.VAllss.EncryptionSettings
 		parts := []string{
-			"mlkem768x25519plus",
+			vlessDecryptionMLKEM,
 			encSettings.Mode,
 			encSettings.Ticket,
 		}
@@ -308,6 +320,20 @@ func resolveVlessDecryption(nodeInfo *panel.NodeInfo) (string, error) {
 	default:
 		return "", fmt.Errorf("vless decryption method %s is not support", nodeInfo.VAllss.Encryption)
 	}
+}
+
+// validateVlessDecryptionString performs a shape check on a panel supplied
+// decryption string: method.mode.ticket[.padding...].key. Xray-core validates
+// the key material itself when the inbound is created.
+func validateVlessDecryptionString(raw string) (string, error) {
+	parts := strings.Split(raw, ".")
+	if parts[0] != vlessDecryptionMLKEM {
+		return "", fmt.Errorf("vless decryption method %s is not support", parts[0])
+	}
+	if len(parts) < 4 {
+		return "", fmt.Errorf("vless decryption %q is incomplete: want %s.<mode>.<ticket>.<private key>", parts[0]+".***", vlessDecryptionMLKEM)
+	}
+	return raw, nil
 }
 
 func buildV2ray(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {

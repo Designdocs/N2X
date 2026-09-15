@@ -98,7 +98,10 @@ type VAllssNode struct {
 	NetworkSettingsBack json.RawMessage `json:"networkSettings"`
 	Encryption          string          `json:"encryption"`
 	EncryptionSettings  EncSettings     `json:"encryption_settings"`
-	ServerName          string          `json:"server_name"`
+	// Decryption is the ready-made inbound decryption string some panels
+	// (Xboard style) send instead of Encryption + EncryptionSettings.
+	Decryption string `json:"decryption"`
+	ServerName string `json:"server_name"`
 
 	// vless only
 	Flow          string        `json:"flow"`

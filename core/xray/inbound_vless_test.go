@@ -9,6 +9,7 @@ import (
 	"github.com/Designdocs/N2X/conf"
 	"github.com/xtls/xray-core/app/proxyman"
 	coreConf "github.com/xtls/xray-core/infra/conf"
+	vlessinbound "github.com/xtls/xray-core/proxy/vless/inbound"
 	"github.com/xtls/xray-core/transport/internet/reality"
 )
 
@@ -57,6 +58,58 @@ func TestResolveVlessDecryption(t *testing.T) {
 				},
 			}},
 			want: "mlkem768x25519plus.xorpub.0s.MC4CAQAwBQYDK2VuBCIEIA",
+		},
+		{
+			name: "panel full decryption string is used verbatim",
+			node: &panel.NodeInfo{Type: "vless", VAllss: &panel.VAllssNode{
+				Network:    "tcp",
+				Decryption: "mlkem768x25519plus.native.600s.6JNzr0rSnYkhwIShca7LvFVPbYimUsKWwDsiH8TNDWk",
+			}},
+			want: "mlkem768x25519plus.native.600s.6JNzr0rSnYkhwIShca7LvFVPbYimUsKWwDsiH8TNDWk",
+		},
+		{
+			name: "panel decryption string is trimmed",
+			node: &panel.NodeInfo{Type: "vless", VAllss: &panel.VAllssNode{
+				Network:    "tcp",
+				Decryption: "  mlkem768x25519plus.xorpub.0s.MC4CAQAwBQYDK2VuBCIEIA\n",
+			}},
+			want: "mlkem768x25519plus.xorpub.0s.MC4CAQAwBQYDK2VuBCIEIA",
+		},
+		{
+			name: "panel decryption none stays none",
+			node: &panel.NodeInfo{Type: "vless", VAllss: &panel.VAllssNode{
+				Network:    "tcp",
+				Decryption: "none",
+			}},
+			want: "none",
+		},
+		{
+			name: "panel decryption string wins over structured settings",
+			node: &panel.NodeInfo{Type: "vless", VAllss: &panel.VAllssNode{
+				Network:    "tcp",
+				Decryption: "mlkem768x25519plus.native.600s.6JNzr0rSnYkhwIShca7LvFVPbYimUsKWwDsiH8TNDWk",
+				Encryption: "mlkem768x25519plus",
+				EncryptionSettings: panel.EncSettings{
+					Mode: "xorpub", Ticket: "0s", PrivateKey: "MC4CAQAwBQYDK2VuBCIEIA",
+				},
+			}},
+			want: "mlkem768x25519plus.native.600s.6JNzr0rSnYkhwIShca7LvFVPbYimUsKWwDsiH8TNDWk",
+		},
+		{
+			name: "panel decryption with unknown method rejected",
+			node: &panel.NodeInfo{Type: "vless", VAllss: &panel.VAllssNode{
+				Network:    "tcp",
+				Decryption: "rot13.native.600s.key",
+			}},
+			wantError: true,
+		},
+		{
+			name: "panel decryption missing key rejected",
+			node: &panel.NodeInfo{Type: "vless", VAllss: &panel.VAllssNode{
+				Network:    "tcp",
+				Decryption: "mlkem768x25519plus.native.600s",
+			}},
+			wantError: true,
 		},
 		{
 			name: "unknown method rejected",
@@ -153,5 +206,71 @@ func TestBuildInboundVlessRealityDefaultsToCompatibilityFloor(t *testing.T) {
 
 	if want := []byte{0, 0, 0}; !bytes.Equal(settings.MinClientVer, want) {
 		t.Fatalf("minimum client version = %v, want compatibility floor %v", settings.MinClientVer, want)
+	}
+}
+
+// Xboard-style panels send the ready-made server string in "decryption"
+// instead of "encryption" + "encryption_settings". Ignoring it silently ran
+// the inbound with decryption "none" and clients failed with
+// "invalid request version".
+func TestVAllssNodeDecodesPanelDecryptionField(t *testing.T) {
+	body := []byte(`{"network":"tcp","decryption":"mlkem768x25519plus.native.600s.6JNzr0rSnYkhwIShca7LvFVPbYimUsKWwDsiH8TNDWk"}`)
+	var node panel.VAllssNode
+	if err := json.Unmarshal(body, &node); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got, err := resolveVlessDecryption(&panel.NodeInfo{Type: "vless", VAllss: &node})
+	if err != nil {
+		t.Fatalf("resolveVlessDecryption() error = %v", err)
+	}
+	want := "mlkem768x25519plus.native.600s.6JNzr0rSnYkhwIShca7LvFVPbYimUsKWwDsiH8TNDWk"
+	if got != want {
+		t.Fatalf("resolveVlessDecryption() = %q, want %q", got, want)
+	}
+}
+
+// End to end: a Reality node whose panel sends only the "decryption" string
+// must produce a VLESS inbound with post-quantum decryption enabled.
+func TestBuildInboundVlessUsesPanelDecryptionString(t *testing.T) {
+	node := &panel.NodeInfo{
+		Type:     "vless",
+		Security: panel.Reality,
+		Common:   &panel.CommonNode{ServerPort: 10443},
+		VAllss: &panel.VAllssNode{
+			Network:         "tcp",
+			NetworkSettings: json.RawMessage(`{}`),
+			Flow:            "xtls-rprx-vision",
+			Decryption:      "mlkem768x25519plus.native.600s.6JNzr0rSnYkhwIShca7LvFVPbYimUsKWwDsiH8TNDWk",
+			TlsSettings: panel.TlsSettings{
+				ServerName: "example.com",
+				ServerPort: "443",
+				ShortId:    "01234567",
+				PrivateKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			},
+		},
+	}
+	options := &conf.Options{ListenIP: "127.0.0.1", XrayOptions: &conf.XrayOptions{}}
+
+	inbound, err := buildInbound(options, node, "vless-decryption-test")
+	if err != nil {
+		t.Fatalf("buildInbound() error = %v", err)
+	}
+	proxyMessage, err := inbound.ProxySettings.GetInstance()
+	if err != nil {
+		t.Fatalf("decode proxy settings: %v", err)
+	}
+	vlessConfig, ok := proxyMessage.(*vlessinbound.Config)
+	if !ok {
+		t.Fatalf("proxy settings = %T, want *inbound.Config", proxyMessage)
+	}
+	// xray-core splits method.mode.ticket.key into separate fields.
+	if got, want := vlessConfig.GetDecryption(), "6JNzr0rSnYkhwIShca7LvFVPbYimUsKWwDsiH8TNDWk"; got != want {
+		t.Fatalf("inbound decryption key = %q, want %q", got, want)
+	}
+	if got := vlessConfig.GetXorMode(); got != 0 {
+		t.Fatalf("inbound xor mode = %d, want 0 (native)", got)
+	}
+	if got := vlessConfig.GetSecondsFrom(); got != 600 {
+		t.Fatalf("inbound ticket seconds = %d, want 600", got)
 	}
 }
