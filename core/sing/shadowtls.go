@@ -97,7 +97,7 @@ func buildShadowTLSInbounds(tag string, info *panel.NodeInfo, c *conf.Options) (
 	detour := option.Inbound{
 		Tag:     detourTag(tag),
 		Type:    "shadowsocks",
-		Options: buildShadowsocksOptions(detourListen, n.Cipher, n.ServerKey, buildMultiplex(c)),
+		Options: buildShadowsocksOptions(detourListen, n.Cipher, n.ServerKey, buildMultiplex(info, c)),
 	}
 	public := option.Inbound{
 		Tag:     tag,

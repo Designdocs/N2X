@@ -209,18 +209,40 @@ func buildV2RayTransport(network string, networkSettings json.RawMessage) (optio
 	return t, nil
 }
 
-func buildMultiplex(c *conf.Options) *option.InboundMultiplexOptions {
-	if c.SingOptions.Multiplex == nil {
-		return nil
+// buildMultiplex decides whether the inbound serves sing-mux. The panel's
+// per-node multiplex switch is what makes X-Board hand clients an `smux`
+// block, so it turns the server on and sets padding: a padded server
+// rejects unpadded sessions, so padding must match what clients were told.
+// The local config can still enable multiplex on its own and is the only
+// source of TCP Brutal, which needs a Linux kernel module on this host.
+func buildMultiplex(info *panel.NodeInfo, c *conf.Options) *option.InboundMultiplexOptions {
+	local := c.SingOptions.Multiplex
+	panelOn := info != nil && info.Common.MultiplexEnabled()
+	if !panelOn {
+		if local == nil {
+			return nil
+		}
+		return &option.InboundMultiplexOptions{
+			Enabled: local.Enabled,
+			Padding: local.Padding,
+			Brutal:  buildBrutal(local),
+		}
 	}
 	return &option.InboundMultiplexOptions{
-		Enabled: c.SingOptions.Multiplex.Enabled,
-		Padding: c.SingOptions.Multiplex.Padding,
-		Brutal: &option.BrutalOptions{
-			Enabled:  c.SingOptions.Multiplex.Brutal.Enabled,
-			UpMbps:   c.SingOptions.Multiplex.Brutal.UpMbps,
-			DownMbps: c.SingOptions.Multiplex.Brutal.DownMbps,
-		},
+		Enabled: true,
+		Padding: info.Common.Multiplex.Padding,
+		Brutal:  buildBrutal(local),
+	}
+}
+
+func buildBrutal(local *conf.MultiplexConfig) *option.BrutalOptions {
+	if local == nil {
+		return nil
+	}
+	return &option.BrutalOptions{
+		Enabled:  local.Brutal.Enabled,
+		UpMbps:   local.Brutal.UpMbps,
+		DownMbps: local.Brutal.DownMbps,
 	}
 }
 
@@ -238,7 +260,7 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 	if err != nil {
 		return option.Inbound{}, err
 	}
-	multiplex := buildMultiplex(c)
+	multiplex := buildMultiplex(info, c)
 
 	in := option.Inbound{Tag: tag}
 	switch info.Type {
