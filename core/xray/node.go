@@ -7,6 +7,7 @@ import (
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
+	"github.com/Designdocs/N2X/core/xray/app/dispatcher"
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/features/inbound"
 	"github.com/xtls/xray-core/features/outbound"
@@ -47,6 +48,7 @@ func (c *Xray) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) e
 		)
 	}
 	c.nodeReportMinTrafficBytes[tag] = config.ReportMinTraffic * 1024
+	c.syncSingMux(tag, info)
 	return nil
 }
 
@@ -81,11 +83,26 @@ func (c *Xray) addOutbound(config *core.OutboundHandlerConfig) error {
 }
 
 func (c *Xray) DelNode(tag string) error {
+	c.syncSingMux(tag, nil)
 	return errors.Join(
 		wrapRollbackError("stop native UDP", c.stopNativeUDP(tag)),
 		wrapRollbackError("remove inbound", c.removeInbound(tag)),
 		wrapRollbackError("remove outbound", c.removeOutbound(tag)),
 	)
+}
+
+// syncSingMux serves sing-mux on a node exactly when the panel's multiplex
+// switch is on, because that same switch puts an smux block into every
+// client's subscription.
+func (c *Xray) syncSingMux(tag string, info *panel.NodeInfo) {
+	if c.dispatcher == nil {
+		return
+	}
+	if info == nil || !info.Common.MultiplexEnabled() {
+		c.dispatcher.SetSingMux(tag, nil)
+		return
+	}
+	c.dispatcher.SetSingMux(tag, &dispatcher.SingMuxOptions{Padding: info.Common.Multiplex.Padding})
 }
 
 func wrapRollbackError(operation string, err error) error {

@@ -90,12 +90,8 @@ github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2/go.mod h1:wP83
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
-github.com/Designdocs/Xray-core v0.0.0-20260904054250-fe1d7adfe7d7 h1:MWh1h/eYLumMh2g5No6m/eNVSYL7lYq9g2k1NRjCdzI=
-github.com/Designdocs/Xray-core v0.0.0-20260904054250-fe1d7adfe7d7/go.mod h1:N5ZCCozyZuusahZ1VBCzlDGp7QRTo64G2KVHQhKL2zo=
 github.com/Designdocs/Xray-core v0.0.0-20260910100458-56ad0ec08cc9 h1:POOfwihjjV3z1TawxKLGDfCMWkJLeO91tksVYwYnv2E=
 github.com/Designdocs/Xray-core v0.0.0-20260910100458-56ad0ec08cc9/go.mod h1:N5ZCCozyZuusahZ1VBCzlDGp7QRTo64G2KVHQhKL2zo=
-github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20260906132413-a7039e06d811 h1:R0T0svKRGnaIQW9a6Z93+2qYEVj2Wlb4LnaOJC6sgHE=
-github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20260906132413-a7039e06d811/go.mod h1:1VDZd5lZAsxv7d1OdVyyKyv/qZ/zkxID6PAjYGVR6Ok=
 github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20260906145048-605a401f82a3 h1:+PyuuzHuI2ZYIrUiRJnzy+xh2lIAW8Zo//p1Zjxo5Ik=
 github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20260906145048-605a401f82a3/go.mod h1:1VDZd5lZAsxv7d1OdVyyKyv/qZ/zkxID6PAjYGVR6Ok=
 github.com/HdrHistogram/hdrhistogram-go v1.1.0/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=

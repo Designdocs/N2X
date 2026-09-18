@@ -12,6 +12,7 @@ require (
 	github.com/juju/ratelimit v1.0.2
 	github.com/sagernet/sing v0.8.9
 	github.com/sagernet/sing-box v1.13.0
+	github.com/sagernet/sing-mux v0.3.3
 	github.com/shirou/gopsutil/v4 v4.26.3
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.2
@@ -210,7 +211,6 @@ require (
 	github.com/sagernet/netlink v0.0.0-20240612041022-b9a21c07ac6a // indirect
 	github.com/sagernet/nftables v0.3.0-beta.4 // indirect
 	github.com/sagernet/quic-go v0.61.0-sing-box-mod.2 // indirect
-	github.com/sagernet/sing-mux v0.3.3 // indirect
 	github.com/sagernet/sing-quic v0.6.0-beta.4 // indirect
 	github.com/sagernet/sing-shadowsocks v0.2.8 // indirect
 	github.com/sagernet/sing-shadowsocks2 v0.2.1 // indirect

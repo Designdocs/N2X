@@ -108,6 +108,7 @@ type DefaultDispatcher struct {
 	fdns         dns.FakeDNSEngine
 	Counter      sync.Map
 	LinkManagers sync.Map // map[string]*LinkManager
+	singMux      sync.Map // map[inbound tag]SingMuxOptions
 }
 
 func init() {
@@ -276,6 +277,9 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 	if !destination.IsValid() {
 		panic("Dispatcher: Invalid destination.")
 	}
+	if isSingMuxDestination(destination) {
+		return d.dispatchSingMux(ctx)
+	}
 	outbounds := session.OutboundsFromContext(ctx)
 	if len(outbounds) == 0 {
 		outbounds = []*session.Outbound{{}}
@@ -334,6 +338,9 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.Destination, outbound *transport.Link) error {
 	if !destination.IsValid() {
 		return errors.New("Dispatcher: Invalid destination.")
+	}
+	if isSingMuxDestination(destination) {
+		return d.dispatchSingMuxLink(ctx, outbound)
 	}
 	outbounds := session.OutboundsFromContext(ctx)
 	if len(outbounds) == 0 {
