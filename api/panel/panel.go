@@ -3,7 +3,6 @@ package panel
 import (
 	"errors"
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,14 +49,9 @@ type Client struct {
 }
 
 func New(c *conf.ApiConfig) (*Client, error) {
-	var client *resty.Client
-	if c.APISendIP != "" {
-		client = resty.NewWithLocalAddr(&net.TCPAddr{
-			IP: net.ParseIP(c.APISendIP),
-		})
-	} else {
-		client = resty.New()
-	}
+	// IPv4-first dialer (see dial.go); ApiSendIP pins the local address and
+	// with it the address family.
+	client := resty.New().SetTransport(newPanelTransport(c.APISendIP))
 	client.SetRetryCount(3)
 	if c.Timeout > 0 {
 		client.SetTimeout(time.Duration(c.Timeout) * time.Second)
@@ -194,6 +188,7 @@ func (c *Client) StartWebSocket() {
 		NodeID:   c.NodeId,
 		NodeType: c.NodeType,
 		Token:    c.Token,
+		SendIP:   c.APISendIP,
 		Debug:    c.wsCfg.Debug,
 		Hooks: wsDriverHooks{
 			OnSyncConfig:  c.invalidateNodeInfoCache,

@@ -83,6 +83,7 @@ type wsDriverConfig struct {
 	NodeID   int
 	NodeType string
 	Token    string
+	SendIP   string
 	Debug    bool
 	Hooks    wsDriverHooks
 }
@@ -239,6 +240,9 @@ func (d *wsDriver) runSession() error {
 
 	dialer := *websocket.DefaultDialer
 	dialer.HandshakeTimeout = wsAuthTimeout
+	// Same IPv4-first rule as the HTTP client so the panel sees one source
+	// IP for both channels and merges them into a single backend card.
+	dialer.NetDialContext = newPanelDialContext(d.cfg.SendIP)
 
 	conn, resp, err := dialer.DialContext(d.ctx, u.String(), http.Header{
 		"User-Agent": []string{"N2X-panel-ws"},
