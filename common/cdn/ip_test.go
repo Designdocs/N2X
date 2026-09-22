@@ -65,3 +65,21 @@ func TestGeneratedProviderRanges(t *testing.T) {
 		}
 	}
 }
+
+func TestDisabledProviderCountsAsOrdinaryAddress(t *testing.T) {
+	t.Cleanup(func() { SetDisabledProviders(nil) })
+	SetDisabledProviders([]string{" cloudfront ", "nope"})
+	if Provider("15.158.212.208") != CloudFront {
+		t.Fatal("Provider must keep reporting the owner for display")
+	}
+	if Exempt("15.158.212.208") != "" || IsProxyIP("15.158.212.208") {
+		t.Fatal("a switched-off provider must not exempt its edges")
+	}
+	if Exempt("104.16.1.1") != Cloudflare {
+		t.Fatal("other providers stay exempt")
+	}
+	SetDisabledProviders(nil)
+	if !IsProxyIP("15.158.212.208") {
+		t.Fatal("clearing the set restores the exemption")
+	}
+}

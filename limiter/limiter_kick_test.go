@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
+	"github.com/Designdocs/N2X/common/cdn"
 	"github.com/Designdocs/N2X/common/format"
 	"github.com/Designdocs/N2X/conf"
 )
@@ -170,5 +171,24 @@ func TestIgnoredPrefixesBypassDeviceAccounting(t *testing.T) {
 	l.SetIgnoredPrefixes(nil)
 	if _, reject := l.CheckLimit(tagUUID(t), "43.216.51.130", true, true); !reject {
 		t.Fatal("cleared list must stop exempting")
+	}
+}
+
+func TestSwitchedOffCdnProviderHitsDeviceLimit(t *testing.T) {
+	t.Cleanup(func() { cdn.SetDisabledProviders(nil) })
+	// One device already alive against a limit of one: any plain address is
+	// rejected, only exempt addresses get through.
+	l := newDeviceLimitLimiter(t, 1, 1)
+	l.SetDeviceTolerance(0)
+	cdn.SetDisabledProviders([]string{"CloudFront"})
+	if _, reject := l.CheckLimit(tagUUID(t), "15.158.212.208", true, true); !reject {
+		t.Fatal("a switched-off provider's edge must hit the device limit like a plain device")
+	}
+	if _, reject := l.CheckLimit(tagUUID(t), "104.16.1.1", true, true); reject {
+		t.Fatal("Cloudflare is still exempt")
+	}
+	cdn.SetDisabledProviders(nil)
+	if _, reject := l.CheckLimit(tagUUID(t), "15.158.212.209", true, true); reject {
+		t.Fatal("clearing the switches restores the CloudFront exemption")
 	}
 }

@@ -48,8 +48,11 @@ type NodeInfo struct {
 	// exits, probes) as CIDR strings; those addresses never occupy a
 	// device slot. Hostnames are resolved panel-side, never here.
 	DeviceLimitIgnoredIPs []string
-	RawDNS                RawDNS
-	Rules                 Rules
+	// DeviceLimitCDNDisabled names the built-in CDN providers the panel
+	// operator switched off; their edges count as devices again.
+	DeviceLimitCDNDisabled []string
+	RawDNS                 RawDNS
+	Rules                  Rules
 
 	// origin
 	VAllss      *VAllssNode
@@ -93,6 +96,9 @@ type BaseConfig struct {
 	// DeviceLimitIgnoredIPs carries the resolved operator ignore list as
 	// CIDR strings. Older panels omit it.
 	DeviceLimitIgnoredIPs any `json:"device_limit_ignored_ips"`
+	// DeviceLimitCDNDisabled lists switched-off CDN provider names. Older
+	// panels omit it.
+	DeviceLimitCDNDisabled any `json:"device_limit_cdn_disabled"`
 }
 
 // VAllssNode is vmess and vless node info
@@ -698,6 +704,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
 		node.DeviceLimitTolerance = toleranceToInt(cm.BaseConfig.DeviceLimitTolerance, 1)
 		node.DeviceLimitIgnoredIPs = ignoredIPsToList(cm.BaseConfig.DeviceLimitIgnoredIPs)
+		node.DeviceLimitCDNDisabled = ignoredIPsToList(cm.BaseConfig.DeviceLimitCDNDisabled)
 	}
 	node.CertConfig = cm.CertConfig
 
@@ -834,7 +841,8 @@ func shouldNormalizeObjectLikeArray(key string, value any) bool {
 	return ok && len(items) == 0
 }
 
-// ignoredIPsToList decodes device_limit_ignored_ips leniently: a JSON
+// ignoredIPsToList decodes device_limit_ignored_ips (and the sibling
+// device_limit_cdn_disabled list) leniently: a JSON
 // array of strings, or a single comma/whitespace-separated string. Entries
 // are trimmed; validation happens in the limiter so one malformed entry
 // cannot discard the rest.

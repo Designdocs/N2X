@@ -18,12 +18,18 @@ func deviceLimitNode(tolerance int, ignored ...string) *panel.NodeInfo {
 	}
 }
 
+func withCDNDisabled(info *panel.NodeInfo, names ...string) *panel.NodeInfo {
+	info.DeviceLimitCDNDisabled = names
+	return info
+}
+
 func TestDeviceLimitOnlyChangeAcceptsPolicyMoves(t *testing.T) {
 	cases := map[string][2]*panel.NodeInfo{
 		"relay exit re-resolved": {deviceLimitNode(1, "56.69.64.164/32"), deviceLimitNode(1, "56.69.64.165/32")},
 		"list emptied":           {deviceLimitNode(1, "56.69.64.164/32"), deviceLimitNode(1)},
 		"list introduced":        {deviceLimitNode(1), deviceLimitNode(1, "10.0.0.0/8")},
 		"tolerance moved":        {deviceLimitNode(1), deviceLimitNode(3)},
+		"cdn switched off":       {deviceLimitNode(1), withCDNDisabled(deviceLimitNode(1), "CloudFront")},
 	}
 	for name, pair := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
+	"github.com/Designdocs/N2X/common/cdn"
 	"github.com/Designdocs/N2X/common/task"
 	vCore "github.com/Designdocs/N2X/core"
 	"github.com/Designdocs/N2X/limiter"
@@ -179,6 +180,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		c.limiter = limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, newA)
 		c.limiter.SetDeviceTolerance(newN.DeviceLimitTolerance)
 		c.limiter.SetIgnoredPrefixes(newN.DeviceLimitIgnoredIPs)
+		cdn.SetDisabledProviders(newN.DeviceLimitCDNDisabled)
 		// update alive list
 		if newA != nil {
 			c.setAliveMap(newA)

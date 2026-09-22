@@ -3,7 +3,11 @@
 // addresses are reported for display but never spend a device slot.
 package cdn
 
-import "net/netip"
+import (
+	"net/netip"
+	"strings"
+	"sync/atomic"
+)
 
 const (
 	Cloudflare = "Cloudflare"
@@ -347,7 +351,40 @@ func Provider(ip string) string {
 	return best.name
 }
 
-// IsProxyIP reports whether ip belongs to any recognized CDN proxy network.
+// IsProxyIP reports whether ip belongs to a recognized CDN proxy network
+// whose exemption the panel has not switched off.
 func IsProxyIP(ip string) bool {
-	return Provider(ip) != ""
+	return Exempt(ip) != ""
+}
+
+// disabled holds the providers the panel operator switched off (lower-cased
+// names). Their edges count as ordinary devices again. Process-wide because
+// the setting is panel-wide; replaced wholesale on every config pull.
+var disabled atomic.Pointer[map[string]struct{}]
+
+// SetDisabledProviders replaces the set of switched-off providers. Names
+// are matched case-insensitively; unknown names are harmless.
+func SetDisabledProviders(names []string) {
+	set := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
+			set[name] = struct{}{}
+		}
+	}
+	disabled.Store(&set)
+}
+
+// Exempt returns the CDN that owns ip when that CDN's exemption is in force,
+// or "" when ip is an ordinary address or belongs to a switched-off provider.
+func Exempt(ip string) string {
+	name := Provider(ip)
+	if name == "" {
+		return ""
+	}
+	if set := disabled.Load(); set != nil {
+		if _, off := (*set)[strings.ToLower(name)]; off {
+			return ""
+		}
+	}
+	return name
 }
