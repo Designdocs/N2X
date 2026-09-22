@@ -97,6 +97,7 @@ func (c *Controller) Start() error {
 	// add limiter
 	l := limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, c.aliveMap)
 	l.SetDeviceTolerance(node.DeviceLimitTolerance)
+	l.SetIgnoredPrefixes(node.DeviceLimitIgnoredIPs)
 	// add rule limiter
 	if err = l.UpdateRule(&node.Rules); err != nil {
 		return startError(StageCore, "update rule error: %w", err)

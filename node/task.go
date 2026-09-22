@@ -145,6 +145,14 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		c.info = newN
 		newN = nil
 	}
+	if newN != nil && deviceLimitOnlyChange(c.info, newN) {
+		// Only the device-limit policy moved (typically a relay exit that
+		// re-resolved). The limiter takes it in place; a reload would drop
+		// every session on the node for nothing.
+		c.info = newN
+		c.applyDeviceLimitInPlace(newN)
+		newN = nil
+	}
 	if newN != nil {
 		c.info = newN
 		// nodeInfo changed
@@ -170,6 +178,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		c.clearArtXUserRatesForTag(oldTag)
 		c.limiter = limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, newA)
 		c.limiter.SetDeviceTolerance(newN.DeviceLimitTolerance)
+		c.limiter.SetIgnoredPrefixes(newN.DeviceLimitIgnoredIPs)
 		// update alive list
 		if newA != nil {
 			c.setAliveMap(newA)

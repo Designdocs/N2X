@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/netip"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +44,11 @@ type Limiter struct {
 	// deviceTolerance is panel-configured headroom over DeviceLimit so a
 	// device hopping nodes/networks is not rejected by its own stale entry.
 	deviceTolerance atomic.Int32
+
+	// ignoredPrefixes is the panel's operator ignore list (relay exits,
+	// probes). Like CDN ranges these addresses are reported but never
+	// occupy a device slot. Replaced wholesale on every config pull.
+	ignoredPrefixes atomic.Pointer[[]netip.Prefix]
 }
 
 type UserLimitInfo struct {
@@ -171,6 +177,51 @@ func (l *Limiter) SetDeviceTolerance(tolerance int) {
 	l.deviceTolerance.Store(int32(tolerance))
 }
 
+// SetIgnoredPrefixes replaces the operator ignore list. Entries are CIDR
+// strings or bare addresses; malformed entries are skipped so a typo in
+// the panel cannot disable the rest of the list.
+func (l *Limiter) SetIgnoredPrefixes(entries []string) {
+	prefixes := make([]netip.Prefix, 0, len(entries))
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(entry); err == nil {
+			prefixes = append(prefixes, prefix.Masked())
+			continue
+		}
+		if addr, err := netip.ParseAddr(entry); err == nil {
+			addr = addr.Unmap()
+			prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+		}
+	}
+	l.ignoredPrefixes.Store(&prefixes)
+}
+
+// isExempt reports whether ip must bypass device accounting: a CDN edge or
+// an operator-ignored address. ip is expected to be unmapped already.
+func (l *Limiter) isExempt(ip string) bool {
+	if cdn.IsProxyIP(ip) {
+		return true
+	}
+	prefixes := l.ignoredPrefixes.Load()
+	if prefixes == nil || len(*prefixes) == 0 {
+		return false
+	}
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	addr = addr.Unmap()
+	for _, prefix := range *prefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
 // MergeKickedList merges panel-issued kicks (uid → ip → remaining ttl in
 // seconds) into the local table. Entries expire locally, so merging is safe
 // against stale full syncs racing a fresh kick broadcast.
@@ -221,7 +272,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 	if addr, err := netip.ParseAddr(ip); err == nil {
 		ip = addr.Unmap().String()
 	}
-	isCdn := cdn.IsProxyIP(ip)
+	isCdn := l.isExempt(ip)
 
 	// check and gen speed limit Bucket
 	nodeLimit := l.SpeedLimit
@@ -335,7 +386,7 @@ func (l *Limiter) CountOnlineIP() int {
 			return true
 		}
 		ipMap.Range(func(key, _ interface{}) bool {
-			if !cdn.IsProxyIP(key.(string)) {
+			if !l.isExempt(key.(string)) {
 				count++
 			}
 			return true

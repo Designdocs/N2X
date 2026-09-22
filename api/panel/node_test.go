@@ -36,3 +36,28 @@ func TestClient_ReportUserTraffic(t *testing.T) {
 		},
 	}))
 }
+
+func TestIgnoredIPsToListDecodesLeniently(t *testing.T) {
+	cases := map[string]struct {
+		in   interface{}
+		want []string
+	}{
+		"absent":     {nil, []string{}},
+		"array":      {[]interface{}{"56.69.64.164/32", " 43.216.0.0/16 ", "", 7}, []string{"56.69.64.164/32", "43.216.0.0/16"}},
+		"string":     {"1.2.3.4/32, 5.6.7.8/32\n9.9.9.9/32", []string{"1.2.3.4/32", "5.6.7.8/32", "9.9.9.9/32"}},
+		"wrong type": {42.0, []string{}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := ignoredIPsToList(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("got %v want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}

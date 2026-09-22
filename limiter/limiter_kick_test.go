@@ -144,3 +144,31 @@ func TestCdnProxyIsReportedWithoutDeviceAccounting(t *testing.T) {
 		})
 	}
 }
+
+// Operator-ignored addresses (relay exits, probes) follow the CDN policy:
+// reported, speed-limited, never counted, never rejected by the device limit.
+func TestIgnoredPrefixesBypassDeviceAccounting(t *testing.T) {
+	l := newDeviceLimitLimiter(t, 1, 9)
+	l.SpeedLimit = 1
+	l.SetIgnoredPrefixes([]string{"56.69.64.164/32", "43.216.0.0/16", "2001:db8::/32", " junk ", "", "::ffff:9.9.9.9"})
+	for _, ip := range []string{"56.69.64.164", "::ffff:56.69.64.164", "43.216.51.129", "2001:db8::1", "9.9.9.9"} {
+		bucket, reject := l.CheckLimit(tagUUID(t), ip, true, true)
+		if reject || bucket == nil {
+			t.Fatalf("%s must bypass only device accounting and retain speed limiting", ip)
+		}
+	}
+	if got := l.CountOnlineIP(); got != 0 {
+		t.Fatalf("ignored addresses counted as %d devices", got)
+	}
+	if _, reject := l.CheckLimit(tagUUID(t), "56.69.65.1", true, true); !reject {
+		t.Fatal("an address outside the list must still hit the device limit")
+	}
+	if _, reject := l.CheckLimit("unknown-user", "56.69.64.164", true, true); !reject {
+		t.Fatal("unknown user admitted")
+	}
+	// An empty list restores plain enforcement, including for the old IP.
+	l.SetIgnoredPrefixes(nil)
+	if _, reject := l.CheckLimit(tagUUID(t), "43.216.51.130", true, true); !reject {
+		t.Fatal("cleared list must stop exempting")
+	}
+}

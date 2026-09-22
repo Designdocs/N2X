@@ -44,8 +44,12 @@ type NodeInfo struct {
 	// DeviceLimitTolerance is the panel-configured device-limit headroom
 	// applied by the limiter on top of each user's device_limit.
 	DeviceLimitTolerance int
-	RawDNS               RawDNS
-	Rules                Rules
+	// DeviceLimitIgnoredIPs is the panel's operator ignore list (relay
+	// exits, probes) as CIDR strings; those addresses never occupy a
+	// device slot. Hostnames are resolved panel-side, never here.
+	DeviceLimitIgnoredIPs []string
+	RawDNS                RawDNS
+	Rules                 Rules
 
 	// origin
 	VAllss      *VAllssNode
@@ -86,6 +90,9 @@ type BaseConfig struct {
 	// device_limit, absorbing the transient double-count when a device
 	// hops nodes or networks before its old alive entry expires.
 	DeviceLimitTolerance any `json:"device_limit_tolerance"`
+	// DeviceLimitIgnoredIPs carries the resolved operator ignore list as
+	// CIDR strings. Older panels omit it.
+	DeviceLimitIgnoredIPs any `json:"device_limit_ignored_ips"`
 }
 
 // VAllssNode is vmess and vless node info
@@ -690,6 +697,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.PushInterval = intervalToTime(cm.BaseConfig.PushInterval)
 		node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
 		node.DeviceLimitTolerance = toleranceToInt(cm.BaseConfig.DeviceLimitTolerance, 1)
+		node.DeviceLimitIgnoredIPs = ignoredIPsToList(cm.BaseConfig.DeviceLimitIgnoredIPs)
 	}
 	node.CertConfig = cm.CertConfig
 
@@ -824,6 +832,35 @@ func shouldNormalizeObjectLikeArray(key string, value any) bool {
 	}
 	items, ok := value.([]any)
 	return ok && len(items) == 0
+}
+
+// ignoredIPsToList decodes device_limit_ignored_ips leniently: a JSON
+// array of strings, or a single comma/whitespace-separated string. Entries
+// are trimmed; validation happens in the limiter so one malformed entry
+// cannot discard the rest.
+func ignoredIPsToList(i interface{}) []string {
+	var raw []string
+	switch v := i.(type) {
+	case []interface{}:
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				raw = append(raw, str)
+			}
+		}
+	case []string:
+		raw = v
+	case string:
+		raw = strings.FieldsFunc(v, func(r rune) bool {
+			return r == ',' || r == ' ' || r == '\n' || r == '\t' || r == '\r'
+		})
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // toleranceToInt mirrors intervalToTime's lenient decoding for the
