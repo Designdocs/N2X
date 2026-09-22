@@ -110,8 +110,8 @@ func TestCheckLimitKnownIPStillAdmitted(t *testing.T) {
 	}
 }
 
-func TestCloudflareIsReportedWithoutDeviceAccounting(t *testing.T) {
-	for _, ip := range []string{"172.70.247.212", "162.158.111.155", "2606:4700::1234", "::ffff:172.70.247.212", "::ffff:ac46:f7d4"} {
+func TestCdnProxyIsReportedWithoutDeviceAccounting(t *testing.T) {
+	for _, ip := range []string{"172.70.247.212", "162.158.111.155", "2606:4700::1234", "::ffff:172.70.247.212", "::ffff:ac46:f7d4", "15.158.212.208", "3.172.100.226", "::ffff:15.158.212.208"} {
 		t.Run(ip, func(t *testing.T) {
 			l := newDeviceLimitLimiter(t, 1, 9)
 			l.SpeedLimit = 1

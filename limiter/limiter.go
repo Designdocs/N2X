@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
-	"github.com/Designdocs/N2X/common/cloudflare"
+	"github.com/Designdocs/N2X/common/cdn"
 	"github.com/Designdocs/N2X/common/format"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/juju/ratelimit"
@@ -221,7 +221,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 	if addr, err := netip.ParseAddr(ip); err == nil {
 		ip = addr.Unmap().String()
 	}
-	isCloudflare := cloudflare.IsProxyIP(ip)
+	isCdn := cdn.IsProxyIP(ip)
 
 	// check and gen speed limit Bucket
 	nodeLimit := l.SpeedLimit
@@ -268,7 +268,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 					if v.(int) == uid {
 						l.OldUserOnline.Delete(ip)
 					}
-				} else if deviceLimit > 0 && !isCloudflare {
+				} else if deviceLimit > 0 && !isCdn {
 					if effectiveLimit <= aliveIp {
 						oldipMap.Delete(ip)
 						return nil, true
@@ -280,7 +280,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 				l.OldUserOnline.Delete(ip)
 			}
 		} else {
-			if deviceLimit > 0 && !isCloudflare {
+			if deviceLimit > 0 && !isCdn {
 				if effectiveLimit <= aliveIp {
 					l.UserOnlineIP.Delete(taguuid)
 					return nil, true
@@ -335,7 +335,7 @@ func (l *Limiter) CountOnlineIP() int {
 			return true
 		}
 		ipMap.Range(func(key, _ interface{}) bool {
-			if !cloudflare.IsProxyIP(key.(string)) {
+			if !cdn.IsProxyIP(key.(string)) {
 				count++
 			}
 			return true

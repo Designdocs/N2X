@@ -8,7 +8,7 @@ import (
 
 	"encoding/json"
 
-	"github.com/Designdocs/N2X/common/cloudflare"
+	"github.com/Designdocs/N2X/common/cdn"
 )
 
 func decodeDeviceAliveMap(raw json.RawMessage) (map[int]int, error) {
@@ -104,7 +104,7 @@ func addDeviceIP(ips map[string]struct{}, ip string) {
 		return
 	}
 	ip = normalizeDeviceIP(ip)
-	if cloudflare.IsProxyIP(ip) {
+	if cdn.IsProxyIP(ip) {
 		return
 	}
 	ips[ip] = struct{}{}
