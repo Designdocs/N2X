@@ -305,6 +305,13 @@ func Provider(ip string) string {
 			return CloudFront
 		}
 	}
+	for _, p := range generatedProviders {
+		for _, prefix := range p.prefixes {
+			if prefix.Contains(addr) {
+				return p.name
+			}
+		}
+	}
 	return ""
 }
 
