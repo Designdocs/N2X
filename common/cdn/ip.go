@@ -287,6 +287,42 @@ var cloudfrontPrefixes = [...]netip.Prefix{
 	netip.MustParsePrefix("2a05:d025:e59:fb00::/56"),
 }
 
+// providerEntry is one indexed network: the provider name and its rank in
+// match order (hand-curated lists first), so overlapping ranges resolve the
+// same way a sequential scan would.
+type providerEntry struct {
+	name string
+	rank int
+}
+
+// index maps prefix length => masked network => provider. A lookup masks the
+// address once per distinct prefix length and probes the map, so cost stays
+// flat as the range lists grow.
+var index = buildIndex()
+
+func buildIndex() map[int]map[netip.Prefix]providerEntry {
+	idx := map[int]map[netip.Prefix]providerEntry{}
+	add := func(name string, rank int, prefixes []netip.Prefix) {
+		for _, p := range prefixes {
+			p = p.Masked()
+			bucket := idx[p.Bits()]
+			if bucket == nil {
+				bucket = map[netip.Prefix]providerEntry{}
+				idx[p.Bits()] = bucket
+			}
+			if _, dup := bucket[p]; !dup {
+				bucket[p] = providerEntry{name: name, rank: rank}
+			}
+		}
+	}
+	add(Cloudflare, 0, cloudflarePrefixes[:])
+	add(CloudFront, 1, cloudfrontPrefixes[:])
+	for i, p := range generatedProviders {
+		add(p.name, 2+i, p.prefixes)
+	}
+	return idx
+}
+
 // Provider returns the CDN that owns ip, or "" for any other address.
 // IPv4-mapped IPv6 follows the same policy as native IPv4.
 func Provider(ip string) string {
@@ -295,24 +331,20 @@ func Provider(ip string) string {
 		return ""
 	}
 	addr = addr.Unmap()
-	for _, prefix := range cloudflarePrefixes {
-		if prefix.Contains(addr) {
-			return Cloudflare
+	best, found := providerEntry{}, false
+	for bits, bucket := range index {
+		if bits > addr.BitLen() {
+			continue
+		}
+		masked, err := addr.Prefix(bits)
+		if err != nil {
+			continue
+		}
+		if e, ok := bucket[masked]; ok && (!found || e.rank < best.rank) {
+			best, found = e, true
 		}
 	}
-	for _, prefix := range cloudfrontPrefixes {
-		if prefix.Contains(addr) {
-			return CloudFront
-		}
-	}
-	for _, p := range generatedProviders {
-		for _, prefix := range p.prefixes {
-			if prefix.Contains(addr) {
-				return p.name
-			}
-		}
-	}
-	return ""
+	return best.name
 }
 
 // IsProxyIP reports whether ip belongs to any recognized CDN proxy network.
