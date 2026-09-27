@@ -293,7 +293,7 @@ require (
 
 replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20260910100458-56ad0ec08cc9
 
-replace github.com/sagernet/sing-box => github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20260906145048-605a401f82a3
+replace github.com/sagernet/sing-box => github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20260927152003-4a05a2d25ce6
 
 replace github.com/sagernet/quic-go => github.com/sagernet/quic-go v0.59.0-sing-box-mod.2
 

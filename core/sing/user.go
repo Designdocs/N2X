@@ -36,7 +36,7 @@ func userInboundTag(tag string, nodeType string) string {
 }
 
 func (b *Sing) AddUsers(p *core.AddUsersParams) (added int, err error) {
-	// Naive has no live user API and is rebuilt from its user set instead.
+	// Naive publishes its full user set without replacing the listener.
 	if p.NodeInfo.Type == "naive" {
 		if added, err = b.addNaiveUsers(p.Tag, p.Users); err != nil {
 			return 0, err
@@ -176,7 +176,7 @@ func (b *Sing) DelUsers(users []panel.UserInfo, tag string, info *panel.NodeInfo
 		if err := b.delNaiveUsers(tag, users); err != nil {
 			return err
 		}
-		b.forgetUsers(tag, users)
+		b.forgetUsers(tag, users, true)
 		return nil
 	}
 
@@ -213,45 +213,81 @@ func (b *Sing) DelUsers(users []panel.UserInfo, tag string, info *panel.NodeInfo
 	if err := del.DelUsers(names); err != nil {
 		return err
 	}
-	b.forgetUsers(tag, users)
+	b.forgetUsers(tag, users, false)
 	return nil
 }
 
 // forgetUsers drops the users' accounting state for a node.
-func (b *Sing) forgetUsers(tag string, users []panel.UserInfo) {
+func (b *Sing) forgetUsers(tag string, users []panel.UserInfo, preserveTraffic bool) {
 	b.users.mapLock.Lock()
 	defer b.users.mapLock.Unlock()
 	c, hasCounter := b.hookServer.counter.Load(tag)
 	for i := range users {
+		if preserveTraffic && b.naiveUserActive(tag, users[i].Uuid) {
+			continue
+		}
 		if hasCounter {
-			c.(*counter.TrafficCounter).Delete(users[i].Uuid)
+			traffic := c.(*counter.TrafficCounter)
+			if preserveTraffic {
+				if value, found := traffic.Counters.Load(users[i].Uuid); found {
+					storage := value.(*counter.TrafficStorage)
+					if storage.UpCounter.Load() != 0 || storage.DownCounter.Load() != 0 {
+						continue
+					}
+				}
+			}
+			traffic.Delete(users[i].Uuid)
 		}
 		delete(b.users.uidMap, format.UserTag(tag, users[i].Uuid))
 	}
 }
 
 func (b *Sing) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraffic, error) {
+	// Keep the roster stable while retiring drained Naive accounting entries.
+	var naiveNode *naiveNode
+	if kind, _ := b.nodeTypes.Load(tag); kind == "naive" {
+		b.naive.mu.Lock()
+		defer b.naive.mu.Unlock()
+		naiveNode = b.naive.nodes[tag]
+	}
 	v, ok := b.hookServer.counter.Load(tag)
 	if !ok {
+		if naiveNode != nil {
+			b.users.mapLock.Lock()
+			defer b.users.mapLock.Unlock()
+			b.retireNaiveAccounting(tag, naiveNode, nil)
+		}
 		return nil, nil
 	}
 	c := v.(*counter.TrafficCounter)
 	minTraffic := b.reportMinTraffic(tag)
 
 	trafficSlice := make([]panel.UserTraffic, 0)
-	b.users.mapLock.RLock()
-	defer b.users.mapLock.RUnlock()
+	if naiveNode != nil {
+		b.users.mapLock.Lock()
+		defer b.users.mapLock.Unlock()
+		defer b.retireNaiveAccounting(tag, naiveNode, c)
+	} else {
+		b.users.mapLock.RLock()
+		defer b.users.mapLock.RUnlock()
+	}
 	c.Counters.Range(func(key, value interface{}) bool {
 		uuid := key.(string)
 		traffic := value.(*counter.TrafficStorage)
+		retired := naiveNode != nil && naiveNode.users[uuid] == ""
 		up := traffic.UpCounter.Load()
 		down := traffic.DownCounter.Load()
-		if up+down <= minTraffic {
+		if up+down <= minTraffic && !(retired && up+down > 0) {
 			return true
 		}
 		if reset {
-			traffic.UpCounter.Store(0)
-			traffic.DownCounter.Store(0)
+			if naiveNode != nil {
+				up = traffic.UpCounter.Swap(0)
+				down = traffic.DownCounter.Swap(0)
+			} else {
+				traffic.UpCounter.Store(0)
+				traffic.DownCounter.Store(0)
+			}
 		}
 		uid, known := b.users.uidMap[format.UserTag(tag, uuid)]
 		if !known || uid == 0 {
@@ -271,4 +307,25 @@ func (b *Sing) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraffic,
 		return nil, nil
 	}
 	return trafficSlice, nil
+}
+
+// The caller holds naive.mu and users.mapLock. Include pending requests that
+// finished before creating any traffic storage, not just entries in Counters.
+func (b *Sing) retireNaiveAccounting(tag string, node *naiveNode, traffic *counter.TrafficCounter) {
+	for uuid := range node.retired {
+		if b.naiveUserActive(tag, uuid) {
+			continue
+		}
+		if traffic != nil {
+			if value, found := traffic.Counters.Load(uuid); found {
+				storage := value.(*counter.TrafficStorage)
+				if storage.UpCounter.Load() != 0 || storage.DownCounter.Load() != 0 {
+					continue
+				}
+			}
+			traffic.Delete(uuid)
+		}
+		delete(b.users.uidMap, format.UserTag(tag, uuid))
+		delete(node.retired, uuid)
+	}
 }

@@ -103,24 +103,25 @@ per-user secrets live in the Shadowsocks layer. Set `CertMode: "none"`: a
 ShadowTLS node needs no certificate of its own, since it borrows the handshake
 target's.
 
-## NaiveProxy rebuilds its listener
+## NaiveProxy updates users without replacing its listener
 
-This is the one protocol without live user management. sing-box's naive
-inbound builds its authenticator once, at construction, from a fixed user
-list, and refuses to start with an empty one.
+The listener starts when the first user arrives. Later user additions and
+removals replace the running inbound's authentication table in place, including
+its browser credential-probe host index. Established tunnels keep running;
+removed credentials are rejected on subsequent requests. An empty user set
+rejects all new authentication but keeps existing tunnels alive. Adding users
+again reuses the same listener.
 
-`core/sing/naive.go` therefore keeps the node's user set in memory and
-recreates the inbound whenever that set changes. Consequences:
+Retired users keep their traffic accounting until their last authenticated
+request finishes and the remaining counters have been collected.
 
-- The node's listener is not opened until its first user arrives.
-- Adding or removing a user re-binds the port and drops connections that are
-  in flight. It happens only when the panel actually changes this node's
-  users, not on every sync.
-- The old inbound is removed *before* the replacement is created, because
-  sing-box's inbound manager starts a new inbound before closing the one it
-  replaces, and creating first would fail to bind a port still in use.
+This requires the fork's `UpdateUsers([]auth.User)` and `UserActive(string)` methods. If the linked core
+lacks it, N2X returns an explicit error and preserves the current user set and
+connections; it never falls back to a disruptive listener rebuild.
 
-If that trade-off is unacceptable for a deployment, do not use naive nodes.
+Node removal, process shutdown, and node configuration changes that require a
+full reload still close the inbound. This guarantee applies to user-list updates,
+not to those explicit lifecycle operations.
 
 ## Transports the sing core cannot serve
 
