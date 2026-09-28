@@ -569,7 +569,7 @@ func buildShadowsocksOptions(listen option.ListenOptions, cipher, serverKey stri
 
 // buildNaiveOptions creates the NaiveProxy inbound for the supplied users.
 // Naive refuses to start without at least one user, which is why the inbound
-// is initially built only when the first users arrive.
+// is (re)built from the current user set rather than mutated in place.
 func buildNaiveOptions(info *panel.NodeInfo, c *conf.Options, users []auth.User) (*option.NaiveInboundOptions, error) {
 	listen, err := buildListenOptions(info, c)
 	if err != nil {

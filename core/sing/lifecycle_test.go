@@ -208,8 +208,9 @@ func TestShadowTLSLifecycle(t *testing.T) {
 	}
 }
 
-// TestNaiveLifecycle keeps the listener stable through user updates and
-// releases its port only when the node itself is removed.
+// TestNaiveLifecycle covers the rebuild-based user management: no listener
+// until the first user, a listener afterwards, and no listener once the last
+// user is gone.
 func TestNaiveLifecycle(t *testing.T) {
 	core := newLifecycleCore(t)
 	tag := "naive-lifecycle"
@@ -245,12 +246,12 @@ func TestNaiveLifecycle(t *testing.T) {
 		t.Fatal("naive inbound disappeared while a user remained")
 	}
 
-	// Removing the last user preserves established tunnels and denies new users.
+	// Removing the last user closes the port rather than serving nobody.
 	if err := core.DelUsers(lifecycleUsers[1:], tag, info); err != nil {
 		t.Fatalf("DelUsers: %v", err)
 	}
-	if _, found := core.box.Inbound().Get(tag); !found {
-		t.Fatal("naive inbound disappeared before its existing tunnels could finish")
+	if _, found := core.box.Inbound().Get(tag); found {
+		t.Fatal("naive inbound stayed up with no users")
 	}
 
 	if err := core.DelNode(tag); err != nil {

@@ -26,7 +26,3 @@ secrets.*
 *.private.json5
 .gocache/
 .gopath/
-
-# Local workspace overrides must not change published dependency pins.
-go.work
-go.work.sum
