@@ -229,8 +229,8 @@ nothing to do on this side until upstream adds the field.
 
 ## Naive nodes also serve plain HTTPS proxy clients
 
-The pinned sing-box fork (`Designdocs/sing-box_mod`, commit 605a401f — the
-pseudo-version in `go.mod`) makes the naive inbound answer two kinds of client
+The sing-box fork (`Designdocs/sing-box_mod`, introduced in commit 605a401f and
+retained by the pinned version in `go.mod`) makes the naive inbound answer two kinds of client
 on one port with one user list:
 
 - A request carrying the naive `Padding` header is a naive client and gets the
