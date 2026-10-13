@@ -3,6 +3,10 @@
     "Level": "info",
     "Output": ""
   },
+  "Memory": {
+    "SoftLimitPercent": 70,
+    "RestartPercent": 90
+  },
   "Cores": [
     {
       "Type": "xray",
@@ -204,6 +208,7 @@
     }
   ],
   "_help": {
+    "Memory": "SoftLimitPercent 默认 70，按宿主机物理内存设置 Go 软限额，0 禁用；已有 GOMEMLIMIT 优先。RestartPercent 默认 90，0 禁用；每 5 秒按 (Total - Available) / Total 检查宿主机内存压力，扣除可回收缓存，达到阈值即记录内存/GC数据并退出，最多等待 10 秒清理。自动拉起依赖服务管理器的重启策略，所有节点连接会中断；其它进程持续占用内存也可能导致重复重启。两项支持配置重载；非零软限额应低于重启阈值。",
     "Log": "Level 可填 debug/info/warn/error；Output 留空输出到控制台，否则填写日志文件绝对路径。",
     "Cores.Type": "Type 可填 xray 或 sing；如配置多个同类核心，可增加 Name，并在节点中用 CoreName 指定。二进制实际带哪些核心取决于编译标签，可用 `N2X version` 查看。",
     "Cores.Log": "xray 核心的 Level 可填 debug/info/warning/error/none；sing 核心的 Level 可填 trace/debug/info/warn/error/fatal/panic，Disable=true 时完全静音。",

@@ -149,6 +149,11 @@ func (*DefaultDispatcher) Start() error {
 func (*DefaultDispatcher) Close() error { return nil }
 
 func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*transport.Link, *transport.Link, *limiter.Limiter, error) {
+	sessionInbound := session.InboundFromContext(ctx)
+	if sessionInbound != nil && sessionInbound.Name == "anytls" {
+		// Native AnyTLS does not attach its user buffer policy to the dispatch context.
+		ctx = policy.ContextWithBufferPolicy(ctx, d.streamPolicy(ctx).Buffer)
+	}
 	opt := pipe.OptionsFromContext(ctx)
 	uplinkReader, uplinkWriter := pipe.New(opt...)
 	downlinkReader, downlinkWriter := pipe.New(opt...)
@@ -163,7 +168,6 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 		Writer: downlinkWriter,
 	}
 
-	sessionInbound := session.InboundFromContext(ctx)
 	var user *protocol.MemoryUser
 	if sessionInbound != nil {
 		user = sessionInbound.User

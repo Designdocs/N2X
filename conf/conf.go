@@ -9,9 +9,10 @@ import (
 )
 
 type Conf struct {
-	LogConfig   LogConfig    `json:"Log"`
-	CoresConfig []CoreConfig `json:"Cores"`
-	NodeConfig  []NodeConfig `json:"Nodes"`
+	LogConfig    LogConfig    `json:"Log"`
+	CoresConfig  []CoreConfig `json:"Cores"`
+	NodeConfig   []NodeConfig `json:"Nodes"`
+	MemoryConfig MemoryConfig `json:"Memory"`
 	// Warnings lists problems LoadValidated found that do not stop the config
 	// from being used. It is never read from the file.
 	Warnings []Issue `json:"-"`
@@ -19,6 +20,7 @@ type Conf struct {
 
 func New() *Conf {
 	return &Conf{
+		MemoryConfig: MemoryConfig{SoftLimitPercent: 70, RestartPercent: 90},
 		LogConfig: LogConfig{
 			Level:  "info",
 			Output: "",

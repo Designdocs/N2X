@@ -21,33 +21,43 @@ func (t *Task) Start(first bool) error {
 	}
 	t.running = true
 	t.stop = make(chan struct{})
+	stop, interval, execute := t.stop, t.Interval, t.Execute
 	t.access.Unlock()
 
 	go func() {
-		if first {
-			if err := t.Execute(); err != nil {
-				t.access.Lock()
+		defer func() {
+			t.access.Lock()
+			// A callback may have already replaced this run with a new one.
+			if t.running && t.stop == stop {
 				t.running = false
-				close(t.stop)
-				t.access.Unlock()
-				return
+				close(stop)
 			}
+			t.access.Unlock()
+		}()
+
+		delay := interval
+		if first {
+			delay = 0
 		}
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
 
 		for {
 			select {
-			case <-time.After(t.Interval):
-			case <-t.stop:
+			case <-timer.C:
+			case <-stop:
 				return
+			}
+			select {
+			case <-stop:
+				return
+			default:
 			}
 
-			if err := t.Execute(); err != nil {
-				t.access.Lock()
-				t.running = false
-				close(t.stop)
-				t.access.Unlock()
+			if err := execute(); err != nil {
 				return
 			}
+			timer.Reset(interval)
 		}
 	}()
 

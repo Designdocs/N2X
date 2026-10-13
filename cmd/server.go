@@ -214,6 +214,7 @@ func nodesOutcome(failed, total int) string {
 }
 
 func serverHandle(_ *cobra.Command, _ []string) error {
+	memory := newMemoryGuard()
 	showVersion()
 	loadEnvFile(config, envF, true)
 	var report startupReport
@@ -243,6 +244,7 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 			log.SetOutput(f)
 		}
 	}
+	memory.configure(c.MemoryConfig)
 	limiter.Init()
 	log.Info("Start N2X...")
 	vc, err := vCore.NewCore(c.CoresConfig)
@@ -264,6 +266,7 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 	defer func() { vc.Close() }()
 	log.Info("Core ", vc.Type(), " started")
 	nodes := node.New()
+	defer nodes.Close()
 	failures, err := nodes.Start(c.NodeConfig, vc)
 	if err != nil {
 		log.WithField("err", err).Error("Run nodes failed")
@@ -285,6 +288,7 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 	if watch {
 		// A distinct name: the closure below assigns to the outer err.
 		stopWatch, watchErr := c.Watch(config, xdns, validateOptions(), func() {
+			memory.configure(c.MemoryConfig)
 			var reloadReport startupReport
 			reloadReport.addWarnings(c.Warnings)
 			nodes.Close()
@@ -333,11 +337,15 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 	}
 	// clear memory
 	runtime.GC()
-	// wait exit signal
-	{
-		osSignals := make(chan os.Signal, 1)
-		signal.Notify(osSignals, syscall.SIGINT, syscall.SIGTERM)
-		<-osSignals
+	osSignals := make(chan os.Signal, 1)
+	signal.Notify(osSignals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(osSignals)
+	if err := memory.wait(osSignals); err != nil {
+		var pressure *memoryPressure
+		if errors.As(err, &pressure) {
+			prepareMemoryRestart(pressure, memoryShutdownTimeout)
+		}
+		return err
 	}
 	return nil
 }

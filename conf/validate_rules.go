@@ -47,8 +47,20 @@ const (
 
 func (v *validator) checkConf(c *Conf) {
 	v.checkLog(c.LogConfig)
+	v.checkMemory(c.MemoryConfig)
 	names := v.checkCores(c.CoresConfig)
 	v.checkNodes(c.NodeConfig, names)
+}
+
+func (v *validator) checkMemory(m MemoryConfig) {
+	if m.RestartPercent < 0 || m.RestartPercent > 99 {
+		v.add("Memory.RestartPercent", "must be 0 (disabled) or 1..99")
+	}
+	if m.SoftLimitPercent < 0 || m.SoftLimitPercent > 99 {
+		v.add("Memory.SoftLimitPercent", "must be 0 (disabled) or 1..99")
+	} else if m.RestartPercent > 0 && m.SoftLimitPercent >= m.RestartPercent {
+		v.add("Memory.SoftLimitPercent", "must be below RestartPercent so garbage collection has memory headroom")
+	}
 }
 
 func (v *validator) checkLog(l LogConfig) {
