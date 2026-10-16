@@ -240,7 +240,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		c.setAliveMap(newA)
 	}
 	// node no changed, check users
-	if len(newU) == 0 {
+	if newU == nil {
 		return nil
 	}
 	changes := compareUserList(c.userList, newU)

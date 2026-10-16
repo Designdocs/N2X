@@ -92,6 +92,9 @@ func (c *Client) GetUserList() ([]UserInfo, error) {
 			userlist.Users = append(userlist.Users, u)
 		}
 	}
+	if userlist.Users == nil {
+		userlist.Users = []UserInfo{}
+	}
 	c.etagMu.Lock()
 	c.userEtag = r.Header().Get("ETag")
 	c.etagMu.Unlock()

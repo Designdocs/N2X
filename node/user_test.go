@@ -51,3 +51,17 @@ func TestCompareUserListDetectsUUIDAddDelete(t *testing.T) {
 			len(changes.limiterAdded))
 	}
 }
+
+func TestCompareUserListDeletesLastUserOnEmptySnapshot(t *testing.T) {
+	oldUsers := []panel.UserInfo{{Id: 1, Uuid: "last-user"}}
+	changes := compareUserList(oldUsers, []panel.UserInfo{})
+	if len(changes.deleted) != 1 || changes.deleted[0] != oldUsers[0] {
+		t.Fatalf("deleted = %+v, want last user", changes.deleted)
+	}
+	if len(changes.limiterDeleted) != 1 || changes.limiterDeleted[0] != oldUsers[0] {
+		t.Fatalf("limiter deleted = %+v, want last user", changes.limiterDeleted)
+	}
+	if len(changes.added) != 0 || len(changes.limiterAdded) != 0 {
+		t.Fatal("empty snapshot must not add users")
+	}
+}
