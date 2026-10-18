@@ -34,6 +34,8 @@ type Limiter struct {
 	SpeedLimiter  *sync.Map      // key: TagUUID, value: *ratelimit.Bucket
 	AliveList     map[int]int    // Key: Uid, value: alive_ip
 	aliveMu       sync.RWMutex
+	onlineMu      sync.Mutex
+	onlineUsers   map[string]*onlineUser
 
 	// KickedIPs holds panel-issued device kicks: uid → ip → unix expiry.
 	// A kicked IP is rejected outright until its entry expires, so the
@@ -109,14 +111,28 @@ func DeleteLimiter(tag string) {
 }
 
 func (l *Limiter) UpdateUser(tag string, added []panel.UserInfo, deleted []panel.UserInfo) {
+	l.onlineMu.Lock()
+	defer l.onlineMu.Unlock()
+	retained := make(map[string]int, len(added))
+	for _, user := range added {
+		retained[format.UserTag(tag, user.Uuid)] = user.Id
+	}
 	for i := range deleted {
-		l.UserLimitInfo.Delete(format.UserTag(tag, deleted[i].Uuid))
-		l.UserOnlineIP.Delete(format.UserTag(tag, deleted[i].Uuid))
-		l.SpeedLimiter.Delete(format.UserTag(tag, deleted[i].Uuid))
+		tagUUID := format.UserTag(tag, deleted[i].Uuid)
+		if uid, remains := retained[tagUUID]; !remains || uid != deleted[i].Id {
+			delete(l.onlineUsers, tagUUID)
+		}
+		l.UserLimitInfo.Delete(tagUUID)
+		l.UserOnlineIP.Delete(tagUUID)
+		l.SpeedLimiter.Delete(tagUUID)
 		delete(l.UUIDtoUID, deleted[i].Uuid)
 		l.deleteAlive(deleted[i].Id)
 	}
 	for i := range added {
+		tagUUID := format.UserTag(tag, added[i].Uuid)
+		if user := l.onlineUsers[tagUUID]; user != nil && user.uid != added[i].Id {
+			delete(l.onlineUsers, tagUUID)
+		}
 		userLimit := &UserLimitInfo{
 			UID: added[i].Id,
 		}
@@ -306,6 +322,8 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 	// switching nodes/networks is not blocked by its own stale alive entry.
 	effectiveLimit := deviceLimit + int(l.deviceTolerance.Load())
 	if noSSUDP {
+		l.onlineMu.Lock()
+		defer l.onlineMu.Unlock()
 		// Store online user for device limit
 		newipMap := new(sync.Map)
 		newipMap.Store(ip, uid)
@@ -355,44 +373,33 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 }
 
 func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
-	var onlineUser []panel.OnlineUser
+	l.onlineMu.Lock()
+	defer l.onlineMu.Unlock()
+	onlineUser := l.onlineDevicesLocked()
 	l.OldUserOnline = new(sync.Map)
+	// Keep the admission cache's existing cycle; reports use live registrations.
 	l.UserOnlineIP.Range(func(key, value interface{}) bool {
-		taguuid := key.(string)
-		ipMap := value.(*sync.Map)
-		ipMap.Range(func(key, value interface{}) bool {
-			uid := value.(int)
-			ip := key.(string)
+		value.(*sync.Map).Range(func(ip, uid interface{}) bool {
 			l.OldUserOnline.Store(ip, uid)
-			onlineUser = append(onlineUser, panel.OnlineUser{UID: uid, IP: ip})
 			return true
 		})
-		l.UserOnlineIP.Delete(taguuid) // Reset online device
+		l.UserOnlineIP.Delete(key)
 		return true
 	})
 
 	return &onlineUser, nil
 }
 
-// CountOnlineIP returns the number of currently tracked online IPs across all
-// users. Unlike GetOnlineDevice — which drains the tracking each traffic cycle —
-// this is a read-only peek, so the metrics task can sample the live connection
-// count on its own cadence without disturbing device-limit accounting.
+// CountOnlineIP counts distinct authenticated user/IP pairs with live connections.
 func (l *Limiter) CountOnlineIP() int {
+	l.onlineMu.Lock()
+	defer l.onlineMu.Unlock()
 	count := 0
-	l.UserOnlineIP.Range(func(_, value interface{}) bool {
-		ipMap, ok := value.(*sync.Map)
-		if !ok || ipMap == nil {
-			return true
+	for _, device := range l.onlineDevicesLocked() {
+		if !l.isExempt(device.IP) {
+			count++
 		}
-		ipMap.Range(func(key, _ interface{}) bool {
-			if !l.isExempt(key.(string)) {
-				count++
-			}
-			return true
-		})
-		return true
-	})
+	}
 	return count
 }
 

@@ -1,25 +1,13 @@
 package limiter
 
-import (
-	"sync"
-	"testing"
-)
+import "testing"
 
-// TestCountOnlineIPCountsAllUsersWithoutDraining locks in the key property that
-// makes CountOnlineIP safe for metrics sampling: it peeks the live online-IP
-// tracking without resetting it, unlike GetOnlineDevice which drains every
-// traffic cycle.
+// Metrics and device reports must see the same live registrations.
 func TestCountOnlineIPCountsAllUsersWithoutDraining(t *testing.T) {
-	l := &Limiter{UserOnlineIP: new(sync.Map)}
-
-	u1 := new(sync.Map)
-	u1.Store("1.1.1.1", 1)
-	u1.Store("2.2.2.2", 1)
-	l.UserOnlineIP.Store("tag-uuid-1", u1)
-
-	u2 := new(sync.Map)
-	u2.Store("3.3.3.3", 2)
-	l.UserOnlineIP.Store("tag-uuid-2", u2)
+	l := newDeviceLimitLimiter(t, 6, 0)
+	defer l.TrackConnection(tagUUID(t), "192.0.2.1")()
+	defer l.TrackConnection(tagUUID(t), "192.0.2.2")()
+	defer l.TrackConnection(tagUUID(t), "192.0.2.3")()
 
 	if got := l.CountOnlineIP(); got != 3 {
 		t.Fatalf("expected 3 online ips, got %d", got)
@@ -31,7 +19,7 @@ func TestCountOnlineIPCountsAllUsersWithoutDraining(t *testing.T) {
 }
 
 func TestCountOnlineIPZeroWhenEmpty(t *testing.T) {
-	l := &Limiter{UserOnlineIP: new(sync.Map)}
+	l := &Limiter{}
 	if got := l.CountOnlineIP(); got != 0 {
 		t.Fatalf("expected 0 online ips, got %d", got)
 	}

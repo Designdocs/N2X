@@ -1,8 +1,10 @@
 package dispatcher
 
 import (
-	sync "sync"
+	"context"
+	"sync"
 
+	"github.com/Designdocs/N2X/limiter"
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/buf"
 )
@@ -10,6 +12,16 @@ import (
 type ManagedWriter struct {
 	writer  buf.Writer
 	manager *LinkManager
+	onClose func()
+}
+
+func (w *ManagedWriter) trackOnline(ctx context.Context, l *limiter.Limiter, tagUUID, ip string) {
+	release := l.TrackConnection(tagUUID, ip)
+	stop := context.AfterFunc(ctx, release)
+	w.onClose = func() {
+		stop()
+		release()
+	}
 }
 
 func (w *ManagedWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
@@ -18,7 +30,18 @@ func (w *ManagedWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
 
 func (w *ManagedWriter) Close() error {
 	w.manager.RemoveWriter(w)
+	if w.onClose != nil {
+		w.onClose()
+	}
 	return common.Close(w.writer)
+}
+
+func (w *ManagedWriter) Interrupt() {
+	w.manager.RemoveWriter(w)
+	if w.onClose != nil {
+		w.onClose()
+	}
+	common.Interrupt(w.writer)
 }
 
 type LinkManager struct {
@@ -39,7 +62,13 @@ func (m *LinkManager) RemoveWriter(writer *ManagedWriter) {
 }
 
 func (m *LinkManager) CloseAll() {
+	m.mu.Lock()
+	links := make(map[*ManagedWriter]buf.Reader, len(m.links))
 	for w, r := range m.links {
+		links[w] = r
+	}
+	m.mu.Unlock()
+	for w, r := range links {
 		common.Close(w)
 		common.Interrupt(r)
 	}

@@ -44,14 +44,14 @@ func (h *HookServer) ModeList() []string {
 // checkAccess resolves the owning node, applies its limits and routing rules,
 // and reports whether the connection may proceed. The returned bucket is the
 // user's speed-limit token bucket, and is only meaningful for streams.
-func (h *HookServer) checkAccess(m *adapter.InboundContext, isTCP bool) (nodeTag string, bucket *ratelimit.Bucket, ok bool) {
+func (h *HookServer) checkAccess(ctx context.Context, m *adapter.InboundContext, isTCP bool) (nodeTag string, bucket *ratelimit.Bucket, onClose func(), ok bool) {
 	nodeTag = h.resolveTag(m.Inbound)
 	l, err := limiter.GetLimiter(nodeTag)
 	if err != nil {
 		// No limiter registered for the node: let the traffic through rather
 		// than dropping every connection on a transient registration gap.
 		log.Warn("get limiter for ", nodeTag, " error: ", err)
-		return nodeTag, nil, true
+		return nodeTag, nil, nil, true
 	}
 
 	taguuid := format.UserTag(nodeTag, m.User)
@@ -59,22 +59,27 @@ func (h *HookServer) checkAccess(m *adapter.InboundContext, isTCP bool) (nodeTag
 	bucket, reject := l.CheckLimit(taguuid, ip, isTCP, isTCP)
 	if reject {
 		log.Error("[", nodeTag, "] Limited ", m.User, " by ip or conn")
-		return nodeTag, nil, false
+		return nodeTag, nil, nil, false
 	}
 
 	if destination := m.Destination.AddrString(); l.CheckDomainRule(destination) {
 		log.Error("User ", m.User, " access domain ", destination, " reject by rule")
-		return nodeTag, nil, false
+		return nodeTag, nil, nil, false
 	}
 	if len(m.Protocol) != 0 && l.CheckProtocolRule(m.Protocol) {
 		log.Error("User ", m.User, " access protocol ", m.Protocol, " reject by rule")
-		return nodeTag, nil, false
+		return nodeTag, nil, nil, false
 	}
-	return nodeTag, bucket, true
+	release := l.TrackConnection(taguuid, ip)
+	stop := context.AfterFunc(ctx, release)
+	return nodeTag, bucket, func() {
+		stop()
+		release()
+	}, true
 }
 
-func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) net.Conn {
-	nodeTag, bucket, ok := h.checkAccess(&m, true)
+func (h *HookServer) RoutedConnection(ctx context.Context, conn net.Conn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) net.Conn {
+	nodeTag, bucket, onClose, ok := h.checkAccess(ctx, &m, true)
 	if !ok {
 		conn.Close()
 		return conn
@@ -82,19 +87,19 @@ func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapte
 	if bucket != nil {
 		conn = rate.NewConnRateLimiter(conn, bucket)
 	}
-	return counter.NewConnCounter(conn, h.storageFor(nodeTag, m.User))
+	return counter.NewConnCounter(conn, h.storageFor(nodeTag, m.User), onClose)
 }
 
-func (h *HookServer) RoutedPacketConnection(_ context.Context, conn N.PacketConn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) N.PacketConn {
+func (h *HookServer) RoutedPacketConnection(ctx context.Context, conn N.PacketConn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) N.PacketConn {
 	// The datagram path enforces device/connection limits only: the token
 	// bucket in common/rate wraps net.Conn and has no packet equivalent, so
 	// speed limits apply to the stream side.
-	nodeTag, _, ok := h.checkAccess(&m, false)
+	nodeTag, _, onClose, ok := h.checkAccess(ctx, &m, false)
 	if !ok {
 		conn.Close()
 		return conn
 	}
-	return counter.NewPacketConnCounter(conn, h.storageFor(nodeTag, m.User))
+	return counter.NewPacketConnCounter(conn, h.storageFor(nodeTag, m.User), onClose)
 }
 
 // storageFor returns the per-user traffic storage for a node, creating the

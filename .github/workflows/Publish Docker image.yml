@@ -2,8 +2,7 @@ name: Publish Docker image
 
 on:
   workflow_dispatch:
-  release:
-    types: [published]
+  # Publishing a locally built Release must not start an online image build.
   # No pull_request trigger: building and pushing the image on every PR spent
   # runner minutes on an image nobody pulled.
 

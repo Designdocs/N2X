@@ -208,11 +208,13 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 			lm = lmloaded.(*LinkManager)
 		}
 		managedWriter := &ManagedWriter{
-			writer:  uplinkWriter,
+			writer:  downlinkWriter,
 			manager: lm,
 		}
+		// Uplink EOF is only a half-close; downloads may still be active.
+		managedWriter.trackOnline(ctx, limit, user.Email, sessionInbound.Source.Address.IP().String())
 		lm.AddLink(managedWriter, outboundLink.Reader)
-		inboundLink.Writer = managedWriter
+		outboundLink.Writer = managedWriter
 		if w != nil {
 			sessionInbound.CanSpliceCopy = 3
 			inboundLink.Writer = rate.NewRateLimitWriter(inboundLink.Writer, w)
@@ -400,6 +402,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 			writer:  outbound.Writer,
 			manager: lm,
 		}
+		managedWriter.trackOnline(ctx, limit, user.Email, sessionInbound.Source.Address.IP().String())
 		outbound.Writer = managedWriter
 		if w != nil {
 			sessionInbound.CanSpliceCopy = 3

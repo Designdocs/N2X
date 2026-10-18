@@ -123,6 +123,8 @@ func TestCdnProxyIsReportedWithoutDeviceAccounting(t *testing.T) {
 			if _, reject := l.CheckLimit(tagUUID(t), "104.16.0.10", true, true); reject {
 				t.Fatal("second CDN IP rejected on existing online map")
 			}
+			defer l.TrackConnection(tagUUID(t), ip)()
+			defer l.TrackConnection(tagUUID(t), "104.16.0.10")()
 			if got := l.CountOnlineIP(); got != 0 {
 				t.Fatalf("CDN counted as %d devices", got)
 			}

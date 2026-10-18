@@ -23,6 +23,8 @@ type Controller struct {
 	limiter                   *limiter.Limiter
 	traffic                   map[string]int64
 	userList                  []panel.UserInfo
+	userReportMu              sync.Mutex
+	reportedDeviceUsers       map[int]struct{}
 	aliveMap                  map[int]int
 	aliveMu                   sync.RWMutex
 	info                      *panel.NodeInfo
