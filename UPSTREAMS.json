@@ -6,13 +6,13 @@
       "module": "github.com/xtls/xray-core",
       "replacement": "github.com/Designdocs/Xray-core",
       "strategy": "replacement",
-      "ref": "v0.0.0-20261026102710-ee3a03cbae65",
-      "source_commit": "ee3a03cbae656e2d6e6d81d7902ec712d08a345a",
+      "ref": "v0.0.0-20261026125017-ab4e19cf229e",
+      "source_commit": "ab4e19cf229e6af0aa211e70cde1f913437da0d1",
       "upstream": "https://github.com/Designdocs/Xray-core",
       "official_upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.10.21",
       "group": "core",
-      "notes": "Merge stable upstream into the N2X fork before changing this exact replacement; retain ArtX, AnyTLS, per-listener fallback and TLS bridge compatibility."
+      "notes": "Merge stable upstream into the N2X fork before changing this exact replacement; retain ArtX, AnyTLS, per-listener fallback and TLS bridge compatibility. Retain the pinned REALITY compatibility copy and cross-client Vision/HTTPS regressions; an explicit zero version floor must permit authenticated X25519-only fingerprints."
     },
     {
       "name": "sing-box",
@@ -92,9 +92,10 @@
       "upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.10.21",
       "stable_commit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
-      "fork_commit": "ee3a03cbae656e2d6e6d81d7902ec712d08a345a",
+      "fork_commit": "ab4e19cf229e6af0aa211e70cde1f913437da0d1",
       "local_path": "../../Xray-core",
-      "action": "merge v26.10.21 plus shared sing TLS interface adaptation"
+      "action": "merge v26.10.21 plus shared TLS adaptation and explicit legacy REALITY ClientHello compatibility",
+      "previous_fork_commit": "ee3a03cbae656e2d6e6d81d7902ec712d08a345a"
     },
     "sing_box": {
       "upstream": "https://github.com/SagerNet/sing-box",

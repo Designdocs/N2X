@@ -284,7 +284,6 @@ require (
 	github.com/volcengine/volc-sdk-golang v1.0.216 // indirect
 	github.com/vultr/govultr/v3 v3.21.1 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
-	github.com/xtls/reality v0.0.0-20261014101318-83f621788ca8 // indirect
 	github.com/yandex-cloud/go-genproto v0.14.0 // indirect
 	github.com/yandex-cloud/go-sdk/services/dns v0.0.3 // indirect
 	github.com/yandex-cloud/go-sdk/v2 v2.0.8 // indirect
@@ -326,6 +325,6 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20261026102710-ee3a03cbae65
+replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20261026125017-ab4e19cf229e
 
 replace github.com/sagernet/sing-box => github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261026103843-9b671548395f

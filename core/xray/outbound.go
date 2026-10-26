@@ -30,9 +30,10 @@ func buildOutbound(config *conf2.Options, tag string) (*core.OutboundHandlerConf
 			domainStrategy = "UseIP"
 		}
 	}
-	proxySetting := &conf.FreedomConfig{
-		DomainStrategy: domainStrategy,
+	outboundDetourConfig.StreamSetting = &conf.StreamConfig{
+		SocketSettings: &conf.SocketConfig{DomainStrategy: domainStrategy},
 	}
+	proxySetting := &conf.FreedomConfig{}
 	var setting json.RawMessage
 	setting, err := json.Marshal(proxySetting)
 	if err != nil {
