@@ -1,5 +1,12 @@
 # The sing-box core
 
+The completed local sing-box v1.14.4 merge, source directories and validation
+results are recorded in [the migration report](sing-box-1.14.4-migration-2026-10-26.md).
+The earlier compatibility-only update remains documented in
+[the first sync report](upstream-sync-2026-10-26.md).
+The new core commits are published and pinned in go.mod. CI, Docker and release
+builds use GOWORK=off; go.work is an ignored optional development workspace.
+
 N2X runs two proxy cores in one process. `core/xray` wraps
 [Xray-core](https://github.com/xtls/xray-core) and `core/sing` wraps
 [sing-box](https://github.com/SagerNet/sing-box). Each panel node is served by
@@ -338,59 +345,26 @@ Two details worth knowing:
 - **The QUIC window settings are Hysteria v1 only.** Hysteria2 manages its own
   windows; sing-box's Hysteria2 inbound has no equivalent options.
 
-## Why the dependency pins are what they are
+## Shared dependencies and local source selection
 
-`go.mod` pins three sing-box-adjacent modules. They are load-bearing, and
-bumping any of them without reading this section will break the build.
+The v1.14.4 migration uses Go 1.27.3 with exact remote core replacements in
+go.mod. UPSTREAMS.json records the matching fork commits and shared dependency
+versions. CI, Docker and release builds set GOWORK=off, so they do not depend
+on neighboring source directories. Local development can still use the ignored
+go.work file.
 
-```
-replace github.com/sagernet/sing-box  => github.com/wyx2685/sing-box_mod v1.13.0-alpha.5.0.20251202212447-8d054dcd8bfe
-replace github.com/sagernet/quic-go   => github.com/sagernet/quic-go v0.59.0-sing-box-mod.2
-replace github.com/sagernet/sing-quic => github.com/sagernet/sing-quic v0.6.3
-```
+The fork is still required for dynamic user APIs, Naive browser proxy support
+and AnyTLS cleanup. Authentication services that assume startup-only updates
+have small internal source compatibility copies with atomic snapshots; their
+upstream versions and licenses are recorded in internal/compat/UPSTREAMS.md
+inside the sing core.
 
-**Why the fork.** Upstream sing-box has no per-inbound `AddUsers`/`DelUsers`
-API — a panel agent needs to add and remove users without restarting a
-listener, and upstream only offers `UpdateUsers` on Shadowsocks. The
-`wyx2685/sing-box_mod` fork adds `AddUsers`/`DelUsers` to anytls, trojan,
-hysteria, hysteria2, vmess, vless, tuic and shadowsocks. Its `dev-next` branch
-has not moved since 2025-12-02, so the pin is the fork's tip.
-
-**Why those specific quic pins.** Two constraints collide:
-
-1. Xray-core needs `github.com/apernet/quic-go` (its XHTTP/splithttp and
-   hysteria transports), which requires the **qpack v0.6** API —
-   `qpack.NewDecoder()` with no arguments.
-2. The sing-box fork's default stack (`sing-quic v0.6.0-beta.4` →
-   `sagernet/quic-go v0.55`) requires the **qpack v0.5** API —
-   `qpack.NewDecoder(func)` plus `DecodeFull`.
-
-Both resolve to the same module path, `github.com/quic-go/qpack`, so only one
-version can be selected. Pinning it to v0.5.1 compiles the sing core but
-breaks Xray's XHTTP transport.
-
-`sagernet/quic-go v0.59.0-sing-box-mod.2` is the *oldest* sing-box quic-go
-that already uses the qpack v0.6 API, and `sing-quic v0.6.3` is the newest
-sing-quic that builds against it. That combination lets both cores share
-qpack v0.6.
-
-**Why not just move everything forward.** Newer sing-quic (v0.6.4+) needs
-`github.com/sagernet/sing` v0.8.5–v0.8.8, where `common/tls.Config` has a
-`HandshakeTimeout()` method. That method does not exist in sing v0.8.9, which
-is what Xray-core's `common/singbridge` compiles against, and the Dec-2025
-sing-box fork does not implement it either. There is no single `sing` version
-that satisfies a newer sing-quic *and* Xray-core, so the stack stays here.
-
-**Upgrade checklist.** After changing any of these pins, verify all of:
-
-```bash
-GOEXPERIMENT=jsonv2 go build -tags "xray sing with_quic with_grpc with_utls with_acme" .
-GOEXPERIMENT=jsonv2 go build github.com/xtls/xray-core/transport/internet/splithttp
-GOEXPERIMENT=jsonv2 go test ./core/...
-```
-
-The splithttp build is the canary: it is the package that fails first when
-qpack is dragged backwards.
+The previous sing-quic v0.6.3 and sagernet/quic-go v0.59 replacements have been
+removed. The selected stack is sing v0.9.7, sing-quic v0.7.2 and sagernet/quic-go
+v0.61.0, with exact pseudo-versions in UPSTREAMS.json. Xray's local TLS
+bridge implements the shared handshake-timeout interface. Both cores and the
+SplitHTTP, Masque and XDrive paths are tested together before changing these
+versions again.
 
 ## The custom registry
 
@@ -400,11 +374,10 @@ server-side agent, so it registers only the inbounds it serves plus the
 SOCKS, HTTP, mixed, Tor, SSH, WireGuard, Tailscale and the management services
 are left out.
 
-That is partly about binary size and partly a hard requirement: `include`
-imports `protocol/socks`, `protocol/mixed` and `protocol/tor`, and those three
-packages call `socks.HandleConnectionEx` with a signature that no longer
-exists in the `sing` version Xray-core pins us to. Not importing them is what
-makes the two cores co-installable.
+The registry keeps the server binary focused on panel-managed traffic.
+The full upstream sing package tree also passes compilation in the shared
+workspace; excluded client and host integration services remain outside N2X's
+configuration surface.
 
 Practical consequence: a custom base config supplied through the sing core's
 `OriginalPath` can only use the registered types. Adding one back is a matter
@@ -420,3 +393,28 @@ of registering it in `registry.go` — provided it still compiles.
 
 Without `with_quic`, `Sing.Protocols()` omits the QUIC node types, so the
 selector will not route a node to a core that cannot listen for it.
+
+Current rollout scope and rollback conditions are recorded in
+[the v0.17.10 readiness assessment](release-readiness-2026-10-26.md).
+
+## Reproducible local packages
+
+After committing the source, run:
+
+```sh
+python3 .github/scripts/sync-upstreams.py
+python3 .github/scripts/build-release.py --version v0.17.10
+```
+
+The build script verifies remote module pins, requires a clean source commit,
+builds Linux amd64/arm64/armv7 packages with full production tags, checks binary
+module provenance, produces ZIP archives and four digests, and verifies a native
+binary's version. It uses tracked example geodata by default; pass
+`--geodata-dir /path/to/verified/data` to use a separately pinned data snapshot.
+The release manifest records the selected data hashes. This command creates
+local artifacts; it does not create a tag or publish a Release.
+
+The upstream-sync workflow reapplies reviewed fork replacements and exact shared
+versions. New core upgrades require merging official stable changes into the
+forks, testing the combined graph, and then updating the manifest. It does not
+replace the custom cores with unmodified upstream source.

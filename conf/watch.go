@@ -60,9 +60,8 @@ func (p *Conf) Watch(filePath, xDnsPath string, opts ValidateOptions, reload fun
 	// reloads is only added to by the watcher goroutine, so once exited is
 	// closed no new reload can start and Wait is safe.
 	var (
-		once     sync.Once
-		reloads  sync.WaitGroup
-		reloadMu sync.Mutex // serializes reloads so two edits never swap the config at once
+		once    sync.Once
+		reloads sync.WaitGroup
 	)
 	stop := func() {
 		once.Do(func() { close(done) })
@@ -72,32 +71,84 @@ func (p *Conf) Watch(filePath, xDnsPath string, opts ValidateOptions, reload fun
 
 	debounce, settle := watchDebounce, watchSettle
 	go func() {
-		var pre time.Time
 		defer close(exited)
 		defer watcher.Close()
+		var timer *time.Timer
+		var timerC <-chan time.Time
+		var previous, lastEvent time.Time
+		var changed string
+		var pending, active bool
+		finished := make(chan struct{}, 1)
+		defer func() {
+			if timer != nil {
+				timer.Stop()
+			}
+		}()
+		schedule := func() {
+			deadline := lastEvent.Add(settle)
+			if earliest := previous.Add(debounce); earliest.After(deadline) {
+				deadline = earliest
+			}
+			delay := time.Until(deadline)
+			if delay < 0 {
+				delay = 0
+			}
+			if timer == nil {
+				timer = time.NewTimer(delay)
+			} else {
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(delay)
+			}
+			timerC = timer.C
+		}
 		for {
 			select {
 			case <-done:
 				return
-			case e := <-watcher.Events:
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
 				// kqueue can merge a write and an attribute change into one
 				// event; only a bare chmod leaves the content untouched.
-				if e.Op == fsnotify.Chmod {
+				if event.Op == fsnotify.Chmod {
 					continue
 				}
-				if dnsDir != "" && isOtherFileIn(dnsDir, e.Name, filePath, xDnsPath) {
+				if dnsDir != "" && isOtherFileIn(dnsDir, event.Name, filePath, xDnsPath) {
 					continue
 				}
-				if pre.Add(debounce).After(time.Now()) {
+				changed, lastEvent, pending = event.Name, time.Now(), true
+				schedule()
+			case <-timerC:
+				timerC = nil
+				if !pending || active {
 					continue
 				}
-				pre = time.Now()
+				pending, active, previous = false, true, time.Now()
+				currentChange := changed
 				reloads.Add(1)
 				go func() {
 					defer reloads.Done()
-					p.reloadAfter(done, &reloadMu, settle, e.Name, filePath, xDnsPath, opts, reload, rejected)
+					p.reloadChanged(done, currentChange, filePath, xDnsPath, opts, reload, rejected)
+					select {
+					case finished <- struct{}{}:
+					case <-done:
+					}
 				}()
-			case err := <-watcher.Errors:
+			case <-finished:
+				active = false
+				if pending {
+					schedule()
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
 				if err != nil {
 					log.Printf("File watcher error: %s", err)
 				}
@@ -107,15 +158,9 @@ func (p *Conf) Watch(filePath, xDnsPath string, opts ValidateOptions, reload fun
 	return stop, nil
 }
 
-// reloadAfter waits for the change to settle, then reloads the config and
-// invokes reload. It gives up if the watcher is stopped while it waits.
-func (p *Conf) reloadAfter(done <-chan struct{}, mu *sync.Mutex, settle time.Duration, changed, filePath, xDnsPath string, opts ValidateOptions, reload func(), rejected func(error)) {
-	select {
-	case <-done:
-		return
-	case <-time.After(settle):
-	}
-
+// reloadChanged validates the latest settled files. The watcher starts only
+// one reload at a time and retains edits arriving during a reload or cooldown.
+func (p *Conf) reloadChanged(done <-chan struct{}, changed, filePath, xDnsPath string, opts ValidateOptions, reload func(), rejected func(error)) {
 	switch filepath.Base(strings.TrimSuffix(changed, "~")) {
 	case filepath.Base(xDnsPath):
 		log.Println("DNS file changed, reloading...")
@@ -123,8 +168,6 @@ func (p *Conf) reloadAfter(done <-chan struct{}, mu *sync.Mutex, settle time.Dur
 		log.Println("config file changed, reloading...")
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
 	select {
 	case <-done:
 		return

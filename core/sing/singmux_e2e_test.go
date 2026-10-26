@@ -39,11 +39,10 @@ func (d trojanMuxDialer) DialContext(ctx context.Context, _ string, destination 
 	header.WriteString(hex.EncodeToString(sum[:]))
 	header.WriteString("\r\n")
 	header.WriteByte(0x01) // CONNECT
-	header.WriteByte(0x03) // domain
-	header.WriteByte(byte(len(destination.Fqdn)))
-	header.WriteString(destination.Fqdn)
-	header.WriteByte(byte(destination.Port >> 8))
-	header.WriteByte(byte(destination.Port))
+	if err := M.SocksaddrSerializer.WriteAddrPort(&header, destination); err != nil {
+		conn.Close()
+		return nil, err
+	}
 	header.WriteString("\r\n")
 	if _, err := conn.Write(header.Bytes()); err != nil {
 		conn.Close()

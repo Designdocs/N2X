@@ -87,7 +87,7 @@ func TestAnyTLSShutdownClosesLateStreams(t *testing.T) {
 		}
 		server, client := net.Pipe()
 		conn := &pausedAnyTLSSYNConn{Conn: server, read: make(chan struct{}), resume: make(chan struct{})}
-		t.Cleanup(func() { _ = client.Close(); _ = in.Close() })
+		t.Cleanup(func() { _ = client.Close(); _ = in.(*anytls.Inbound).Close() })
 		done := make(chan struct{})
 		go func() {
 			in.(*anytls.Inbound).NewConnectionEx(context.Background(), conn, adapter.InboundContext{}, nil)
@@ -106,7 +106,7 @@ func TestAnyTLSShutdownClosesLateStreams(t *testing.T) {
 		write(append(header, settings...))
 		write([]byte{1, 0, 0, 0, 1, 0, 0})
 		<-conn.read
-		if err := in.Close(); err != nil {
+		if err := in.(*anytls.Inbound).Close(); err != nil {
 			t.Fatal(err)
 		}
 		synctest.Wait()

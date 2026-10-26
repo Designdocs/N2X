@@ -19,6 +19,11 @@ on:
   schedule:
     - cron: '43 22 * * 3'
 
+env:
+  GOWORK: "off"
+  GOEXPERIMENT: jsonv2
+  GOTOOLCHAIN: local
+
 permissions:
   actions: read
   contents: read
@@ -54,22 +59,12 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.0'
-      # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
-      # If this step fails, then you should remove it and run the build manually (see below)
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      # ℹ️ Command-line programs to run using the OS shell.
-      # 📚 https://git.io/JvXDl
-
-      # ✏️ If the Autobuild fails above, remove it and uncomment the following three lines
-      #    and modify them (or add more) to build your code if your project
-      #    uses a compiled language
-
-      #- run: |
-      #   make bootstrap
-      #   make release
+          go-version: '1.27.3'
+      - name: Build production cores
+        run: >-
+          go build -mod=readonly
+          -tags "sing xray with_quic with_grpc with_utls with_wireguard with_acme with_gvisor"
+          .
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

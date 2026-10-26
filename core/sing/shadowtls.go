@@ -64,7 +64,7 @@ func buildShadowTLSInbounds(tag string, info *panel.NodeInfo, c *conf.Options) (
 		return nil, err
 	}
 	// Chain the public listener to the internal Shadowsocks inbound.
-	listen.InboundOptions.Detour = detourTag(tag)
+	listen.Detour = detourTag(tag)
 
 	shadowTLSOptions := &option.ShadowTLSInboundOptions{
 		ListenOptions: listen,

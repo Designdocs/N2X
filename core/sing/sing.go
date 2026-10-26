@@ -12,6 +12,7 @@ import (
 	vCore "github.com/Designdocs/N2X/core"
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/adapter/certificate"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common/json"
@@ -71,6 +72,7 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 		endpointRegistry(),
 		dnsTransportRegistry(),
 		serviceRegistry(),
+		certificate.NewRegistry(),
 	)
 
 	options := option.Options{}

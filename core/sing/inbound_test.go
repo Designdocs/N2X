@@ -154,8 +154,8 @@ func TestBuildShadowTLSInboundsChainsToDetour(t *testing.T) {
 	}
 
 	publicOpts := public.Options.(*option.ShadowTLSInboundOptions)
-	if publicOpts.ListenOptions.InboundOptions.Detour != "stls$detour" {
-		t.Fatalf("detour link = %q", publicOpts.ListenOptions.InboundOptions.Detour)
+	if publicOpts.ListenOptions.Detour != "stls$detour" {
+		t.Fatalf("detour link = %q", publicOpts.ListenOptions.Detour)
 	}
 	if publicOpts.ListenPort != 8443 {
 		t.Fatalf("public listen port = %d", publicOpts.ListenPort)

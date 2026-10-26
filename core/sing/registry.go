@@ -36,10 +36,9 @@ import (
 // and forwards their traffic out. It never needs the client-oriented and
 // host-integration pieces sing-box also ships — TUN, redirect/TProxy, SOCKS,
 // HTTP, mixed, Tor, SSH, WireGuard, Tailscale and the management services.
-// Leaving them out keeps the binary smaller and, more importantly, keeps this
-// core off the parts of sing-box_mod that no longer compile against the
-// github.com/sagernet/sing version xray-core requires. See docs/sing-box.md
-// for the dependency analysis behind that pin.
+// Leaving them out keeps the server binary focused on panel-managed proxy
+// traffic. Shared dependency compatibility with the local Xray core is tested
+// through go.work; see docs/sing-box-1.14.4-migration-2026-10-26.md.
 
 func inboundRegistry() *inbound.Registry {
 	registry := inbound.NewRegistry()

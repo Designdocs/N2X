@@ -220,15 +220,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 			inboundLink.Writer = rate.NewRateLimitWriter(inboundLink.Writer, w)
 			outboundLink.Writer = rate.NewRateLimitWriter(outboundLink.Writer, w)
 		}
-		var t *counter.TrafficCounter
-		if c, ok := d.Counter.Load(sessionInbound.Tag); !ok {
-			t = counter.NewTrafficCounter()
-			d.Counter.Store(sessionInbound.Tag, t)
-		} else {
-			t = c.(*counter.TrafficCounter)
-		}
-
-		ts := t.GetCounter(user.Email)
+		ts := d.trafficCounterFor(sessionInbound.Tag).GetCounter(user.Email)
 		upcounter := &counter.XrayTrafficCounter{V: &ts.UpCounter}
 		downcounter := &counter.XrayTrafficCounter{V: &ts.DownCounter}
 		inboundLink.Writer = &dispatcher.SizeStatWriter{
@@ -408,15 +400,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 			sessionInbound.CanSpliceCopy = 3
 			outbound.Writer = rate.NewRateLimitWriter(outbound.Writer, w)
 		}
-		var t *counter.TrafficCounter
-		if c, ok := d.Counter.Load(sessionInbound.Tag); !ok {
-			t = counter.NewTrafficCounter()
-			d.Counter.Store(sessionInbound.Tag, t)
-		} else {
-			t = c.(*counter.TrafficCounter)
-		}
-
-		ts := t.GetCounter(user.Email)
+		ts := d.trafficCounterFor(sessionInbound.Tag).GetCounter(user.Email)
 		downcounter := &counter.XrayTrafficCounter{V: &ts.DownCounter}
 		outbound.Reader = &CounterReader{
 			Reader:  &buf.TimeoutWrapperReader{Reader: outbound.Reader},
@@ -631,4 +615,13 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 	}
 
 	handler.Dispatch(ctx, link)
+}
+
+// Concurrent streams must share one node counter from their first byte.
+func (d *DefaultDispatcher) trafficCounterFor(tag string) *counter.TrafficCounter {
+	if existing, ok := d.Counter.Load(tag); ok {
+		return existing.(*counter.TrafficCounter)
+	}
+	actual, _ := d.Counter.LoadOrStore(tag, counter.NewTrafficCounter())
+	return actual.(*counter.TrafficCounter)
 }

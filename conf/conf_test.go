@@ -28,7 +28,7 @@ func newWatchedConfig(t *testing.T) (*Conf, string) {
 func promptWatch(t *testing.T) {
 	t.Helper()
 	debounce, settle := watchDebounce, watchSettle
-	watchDebounce, watchSettle = 0, time.Millisecond
+	watchDebounce, watchSettle = 0, 20*time.Millisecond
 	t.Cleanup(func() { watchDebounce, watchSettle = debounce, settle })
 }
 

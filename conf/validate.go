@@ -204,7 +204,7 @@ func newWarnings(running, next []Issue) []Issue {
 // re-encoding the tree cannot round integers above 2^53 through float64.
 var keepNumbers = jsonv2.WithUnmarshalers(jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, value *any) error {
 	if dec.PeekKind() != '0' {
-		return jsonv2.SkipFunc
+		return errors.ErrUnsupported
 	}
 	number, err := dec.ReadValue()
 	if err != nil {

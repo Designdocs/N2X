@@ -5,6 +5,10 @@ on:
     - cron: "0 3 * * 1" # every Monday 03:00 Asia/Shanghai
   workflow_dispatch: {}
 
+env:
+  GOWORK: "off"
+  GOEXPERIMENT: jsonv2
+
 permissions:
   contents: write
   pull-requests: write
@@ -24,47 +28,17 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22.5"
+          go-version: "1.27.3"
 
-      - name: Update tracked upstream modules
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ ! -f UPSTREAMS.json ]]; then
-            echo "UPSTREAMS.json not found; skipping."
-            exit 0
-          fi
-          count="$(jq '.entries | length' UPSTREAMS.json)"
-          if [[ "$count" -eq 0 ]]; then
-            echo "No entries; skipping."
-            exit 0
-          fi
-          for i in $(seq 0 $((count-1))); do
-            name="$(jq -r ".entries[$i].name" UPSTREAMS.json)"
-            module="$(jq -r ".entries[$i].module" UPSTREAMS.json)"
-            strategy="$(jq -r ".entries[$i].strategy" UPSTREAMS.json)"
-            ref="$(jq -r ".entries[$i].ref" UPSTREAMS.json)"
-            echo "==> $name ($module) strategy=$strategy ref=$ref"
-            case "$strategy" in
-              tag|branch|commit)
-                if [[ "$ref" == "latest" ]]; then
-                  go get "$module@latest"
-                else
-                  go get "$module@$ref"
-                fi
-                ;;
-              *)
-                echo "Unknown strategy '$strategy' for $name; skipping."
-                ;;
-            esac
-          done
-          go mod tidy
+      - name: Apply reviewed module pins
+        run: python3 .github/scripts/sync-upstreams.py --apply
 
       - name: Run tests
         shell: bash
         run: |
           set -euo pipefail
-          GOEXPERIMENT=jsonv2 go test ./...
+          go mod verify
+          go test -mod=readonly -p 1 -tags "sing xray with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" ./...
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@v6
@@ -74,8 +48,8 @@ jobs:
           title: "chore: upstream sync"
           commit-message: "chore: upstream sync"
           body: |
-            Automated upstream dependency sync based on `UPSTREAMS.json`.
-            Please review core changes carefully before merging.
+            Apply the exact reviewed module versions recorded in `UPSTREAMS.json`.
+            Core updates require merging upstream changes into the N2X forks first.
+            The workflow verifies fork replacements and the complete production build tags.
           labels: |
             dependencies
-            auto-patch-release

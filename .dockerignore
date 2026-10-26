@@ -1,0 +1,16 @@
+.git
+.github
+output
+.cache
+.gocache
+.gomodcache
+.gopath
+go.work
+go.work.sum
+.env
+.env.*
+/config.json
+config.*.local
+secrets.*
+*.private.json
+*.private.json5

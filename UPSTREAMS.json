@@ -1,41 +1,119 @@
 {
-  "version": 1,
+  "version": 2,
   "entries": [
     {
       "name": "xray-core",
       "module": "github.com/xtls/xray-core",
-      "upstream": "https://github.com/wyx2685/Xray-core",
-      "strategy": "commit",
-      "ref": "83ad74c463351e01c7cde391abfd9dded9e78300",
+      "replacement": "github.com/Designdocs/Xray-core",
+      "strategy": "replacement",
+      "ref": "v0.0.0-20261026102710-ee3a03cbae65",
+      "source_commit": "ee3a03cbae656e2d6e6d81d7902ec712d08a345a",
+      "upstream": "https://github.com/Designdocs/Xray-core",
+      "official_upstream": "https://github.com/XTLS/Xray-core",
+      "stable_tag": "v26.10.21",
       "group": "core",
-      "notes": "Track wyx2685/Xray-core main commits and keep the replace pinned to an exact commit."
+      "notes": "Merge stable upstream into the N2X fork before changing this exact replacement; retain ArtX, AnyTLS, per-listener fallback and TLS bridge compatibility."
     },
     {
       "name": "sing-box",
       "module": "github.com/sagernet/sing-box",
-      "upstream": "https://github.com/wyx2685/sing-box_mod",
-      "strategy": "commit",
-      "ref": "8d054dcd8bfec013c675eb2d246fcb98f5c9c870",
+      "replacement": "github.com/Designdocs/sing-box_mod",
+      "strategy": "replacement",
+      "ref": "v1.13.0-alpha.5.0.20261026103843-9b671548395f",
+      "source_commit": "9b671548395f8ce1ed6c169f465daf97ea567b2f",
+      "upstream": "https://github.com/Designdocs/sing-box_mod",
+      "official_upstream": "https://github.com/SagerNet/sing-box",
+      "stable_tag": "v1.14.4",
       "group": "core",
-      "notes": "V2bX-flavoured sing-box fork; upstream sing-box has no live AddUsers/DelUsers inbound API. Its dev-next branch has not moved since 2025-12-02. Bumping this pin requires re-checking github.com/sagernet/{sing,sing-quic,quic-go} against xray-core — see docs/sing-box.md."
+      "notes": "Manual stable merge required before repinning. Preserve Scope lifecycle, dynamic users, AnyTLS cleanup, Naive browser proxy and per-node sniff/resolve. Compatibility copy origins are recorded in the fork."
+    },
+    {
+      "name": "sing",
+      "module": "github.com/sagernet/sing",
+      "strategy": "version",
+      "ref": "v0.9.7-0.20261023115459-5dc452e537bf",
+      "group": "shared-core",
+      "notes": "Exact shared dependency validated with both cores. Revalidate production tags, wire compatibility and accounting before changing."
+    },
+    {
+      "name": "sing-mux",
+      "module": "github.com/sagernet/sing-mux",
+      "strategy": "version",
+      "ref": "v0.3.10-0.20260929204512-caf09fe32475",
+      "group": "shared-core",
+      "notes": "Exact shared dependency validated with both cores. Revalidate production tags, wire compatibility and accounting before changing."
     },
     {
       "name": "sing-quic",
       "module": "github.com/sagernet/sing-quic",
-      "upstream": "https://github.com/SagerNet/sing-quic",
-      "strategy": "tag",
-      "ref": "v0.6.3",
-      "group": "core",
-      "notes": "Pinned: newest sing-quic that still builds against a sing version without tls.Config.HandshakeTimeout, which xray-core requires. Do not bump without reading docs/sing-box.md."
+      "strategy": "version",
+      "ref": "v0.7.2-0.20261020082049-7e0a5869a5f4",
+      "group": "shared-core",
+      "notes": "Exact shared dependency validated with both cores. Revalidate production tags, wire compatibility and accounting before changing."
     },
     {
-      "name": "sing-quic-go",
+      "name": "quic-go",
       "module": "github.com/sagernet/quic-go",
-      "upstream": "https://github.com/SagerNet/quic-go",
-      "strategy": "tag",
-      "ref": "v0.59.0-sing-box-mod.2",
-      "group": "core",
-      "notes": "Pinned: oldest sing-box quic-go that uses the qpack v0.6 API, so it can share github.com/quic-go/qpack with the apernet/quic-go that xray-core needs."
+      "strategy": "version",
+      "ref": "v0.61.0-sing-box-mod.12",
+      "group": "shared-core",
+      "notes": "Exact shared dependency validated with both cores. Revalidate production tags, wire compatibility and accounting before changing."
+    },
+    {
+      "name": "sing-vmess",
+      "module": "github.com/sagernet/sing-vmess",
+      "strategy": "version",
+      "ref": "v0.2.9-0.20261019223527-a0c58542bd9d",
+      "group": "shared-core",
+      "notes": "Exact shared dependency validated with both cores. Revalidate production tags, wire compatibility and accounting before changing."
+    },
+    {
+      "name": "sing-shadowsocks",
+      "module": "github.com/sagernet/sing-shadowsocks",
+      "strategy": "version",
+      "ref": "v0.2.9-0.20260929204512-65740e0f0e3e",
+      "group": "shared-core",
+      "notes": "Exact shared dependency validated with both cores. Revalidate production tags, wire compatibility and accounting before changing."
+    },
+    {
+      "name": "qpack",
+      "module": "github.com/quic-go/qpack",
+      "strategy": "version",
+      "ref": "v0.6.0",
+      "group": "shared-core",
+      "notes": "Exact shared dependency validated with both cores. Revalidate production tags, wire compatibility and accounting before changing."
     }
-  ]
+  ],
+  "local_sync": {
+    "checked_on": "2026-10-26",
+    "integration": "Published module replacements; optional local go.work for development",
+    "published_pins": "Core commits pushed and resolved through the public Go module proxy/checksum workflow. CI, Docker and release builds use GOWORK=off.",
+    "xray_core": {
+      "upstream": "https://github.com/XTLS/Xray-core",
+      "stable_tag": "v26.10.21",
+      "stable_commit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+      "fork_commit": "ee3a03cbae656e2d6e6d81d7902ec712d08a345a",
+      "local_path": "../../Xray-core",
+      "action": "merge v26.10.21 plus shared sing TLS interface adaptation"
+    },
+    "sing_box": {
+      "upstream": "https://github.com/SagerNet/sing-box",
+      "stable_tag": "v1.14.4",
+      "stable_commit": "c005f35300ce76427dc285481ec5695f5b179cd2",
+      "fork_commit": "9b671548395f8ce1ed6c169f465daf97ea567b2f",
+      "previous_fork_commit": "77c9325a6e2b8ea040b1a45047abd54719571329",
+      "local_path": "../../sing-box_mod",
+      "action": "full stable merge preserving dynamic users, AnyTLS cleanup and Naive browser compatibility"
+    },
+    "resolved_dependencies": {
+      "github.com/sagernet/sing": "v0.9.7-0.20261023115459-5dc452e537bf",
+      "github.com/sagernet/sing-mux": "v0.3.10-0.20260929204512-caf09fe32475",
+      "github.com/sagernet/sing-quic": "v0.7.2-0.20261020082049-7e0a5869a5f4",
+      "github.com/sagernet/quic-go": "v0.61.0-sing-box-mod.12",
+      "github.com/sagernet/sing-vmess": "v0.2.9-0.20261019223527-a0c58542bd9d",
+      "github.com/sagernet/sing-shadowsocks": "v0.2.9-0.20260929204512-65740e0f0e3e",
+      "github.com/quic-go/qpack": "v0.6.0"
+    },
+    "report": "docs/sing-box-1.14.4-migration-2026-10-26.md"
+  }
 }

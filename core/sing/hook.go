@@ -12,10 +12,17 @@ import (
 	"github.com/juju/ratelimit"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
+	tun "github.com/sagernet/sing-tun"
 	N "github.com/sagernet/sing/common/network"
 )
 
 var _ adapter.ConnectionTracker = (*HookServer)(nil)
+
+// N2X registers server inbounds only; TUN flow tracking is not part of its
+// registry. TCP/UDP connections keep using the limit/accounting hooks below.
+func (h *HookServer) RoutedFlow(context.Context, adapter.InboundContext, adapter.Rule, adapter.Outbound) tun.FlowTracker {
+	return nil
+}
 
 // HookServer sits between sing-box's router and the outbound handler. Every
 // routed connection passes through it so the node's speed/device limits and

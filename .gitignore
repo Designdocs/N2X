@@ -26,3 +26,7 @@ secrets.*
 *.private.json5
 .gocache/
 .gopath/
+
+# Local sibling-core workspace; CI and release builds use pinned modules.
+/go.work
+/go.work.sum
