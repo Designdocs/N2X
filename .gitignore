@@ -26,6 +26,8 @@ secrets.*
 *.private.json5
 .gocache/
 .gopath/
+/.gomodcache/
+/build_assets/
 
 # Local sibling-core workspace; CI and release builds use pinned modules.
 /go.work

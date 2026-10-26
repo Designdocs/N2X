@@ -6,8 +6,8 @@
       "module": "github.com/xtls/xray-core",
       "replacement": "github.com/Designdocs/Xray-core",
       "strategy": "replacement",
-      "ref": "v0.0.0-20261026125017-ab4e19cf229e",
-      "source_commit": "ab4e19cf229e6af0aa211e70cde1f913437da0d1",
+      "ref": "v0.0.0-20261026134447-8dd8598eb617",
+      "source_commit": "8dd8598eb617f0220613994feaf951d4c56d43c0",
       "upstream": "https://github.com/Designdocs/Xray-core",
       "official_upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.10.21",
@@ -19,8 +19,8 @@
       "module": "github.com/sagernet/sing-box",
       "replacement": "github.com/Designdocs/sing-box_mod",
       "strategy": "replacement",
-      "ref": "v1.13.0-alpha.5.0.20261026103843-9b671548395f",
-      "source_commit": "9b671548395f8ce1ed6c169f465daf97ea567b2f",
+      "ref": "v1.13.0-alpha.5.0.20261026134445-1c83277a4b98",
+      "source_commit": "1c83277a4b98bd6fdf95e12cca1c65c8fbad9940",
       "upstream": "https://github.com/Designdocs/sing-box_mod",
       "official_upstream": "https://github.com/SagerNet/sing-box",
       "stable_tag": "v1.14.4",
@@ -92,19 +92,19 @@
       "upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.10.21",
       "stable_commit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
-      "fork_commit": "ab4e19cf229e6af0aa211e70cde1f913437da0d1",
+      "fork_commit": "8dd8598eb617f0220613994feaf951d4c56d43c0",
       "local_path": "../../Xray-core",
-      "action": "merge v26.10.21 plus shared TLS adaptation and explicit legacy REALITY ClientHello compatibility",
-      "previous_fork_commit": "ee3a03cbae656e2d6e6d81d7902ec712d08a345a"
+      "action": "stable v26.10.21 with legacy REALITY compatibility, immutable TLS reload snapshots, orderly WS EOF and serialized gRPC close/send",
+      "previous_fork_commit": "ab4e19cf229e6af0aa211e70cde1f913437da0d1"
     },
     "sing_box": {
       "upstream": "https://github.com/SagerNet/sing-box",
       "stable_tag": "v1.14.4",
       "stable_commit": "c005f35300ce76427dc285481ec5695f5b179cd2",
-      "fork_commit": "9b671548395f8ce1ed6c169f465daf97ea567b2f",
-      "previous_fork_commit": "77c9325a6e2b8ea040b1a45047abd54719571329",
+      "fork_commit": "1c83277a4b98bd6fdf95e12cca1c65c8fbad9940",
+      "previous_fork_commit": "9b671548395f8ce1ed6c169f465daf97ea567b2f",
       "local_path": "../../sing-box_mod",
-      "action": "full stable merge preserving dynamic users, AnyTLS cleanup and Naive browser compatibility"
+      "action": "stable v1.14.4 with dynamic lifecycle, Naive browser/native paths and synchronized shared AnyTLS stream closure"
     },
     "resolved_dependencies": {
       "github.com/sagernet/sing": "v0.9.7-0.20261023115459-5dc452e537bf",

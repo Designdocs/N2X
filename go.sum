@@ -92,10 +92,10 @@ github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2/go.mod h1:wP83
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
-github.com/Designdocs/Xray-core v0.0.0-20261026125017-ab4e19cf229e h1:WXhJVKiGV3WZsfmmT/RSHwopkAUa6++QVV38w7qITz8=
-github.com/Designdocs/Xray-core v0.0.0-20261026125017-ab4e19cf229e/go.mod h1:N1Q3D8YcySY3jL/OEiUWBhtn9iS7JZ4biXIM9eniPtw=
-github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261026103843-9b671548395f h1:0zB9K5Lj4LiAIqUV90ccHxbgm5VMnRWmNyXBLncHvXU=
-github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261026103843-9b671548395f/go.mod h1:hez15ThcG5PcR3tmuHZYDH46LTO9WGj53UzrCQ39744=
+github.com/Designdocs/Xray-core v0.0.0-20261026134447-8dd8598eb617 h1:Oyrzql9DysBnqCXGCCmcOANK+Hy6WWHO9E6WaedG2QQ=
+github.com/Designdocs/Xray-core v0.0.0-20261026134447-8dd8598eb617/go.mod h1:N1Q3D8YcySY3jL/OEiUWBhtn9iS7JZ4biXIM9eniPtw=
+github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261026134445-1c83277a4b98 h1:cq1+sPAr3N/hb7/Y6fnYiRN8EMbkn08/1MyhHLHyFxE=
+github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261026134445-1c83277a4b98/go.mod h1:hez15ThcG5PcR3tmuHZYDH46LTO9WGj53UzrCQ39744=
 github.com/HdrHistogram/hdrhistogram-go v1.1.0/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/HdrHistogram/hdrhistogram-go v1.1.2/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=

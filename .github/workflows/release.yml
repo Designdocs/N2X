@@ -24,6 +24,7 @@ on:
 env:
   GOWORK: "off"
   GOEXPERIMENT: jsonv2
+  GEODATA_REVISION: "2f3c0d60335a73f6791273b664388addff2fde52"
 
 permissions:
   contents: write
@@ -197,6 +198,8 @@ jobs:
         run: |
           go mod download
           go mod verify
+      - name: Verify reviewed upstream pins
+        run: python3 .github/scripts/sync-upstreams.py
       - name: Get release version
         if: ${{ github.event_name == 'release' }}
         run: |
@@ -253,6 +256,16 @@ jobs:
         run: |
           cd ./build_assets || exit 1
           mv N2X N2X.exe
+      - name: Verify build provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          for binary in build_assets/N2X build_assets/N2X.exe build_assets/N2X_softfloat; do
+            [[ -f "$binary" ]] || continue
+            go version -m "$binary" > "$binary.buildinfo.txt"
+            grep -F "vcs.revision=$GITHUB_SHA" "$binary.buildinfo.txt"
+            grep -F "vcs.modified=false" "$binary.buildinfo.txt"
+          done
       - name: Prepare to release
         run: |
           cp ${GITHUB_WORKSPACE}/README.md ./build_assets/README.md
@@ -261,11 +274,12 @@ jobs:
           LIST=('geoip' 'geosite')
           for i in "${LIST[@]}"
           do
-            DOWNLOAD_URL="https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/${i}.dat"
+            DOWNLOAD_URL="https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/${GEODATA_REVISION}/${i}.dat"
             FILE_NAME="${i}.dat"
             echo -e "Downloading ${DOWNLOAD_URL}..."
-            curl -L "${DOWNLOAD_URL}" -o ./build_assets/${FILE_NAME}
+            curl --fail --location --retry 3 "${DOWNLOAD_URL}" -o ./build_assets/${FILE_NAME}
           done
+          printf '%s\n' "$GEODATA_REVISION" > ./build_assets/geodata.revision.txt
       - name: Create ZIP archive
         shell: bash
         run: |
@@ -291,7 +305,8 @@ jobs:
         with:
           name: N2X-${{ steps.get_filename.outputs.ASSET_NAME }}
           path: |
-            ./N2X-${{ steps.get_filename.outputs.ASSET_NAME }}/*
+            ./N2X-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+            ./N2X-${{ steps.get_filename.outputs.ASSET_NAME }}.zip.dgst
           retention-days: 1
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
