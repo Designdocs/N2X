@@ -75,9 +75,19 @@
         "Email": "example@gmail.com",
         "Provider": "cloudflare",
         "DNSEnv": {
-          "CF_API_KEY": "ExampleKEY",
-          "CLOUDFLARE_EMAIL": "example@gmail.com"
+          "CF_DNS_API_TOKEN": "ExampleTOKEN"
         }
+      },
+      "DDNSConfig": {
+        "Enabled": false,
+        "Provider": "cloudflare",
+        "Domain": "",
+        "ZoneName": "",
+        "RecordType": "A",
+        "Interval": 300,
+        "TTL": 600,
+        "IPURL": "",
+        "DNSEnv": {}
       }
     },
     {
@@ -230,6 +240,7 @@
     "Nodes.ArtXOptions": "仅 artx 节点使用，且只对面板下发 underlay=artx-wire 的节点生效。WindowBudgetSharePercent 是 ArtX 接收窗口最多可占用的宿主机内存比例（1-100，默认 25）；WindowBudgetReservePercent 是必须留给系统其它进程的可用内存比例（1-99，默认 20）。预算 = min(总内存 × Share%, 可用内存 - 总内存 × Reserve%)，在新连接握手时按当前活跃连接数均分，决定单连接窗口档位——人少时给满档提速，人多时自动降档，已建立的连接不受影响。两项均可省略或填 0 表示用默认值；预算是宿主机级共享资源，同机多个 artx-wire 节点以最后启动者为准。",
     "Nodes.CertConfig": "CertMode 可填 none/file/http/dns/self：file 使用现有证书，http/dns 自动申请，self 生成自签证书；RejectUnknownSni=true 时拒绝未知 SNI。hysteria2/tuic/naive 必须具备可用证书；shadowtls 不需要自己的证书，填 none 即可。",
     "Nodes.CertPaths": "http/dns/self 模式的 CertFile 和 KeyFile 支持 {domain}；file 模式请填写现有证书的实际绝对路径。",
-    "Nodes.CertProvider": "Provider 和 DNSEnv 仅 dns 模式使用；Provider 填 lego 支持的名称，例如 cloudflare、alidns。"
+    "Nodes.CertProvider": "Provider 和 DNSEnv 仅 dns 模式使用；Provider 填 lego 支持的名称，例如 cloudflare、alidns。cloudflare 使用 CF_DNS_API_TOKEN，仅授权所需域名的 Zone/DNS/Edit 和 Zone/Zone/Read；Email 是证书账户邮箱。",
+    "Nodes.DDNSConfig": "Enabled 默认 false；Provider 支持 cloudflare、alidns（阿里云国际平台）；Domain 留空沿用 CertDomain，泛域名证书须单独填写具体主机名；ZoneName 留空按公共后缀推断主域名，托管子区域须手动填写。RecordType 为 A/AAAA；Interval 秒数默认 300；TTL 默认 600，仅新建记录使用。DNSEnv 留空时复用相同 Provider 的 CertConfig.DNSEnv。IPURL 留空使用 api.ipify.org / api6.ipify.org。"
   }
 }

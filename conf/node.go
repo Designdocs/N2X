@@ -142,6 +142,7 @@ type Options struct {
 	SingOptions            *SingOptions    `json:"SingOptions"`
 	ArtXOptions            *ArtXOptions    `json:"ArtXOptions"`
 	CertConfig             *CertConfig     `json:"CertConfig"`
+	DDNSConfig             DDNSConfig      `json:"DDNSConfig"`
 }
 
 func (o *Options) UnmarshalJSON(data []byte) error {

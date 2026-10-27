@@ -19,6 +19,7 @@ newN2X.sh
 quic_singbox.sh
 .env
 .env.*
+!example/.env.example
 config.json
 config.*.local
 secrets.*

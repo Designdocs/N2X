@@ -57,8 +57,7 @@ func promptCreateEnv(envPath string) bool {
 		{Key: "N2X_API_KEY", Prompt: "面板 API 密钥 (N2X_API_KEY)", Default: "", Required: true},
 		{Key: "N2X_CERT_PROVIDER", Prompt: "证书提供商 (N2X_CERT_PROVIDER)", Default: "cloudflare", Required: false},
 		{Key: "N2X_CERT_EMAIL", Prompt: "证书邮箱 (N2X_CERT_EMAIL)", Default: "", Required: false},
-		{Key: "CF_API_KEY", Prompt: "Cloudflare API Key (CF_API_KEY)", Default: "", Required: false},
-		{Key: "CLOUDFLARE_EMAIL", Prompt: "Cloudflare 邮箱 (CLOUDFLARE_EMAIL)", Default: "", Required: false},
+		{Key: "CF_DNS_API_TOKEN", Prompt: "Cloudflare API Token (CF_DNS_API_TOKEN，仅授权所需域名的 DNS 编辑和区域读取权限)", Default: "", Required: false},
 		{Key: "N2X_CERT_DOMAIN", Prompt: "证书域名 (N2X_CERT_DOMAIN)", Default: "example.com", Required: false},
 	}
 
@@ -75,7 +74,7 @@ func promptCreateEnv(envPath string) bool {
 			if input == "" {
 				if item.Default != "" {
 					input = item.Default
-				} else {
+				} else if item.Required {
 					input = randomValue()
 					fmt.Printf("已自动生成随机值: %s\n", input)
 				}

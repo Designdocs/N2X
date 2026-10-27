@@ -23,6 +23,8 @@ type Node struct {
 	httpsRedirectManager *httpsRedirectManager
 	retryCancel          context.CancelFunc
 	retryWG              sync.WaitGroup
+	ddnsWG               sync.WaitGroup
+	newDDNSUpdater       func(conf.DDNSConfig) (ddnsUpdater, error)
 }
 
 func New() *Node {
@@ -54,6 +56,10 @@ func (n *Node) Start(nodes []conf.NodeConfig, core vCore.Core) ([]StartFailure, 
 	n.mu.Lock()
 	n.retryCancel = cancel
 	n.mu.Unlock()
+	if err := n.startDDNS(ctx, nodes); err != nil {
+		cancel()
+		return nil, err
+	}
 
 	var failures []StartFailure
 	for i := range nodes {
@@ -126,6 +132,7 @@ func (n *Node) Close() {
 	// A retry may be inside controller.Start; wait for it so it cannot add a
 	// node to the core that is about to be closed.
 	n.retryWG.Wait()
+	n.ddnsWG.Wait()
 
 	if n.httpsRedirectManager != nil {
 		_ = n.httpsRedirectManager.Close()

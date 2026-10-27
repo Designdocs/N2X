@@ -149,6 +149,9 @@ func (v *validator) checkOptions(path string, o *Options, cores map[string]strin
 		}
 	}
 	v.checkCert(path+".CertConfig", o.CertConfig)
+	if err := o.DDNSConfig.Effective(o.CertConfig).Validate(); err != nil {
+		v.add(path+".DDNSConfig", "%v", err)
+	}
 }
 
 // decodeUnpinnedOptions reads options the way the core selector will: for a

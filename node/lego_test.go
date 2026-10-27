@@ -19,8 +19,7 @@ func newIntegrationTestLego(t *testing.T) *Lego {
 		CertDomain: "test.test.com",
 		Provider:   "cloudflare",
 		DNSEnv: map[string]string{
-			"CF_API_KEY":       "123",
-			"CLOUDFLARE_EMAIL": "you@example.com",
+			"CF_DNS_API_TOKEN": "123",
 		},
 		CertFile: "./cert/1.pem",
 		KeyFile:  "./cert/1.key",
