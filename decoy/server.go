@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Designdocs/N2X/common/netutil"
+
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -80,7 +82,7 @@ func NewServer(config Config) (*Server, error) {
 		return nil, err
 	}
 
-	listener, err := net.Listen("tcp", address)
+	listener, err := netutil.ListenTCP("tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("listen on configured address: %w", err)
 	}

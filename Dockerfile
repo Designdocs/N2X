@@ -20,4 +20,5 @@ RUN apk --update --no-cache add tzdata ca-certificates \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 RUN mkdir -p /etc/N2X/
 COPY --from=builder /out/N2X /usr/local/bin/N2X
-ENTRYPOINT ["N2X", "server", "--config", "/etc/N2X/config.json"]
+COPY docker-entrypoint.sh /usr/local/bin/n2x-entrypoint
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/n2x-entrypoint", "server", "--config", "/etc/N2X/config.json"]

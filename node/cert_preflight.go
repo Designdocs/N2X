@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Designdocs/N2X/common/netutil"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/go-acme/lego/v4/challenge"
 	"github.com/go-acme/lego/v4/providers/dns"
@@ -82,7 +83,7 @@ func newCertPreflight() *certPreflight {
 		newDNSProvider: func(name string, envs map[string]string) (challenge.Provider, error) {
 			return newScopedDNSProvider(name, envs, dns.NewDNSChallengeProviderByName)
 		},
-		listen:   net.Listen,
+		listen:   netutil.ListenTCP,
 		lookupIP: net.DefaultResolver.LookupIPAddr,
 	}
 }

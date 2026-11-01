@@ -2,6 +2,9 @@ module github.com/Designdocs/N2X
 
 go 1.27.3
 
+// CVE-2026-98432: also cover listeners created by embedded dependencies.
+godebug multipathtcp=0
+
 require (
 	github.com/anytls/sing-anytls v0.0.11
 	github.com/apernet/quic-go v0.61.1-0.20260806010916-184d081eef3e
@@ -325,6 +328,6 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20261026134447-8dd8598eb617
+replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20261031161757-76c1f959c62f
 
-replace github.com/sagernet/sing-box => github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261026134445-1c83277a4b98
+replace github.com/sagernet/sing-box => github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261031161807-e538b1386912

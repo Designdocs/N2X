@@ -6,26 +6,26 @@
       "module": "github.com/xtls/xray-core",
       "replacement": "github.com/Designdocs/Xray-core",
       "strategy": "replacement",
-      "ref": "v0.0.0-20261026134447-8dd8598eb617",
-      "source_commit": "8dd8598eb617f0220613994feaf951d4c56d43c0",
+      "ref": "v0.0.0-20261031161757-76c1f959c62f",
+      "source_commit": "76c1f959c62fa12612a92be890f45f3f708572e7",
       "upstream": "https://github.com/Designdocs/Xray-core",
       "official_upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.10.21",
       "group": "core",
-      "notes": "Merge stable upstream into the N2X fork before changing this exact replacement; retain ArtX, AnyTLS, per-listener fallback and TLS bridge compatibility. Retain the pinned REALITY compatibility copy and cross-client Vision/HTTPS regressions; an explicit zero version floor must permit authenticated X25519-only fingerprints."
+      "notes": "Merge stable upstream into the N2X fork before changing this exact replacement; retain ArtX, AnyTLS, per-listener fallback and TLS bridge compatibility. Retain the pinned REALITY compatibility copy and cross-client Vision/HTTPS regressions; an explicit zero version floor must permit authenticated X25519-only fingerprints. CVE-2026-98432 mitigation disables implicit MPTCP while preserving explicit opt-in and existing fork extensions."
     },
     {
       "name": "sing-box",
       "module": "github.com/sagernet/sing-box",
       "replacement": "github.com/Designdocs/sing-box_mod",
       "strategy": "replacement",
-      "ref": "v1.13.0-alpha.5.0.20261026134445-1c83277a4b98",
-      "source_commit": "1c83277a4b98bd6fdf95e12cca1c65c8fbad9940",
+      "ref": "v1.13.0-alpha.5.0.20261031161807-e538b1386912",
+      "source_commit": "e538b13869127eb336b2df8f1bd90cfc77dff598",
       "upstream": "https://github.com/Designdocs/sing-box_mod",
       "official_upstream": "https://github.com/SagerNet/sing-box",
       "stable_tag": "v1.14.4",
       "group": "core",
-      "notes": "Manual stable merge required before repinning. Preserve Scope lifecycle, dynamic users, AnyTLS cleanup, Naive browser proxy and per-node sniff/resolve. Compatibility copy origins are recorded in the fork."
+      "notes": "Manual stable merge required before repinning. Preserve Scope lifecycle, dynamic users, AnyTLS cleanup, Naive browser proxy and per-node sniff/resolve. Compatibility copy origins are recorded in the fork. CVE-2026-98432 mitigation disables implicit MPTCP while preserving explicit opt-in and existing fork extensions."
     },
     {
       "name": "sing",
@@ -85,26 +85,26 @@
     }
   ],
   "local_sync": {
-    "checked_on": "2026-10-26",
+    "checked_on": "2026-10-31",
     "integration": "Published module replacements; optional local go.work for development",
     "published_pins": "Core commits pushed and resolved through the public Go module proxy/checksum workflow. CI, Docker and release builds use GOWORK=off.",
     "xray_core": {
       "upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.10.21",
       "stable_commit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
-      "fork_commit": "8dd8598eb617f0220613994feaf951d4c56d43c0",
+      "fork_commit": "76c1f959c62fa12612a92be890f45f3f708572e7",
       "local_path": "../../Xray-core",
-      "action": "stable v26.10.21 with legacy REALITY compatibility, immutable TLS reload snapshots, orderly WS EOF and serialized gRPC close/send",
-      "previous_fork_commit": "ab4e19cf229e6af0aa211e70cde1f913437da0d1"
+      "action": "stable v26.10.21 with legacy REALITY compatibility, immutable TLS reload snapshots, orderly WS EOF and serialized gRPC close/send; CVE-2026-98432 default MPTCP mitigation",
+      "previous_fork_commit": "8dd8598eb617f0220613994feaf951d4c56d43c0"
     },
     "sing_box": {
       "upstream": "https://github.com/SagerNet/sing-box",
       "stable_tag": "v1.14.4",
       "stable_commit": "c005f35300ce76427dc285481ec5695f5b179cd2",
-      "fork_commit": "1c83277a4b98bd6fdf95e12cca1c65c8fbad9940",
-      "previous_fork_commit": "9b671548395f8ce1ed6c169f465daf97ea567b2f",
-      "local_path": "../../sing-box_mod",
-      "action": "stable v1.14.4 with dynamic lifecycle, Naive browser/native paths and synchronized shared AnyTLS stream closure"
+      "fork_commit": "e538b13869127eb336b2df8f1bd90cfc77dff598",
+      "previous_fork_commit": "1c83277a4b98bd6fdf95e12cca1c65c8fbad9940",
+      "local_path": "../sing-box_mod-memory",
+      "action": "stable v1.14.4 with dynamic lifecycle, Naive browser/native paths and synchronized shared AnyTLS stream closure; CVE-2026-98432 default MPTCP mitigation"
     },
     "resolved_dependencies": {
       "github.com/sagernet/sing": "v0.9.7-0.20261023115459-5dc452e537bf",
@@ -115,6 +115,13 @@
       "github.com/sagernet/sing-shadowsocks": "v0.2.9-0.20260929204512-65740e0f0e3e",
       "github.com/quic-go/qpack": "v0.6.0"
     },
-    "report": "docs/sing-box-1.14.4-migration-2026-10-26.md"
+    "report": "docs/sing-box-1.14.4-migration-2026-10-26.md",
+    "security_patch": {
+      "cve": "CVE-2026-98432",
+      "xray_reference_release": "v26.10.31",
+      "xray_reference_pr": "https://github.com/XTLS/Xray-core/pull/7291",
+      "strategy": "Backport listener-default mitigation to existing custom forks; patched host kernel remains required.",
+      "branch": "security/mptcp-default-20261031"
+    }
   }
 }

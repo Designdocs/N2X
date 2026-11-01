@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
+	"github.com/Designdocs/N2X/common/netutil"
 	"github.com/Designdocs/N2X/conf"
 	log "github.com/sirupsen/logrus"
 )
@@ -163,7 +164,7 @@ func (manager *httpsRedirectManager) Address() string {
 }
 
 func (manager *httpsRedirectManager) startLocked() error {
-	listener, err := net.Listen("tcp", manager.listenAddress)
+	listener, err := netutil.ListenTCP("tcp", manager.listenAddress)
 	if err != nil {
 		return fmt.Errorf("listen for HTTPS redirects on %s: %w", manager.listenAddress, err)
 	}
