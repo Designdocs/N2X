@@ -34,14 +34,12 @@ jobs:
 
   prepare-release:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true }}
-    runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.resolve.outputs.version }}
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -84,22 +82,20 @@ jobs:
             git push origin "refs/tags/$VERSION"
           fi
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.resolve.outputs.version }}
           name: ${{ steps.resolve.outputs.version }}
           generate_release_notes: true
 
   resolve-matrix:
-    runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.pick.outputs.matrix }}
       scope: ${{ steps.pick.outputs.scope }}
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Pick build targets
         id: pick
         shell: bash
@@ -134,7 +130,7 @@ jobs:
       matrix: ${{ fromJSON(needs.resolve-matrix.outputs.matrix) }}
       fail-fast: false
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       GO_VERSION: "1.27.3"
       GOOS: ${{ matrix.goos }}
@@ -144,10 +140,9 @@ jobs:
       GOTOOLCHAIN: local
       GOCACHE: ${{ github.workspace }}/.gocache
       GOMODCACHE: ${{ github.workspace }}/.gomodcache
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -166,7 +161,7 @@ jobs:
           echo "ASSET_NAME=$_NAME" >> $GITHUB_OUTPUT
           echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
@@ -178,7 +173,7 @@ jobs:
           chmod -R 755 "${GOCACHE}" "${GOMODCACHE}"
 
       - name: Cache Go build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.GOCACHE }}
           key: go-build-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}-${{ matrix.goarm || 'na' }}-${{ hashFiles('**/go.sum') }}
@@ -187,7 +182,7 @@ jobs:
             go-build-${{ runner.os }}-${{ env.GO_VERSION }}-
 
       - name: Cache Go module cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.GOMODCACHE }}
           key: go-mod-${{ runner.os }}-${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
@@ -297,7 +292,7 @@ jobs:
         run: |
           mv build_assets N2X-$ASSET_NAME
       - name: Upload files to Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         # Skipped when publishing: the very same zips go to the GitHub Release
         # one step below, and release assets are free while artifacts are billed
         # against the 2 GB/month Actions storage allowance.
