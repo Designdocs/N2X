@@ -6,6 +6,7 @@ go 1.27.3
 godebug multipathtcp=0
 
 require (
+	github.com/alibabacloud-go/openapi-util v0.1.1
 	github.com/anytls/sing-anytls v0.0.11
 	github.com/apernet/quic-go v0.61.1-0.20260806010916-184d081eef3e
 	github.com/beevik/ntp v1.4.4-0.20240716062501-06ef196b89ec
@@ -62,7 +63,6 @@ require (
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.1.8 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
 	github.com/alibabacloud-go/endpoint-util v1.1.0 // indirect
-	github.com/alibabacloud-go/openapi-util v0.1.1 // indirect
 	github.com/alibabacloud-go/tea v1.3.9 // indirect
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.7 // indirect
 	github.com/aliyun/credentials-go v1.4.6 // indirect
@@ -328,6 +328,6 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20261031161757-76c1f959c62f
+replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20261102105339-fed35a71c367
 
 replace github.com/sagernet/sing-box => github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261031161807-e538b1386912

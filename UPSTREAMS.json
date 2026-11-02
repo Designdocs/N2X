@@ -6,13 +6,13 @@
       "module": "github.com/xtls/xray-core",
       "replacement": "github.com/Designdocs/Xray-core",
       "strategy": "replacement",
-      "ref": "v0.0.0-20261031161757-76c1f959c62f",
-      "source_commit": "76c1f959c62fa12612a92be890f45f3f708572e7",
+      "ref": "v0.0.0-20261102105339-fed35a71c367",
+      "source_commit": "fed35a71c367af0d1d107e8bb3a2a7e741f09d2f",
       "upstream": "https://github.com/Designdocs/Xray-core",
       "official_upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.10.21",
       "group": "core",
-      "notes": "Merge stable upstream into the N2X fork before changing this exact replacement; retain ArtX, AnyTLS, per-listener fallback and TLS bridge compatibility. Retain the pinned REALITY compatibility copy and cross-client Vision/HTTPS regressions; an explicit zero version floor must permit authenticated X25519-only fingerprints. CVE-2026-98432 mitigation disables implicit MPTCP while preserving explicit opt-in and existing fork extensions."
+      "notes": "Merge stable upstream into the N2X fork before changing this exact replacement; retain ArtX, AnyTLS, per-listener fallback and TLS bridge compatibility. Retain the pinned REALITY compatibility copy and cross-client Vision/HTTPS regressions; an explicit zero version floor must permit authenticated X25519-only fingerprints. CVE-2026-98432 mitigation disables implicit MPTCP while preserving explicit opt-in and existing fork extensions. Preserve AnyTLS reusable sessions when late data arrives for closed streams; outbound write errors must close only the affected stream."
     },
     {
       "name": "sing-box",
@@ -85,17 +85,17 @@
     }
   ],
   "local_sync": {
-    "checked_on": "2026-10-31",
+    "checked_on": "2026-11-02",
     "integration": "Published module replacements; optional local go.work for development",
     "published_pins": "Core commits pushed and resolved through the public Go module proxy/checksum workflow. CI, Docker and release builds use GOWORK=off.",
     "xray_core": {
       "upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.10.21",
       "stable_commit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
-      "fork_commit": "76c1f959c62fa12612a92be890f45f3f708572e7",
+      "fork_commit": "fed35a71c367af0d1d107e8bb3a2a7e741f09d2f",
       "local_path": "../../Xray-core",
-      "action": "stable v26.10.21 with legacy REALITY compatibility, immutable TLS reload snapshots, orderly WS EOF and serialized gRPC close/send; CVE-2026-98432 default MPTCP mitigation",
-      "previous_fork_commit": "8dd8598eb617f0220613994feaf951d4c56d43c0"
+      "action": "stable v26.10.21 with legacy REALITY compatibility, immutable TLS reload snapshots, orderly WS EOF and serialized gRPC close/send; CVE-2026-98432 default MPTCP mitigation; isolate closed-stream AnyTLS data and writer errors from the reusable session",
+      "previous_fork_commit": "76c1f959c62fa12612a92be890f45f3f708572e7"
     },
     "sing_box": {
       "upstream": "https://github.com/SagerNet/sing-box",
