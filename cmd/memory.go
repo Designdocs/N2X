@@ -14,10 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const (
-	memoryCheckInterval   = 5 * time.Second
-	memoryShutdownTimeout = 10 * time.Second
-)
+const memoryCheckInterval = 5 * time.Second
 
 type memoryPressure struct {
 	total, available uint64
@@ -83,30 +80,6 @@ func memoryRestartRequired(total, available uint64, percent int) bool {
 		return false
 	}
 	return float64(total-available)*100/float64(total) >= float64(percent)
-}
-
-func (g *memoryGuard) wait(signals <-chan os.Signal) error {
-	ticker := time.NewTicker(memoryCheckInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-signals:
-			return nil
-		case <-ticker.C:
-			percent := int(g.restartPercent.Load())
-			if percent == 0 {
-				continue
-			}
-			total, available, err := g.sample()
-			if err != nil {
-				log.WithError(err).Warn("Memory guard sample failed")
-				continue
-			}
-			if memoryRestartRequired(total, available, percent) {
-				return &memoryPressure{total: total, available: available, percent: percent}
-			}
-		}
-	}
 }
 
 func prepareMemoryRestart(pressure *memoryPressure, timeout time.Duration) {

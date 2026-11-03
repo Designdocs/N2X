@@ -48,6 +48,7 @@ const (
 func (v *validator) checkConf(c *Conf) {
 	v.checkLog(c.LogConfig)
 	v.checkMemory(c.MemoryConfig)
+	v.checkScheduledRestart(c.ScheduledRestart)
 	names := v.checkCores(c.CoresConfig)
 	v.checkNodes(c.NodeConfig, names)
 }

@@ -50,7 +50,7 @@ func TestMemoryGuardSkipsFailedProbeAndCanBeDisabled(t *testing.T) {
 		guard.restartPercent.Store(90)
 		signals := make(chan os.Signal, 1)
 		result := make(chan error, 1)
-		go func() { result <- guard.wait(signals) }()
+		go func() { result <- waitForShutdown(signals, guard, nil) }()
 		time.Sleep(memoryCheckInterval)
 		synctest.Wait()
 		select {
@@ -78,7 +78,7 @@ func TestMemoryGuardStopsOnSignal(t *testing.T) {
 	signals := make(chan os.Signal, 1)
 	signals <- os.Interrupt
 	guard := &memoryGuard{}
-	if err := guard.wait(signals); err != nil {
+	if err := waitForShutdown(signals, guard, nil); err != nil {
 		t.Fatal(err)
 	}
 }

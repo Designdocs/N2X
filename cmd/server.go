@@ -214,6 +214,7 @@ func nodesOutcome(failed, total int) string {
 
 func serverHandle(_ *cobra.Command, _ []string) error {
 	memory := newMemoryGuard()
+	scheduled := &restartScheduler{}
 	showVersion()
 	loadEnvFile(config, envF, true)
 	var report startupReport
@@ -244,6 +245,7 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 		}
 	}
 	memory.configure(c.MemoryConfig)
+	scheduled.configure(c.ScheduledRestart)
 	limiter.Init()
 	log.Info("Start N2X...")
 	vc, err := vCore.NewCore(c.CoresConfig)
@@ -288,6 +290,7 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 		// A distinct name: the closure below assigns to the outer err.
 		stopWatch, watchErr := c.Watch(config, xdns, validateOptions(), func() {
 			memory.configure(c.MemoryConfig)
+			scheduled.configure(c.ScheduledRestart)
 			var reloadReport startupReport
 			reloadReport.addWarnings(c.Warnings)
 			nodes.Close()
@@ -339,10 +342,13 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 	osSignals := make(chan os.Signal, 1)
 	signal.Notify(osSignals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(osSignals)
-	if err := memory.wait(osSignals); err != nil {
+	if err := waitForShutdown(osSignals, memory, scheduled); err != nil {
 		var pressure *memoryPressure
+		var planned *scheduledRestart
 		if errors.As(err, &pressure) {
-			prepareMemoryRestart(pressure, memoryShutdownTimeout)
+			prepareMemoryRestart(pressure, restartShutdownTimeout)
+		} else if errors.As(err, &planned) {
+			prepareScheduledRestart(planned, restartShutdownTimeout)
 		}
 		return err
 	}
