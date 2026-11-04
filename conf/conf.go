@@ -17,6 +17,8 @@ type Conf struct {
 	// Warnings lists problems LoadValidated found that do not stop the config
 	// from being used. It is never read from the file.
 	Warnings []Issue `json:"-"`
+	// Detached before cores can mutate decoded options during startup.
+	loadedWatchState *watchState
 }
 
 func New() *Conf {

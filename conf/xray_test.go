@@ -73,6 +73,12 @@ func TestCoreConfigKeepsXrayDefaultsWhenKeysOmitted(t *testing.T) {
 	if got := c.XrayConfig.ConnectionConfig.BufferSize; got != 64 {
 		t.Fatalf("default BufferSize = %d, want 64", got)
 	}
+	if got := c.XrayConfig.ConnectionConfig.ConnIdle; got != 600 {
+		t.Fatalf("default ConnIdle = %d, want 600 seconds", got)
+	}
+	if got := c.XrayConfig.ConnectionConfig.DownlinkOnly; got != 5 {
+		t.Fatalf("default DownlinkOnly = %d, want 5 seconds", got)
+	}
 	if got := c.XrayConfig.AssetPath; got != "/etc/N2X/" {
 		t.Fatalf("default AssetPath = %q", got)
 	}
@@ -85,7 +91,7 @@ func TestCoreConfigKeepsXrayDefaultsWhenKeysOmitted(t *testing.T) {
 // Explicit values must still override the defaults.
 func TestCoreConfigXrayExplicitValuesWin(t *testing.T) {
 	c := CoreConfig{}
-	raw := `{"Type":"xray","AssetPath":"/opt/geo","ConnectionConfig":{"bufferSize":128,"handshake":9}}`
+	raw := `{"Type":"xray","AssetPath":"/opt/geo","ConnectionConfig":{"bufferSize":128,"handshake":9,"connIdle":1800}}`
 	if err := c.UnmarshalJSON([]byte(raw)); err != nil {
 		t.Fatalf("unmarshal core config: %v", err)
 	}
@@ -94,6 +100,9 @@ func TestCoreConfigXrayExplicitValuesWin(t *testing.T) {
 	}
 	if c.XrayConfig.ConnectionConfig.BufferSize != 128 || c.XrayConfig.ConnectionConfig.Handshake != 9 {
 		t.Fatalf("ConnectionConfig = %#v", c.XrayConfig.ConnectionConfig)
+	}
+	if got := c.XrayConfig.ConnectionConfig.ConnIdle; got != 1800 {
+		t.Fatalf("explicit ConnIdle = %d, want 1800", got)
 	}
 }
 

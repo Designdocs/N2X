@@ -35,7 +35,7 @@ func TestWatchAppliesCorrectionDuringCooldown(t *testing.T) {
 	dns, events := watchedDNSWithTiming(t, 200*time.Millisecond, 20*time.Millisecond)
 	writeFile(t, dns, `{"servers":[}`)
 	events.wantReject(t, "invalid DNS")
-	writeFile(t, dns, goodDNS)
+	writeFile(t, dns, `{"servers":["8.8.8.8"]}`)
 	events.wantReload(t, "correction inside cooldown")
 }
 
@@ -48,7 +48,7 @@ func TestWatchWaitsForQuietAfterLastWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer file.Close()
-	for _, chunk := range []string{`{"servers":`, `[`, `"1.1.1.1"`, `]`} {
+	for _, chunk := range []string{`{"servers":`, `[`, `"8.8.8.8"`, `]`} {
 		if _, err := file.WriteString(chunk); err != nil {
 			t.Fatal(err)
 		}

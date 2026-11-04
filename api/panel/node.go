@@ -11,6 +11,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/Designdocs/N2X/common/jsonutil"
 	"github.com/Designdocs/N2X/conf"
 )
 
@@ -447,7 +448,9 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	const path = "/api/v1/server/UniProxy/config"
 	c.etagMu.Lock()
 	currentEtag := c.nodeEtag
-	currentHash := c.responseBodyHash
+	currentHash := c.nodeConfigHash
+	cacheVersion := c.nodeCacheVersion
+	retryVersion := c.nodeRetryVersion
 	c.etagMu.Unlock()
 
 	r, err := c.client.
@@ -462,16 +465,6 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	if r.StatusCode() == 304 {
 		return nil, nil
 	}
-	hash := sha256.Sum256(r.Body())
-	newBodyHash := hex.EncodeToString(hash[:])
-	if currentHash == newBodyHash {
-		return nil, nil
-	}
-	c.etagMu.Lock()
-	c.responseBodyHash = newBodyHash
-	c.nodeEtag = r.Header().Get("ETag")
-	c.etagMu.Unlock()
-
 	if r != nil {
 		defer func() {
 			if r.RawBody() != nil {
@@ -713,6 +706,42 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	cm.Routes = nil
 	cm.BaseConfig = nil
 	cm.CertConfig = nil
+
+	// Compare the decoded, normalized settings, not the panel's JSON bytes.
+	// Formatting, ignored metadata and equivalent legacy aliases do not
+	// change the running inbound and must not force a listener rebuild.
+	raw, err := json.Marshal(node)
+	if err != nil {
+		return nil, fmt.Errorf("encode normalized node config: %w", err)
+	}
+	canonical, err := jsonutil.Canonical(raw)
+	if err != nil {
+		return nil, fmt.Errorf("normalize node config: %w", err)
+	}
+	hash := sha256.Sum256(canonical)
+	newConfigHash := hex.EncodeToString(hash[:])
+	if currentHash == newConfigHash {
+		c.etagMu.Lock()
+		if c.nodeCacheVersion == cacheVersion {
+			c.nodeEtag = r.Header().Get("ETag")
+		}
+		c.etagMu.Unlock()
+		return nil, nil
+	}
+
+	// Only cache a successfully decoded config. An invalid response must be
+	// retried, and a push/retry arriving in flight must keep its invalidation.
+	c.etagMu.Lock()
+	// A push requires another HTTP fetch, but this successfully decoded
+	// change is still being handed to the controller. Remember its content
+	// unless a failed rebuild explicitly requested another attempt.
+	if c.nodeRetryVersion == retryVersion {
+		c.nodeConfigHash = newConfigHash
+	}
+	if c.nodeCacheVersion == cacheVersion {
+		c.nodeEtag = r.Header().Get("ETag")
+	}
+	c.etagMu.Unlock()
 
 	return node, nil
 }

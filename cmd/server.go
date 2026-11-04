@@ -287,31 +287,33 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 	publishReport(&report, startupReportTitle, nodesOutcome(len(failures), len(c.NodeConfig)), startedHint(len(failures), config))
 	log.Info("Nodes started")
 	if watch {
-		// A distinct name: the closure below assigns to the outer err.
-		stopWatch, watchErr := c.Watch(config, xdns, validateOptions(), func() {
+		// Stop the watcher before shutdown closes the active core.
+		stopWatch, watchErr := c.WatchWithError(config, xdns, validateOptions(), func() error {
 			memory.configure(c.MemoryConfig)
 			scheduled.configure(c.ScheduledRestart)
 			var reloadReport startupReport
 			reloadReport.addWarnings(c.Warnings)
 			nodes.Close()
-			err = vc.Close()
-			if err != nil {
+			if err := vc.Close(); err != nil {
 				log.WithField("err", err).Error("Restart node failed")
-				return
+				return err
 			}
-			vc, err = vCore.NewCore(c.CoresConfig)
+			newCore, err := vCore.NewCore(c.CoresConfig)
 			if err != nil {
 				log.WithField("err", err).Error("New core failed")
 				reloadReport.add(categoryCore, "Cores", fmt.Sprintf("new core: %v", err))
 				publishReport(&reloadReport, reloadReportTitle, "核心未创建，所有节点已停止", seeLogHint)
-				return
+				return err
 			}
+			// Keep vc non-nil if creation failed so a later retry/shutdown
+			// can safely close the previous core again.
+			vc = newCore
 			err = vc.Start()
 			if err != nil {
 				log.WithField("err", err).Error("Start core failed")
 				reloadReport.add(categoryCore, "Cores", fmt.Sprintf("start core: %v", err))
 				publishReport(&reloadReport, reloadReportTitle, "核心未启动，所有节点已停止", seeLogHint)
-				return
+				return err
 			}
 			log.Info("Core ", vc.Type(), " restarted")
 			var failures []node.StartFailure
@@ -320,12 +322,13 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 				log.WithField("err", err).Error("Run nodes failed")
 				reloadReport.add(categoryConfig, "", err.Error())
 				publishReport(&reloadReport, reloadReportTitle, "节点未启动", checkHint(config))
-				return
+				return err
 			}
 			reloadReport.addNodeFailures(c.NodeConfig, failures)
 			publishReport(&reloadReport, reloadReportTitle, nodesOutcome(len(failures), len(c.NodeConfig)), startedHint(len(failures), config))
 			log.Info("Nodes restarted")
 			runtime.GC()
+			return nil
 		}, func(rejectErr error) {
 			var rejectReport startupReport
 			rejectReport.addConfigError(rejectErr)

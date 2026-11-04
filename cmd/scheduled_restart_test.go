@@ -132,7 +132,7 @@ func TestSchedulerDueOnceAndNeverOutsideWindow(t *testing.T) {
 	// Configure a fresh scheduler, then simulate waking up after its window.
 	s = &restartScheduler{}
 	s.configure(options)
-	first = s.next
+	first = s.next.In(time.UTC)
 	missed := time.Date(first.Year(), first.Month(), first.Day(), 6, 0, 0, 0, time.UTC)
 	if s.due(missed) != nil {
 		t.Fatal("missed window caused a daytime restart")

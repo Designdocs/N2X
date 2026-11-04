@@ -21,7 +21,7 @@ var (
 	watchSettle   = 5 * time.Second
 )
 
-// Watch reloads the config whenever filePath or xDnsPath changes. A DNS file
+// Watch reloads only when the effective config or DNS content changes. A DNS file
 // that does not exist yet is watched through its directory. The new file is
 // validated with opts first; if it has any problem, or a warning the running
 // config does not have, the running config is kept, reload is not called and
@@ -33,6 +33,15 @@ var (
 // must not be called from reload. Watch returns a nil function when it fails,
 // in which case nothing was started.
 func (p *Conf) Watch(filePath, xDnsPath string, opts ValidateOptions, reload func(), rejected func(error)) (func(), error) {
+	return p.WatchWithError(filePath, xDnsPath, opts, func() error {
+		reload()
+		return nil
+	}, rejected)
+}
+
+// WatchWithError also preserves a failed reload for retry on the next write,
+// including an identical write. The callback must report incomplete rebuilds.
+func (p *Conf) WatchWithError(filePath, xDnsPath string, opts ValidateOptions, reload func() error, rejected func(error)) (func(), error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("new watcher error: %w", err)
@@ -53,6 +62,25 @@ func (p *Conf) Watch(filePath, xDnsPath string, opts ValidateOptions, reload fun
 		if err := watcher.Add(target); err != nil {
 			watcher.Close()
 			return nil, fmt.Errorf("watch dns file error: %w", err)
+		}
+	}
+	var state watchState
+	if p.loadedWatchState != nil {
+		// Use the config actually loaded before startup. Reading the current
+		// file here would silently adopt an edit that has not been applied.
+		state = *p.loadedWatchState
+		state.addFile(xDnsPath)
+	} else {
+		// Compatibility for callers that constructed Conf themselves.
+		initial, err := LoadValidated(filePath, opts)
+		if err != nil {
+			watcher.Close()
+			return nil, fmt.Errorf("snapshot watched config: %w", err)
+		}
+		state, err = snapshotWatchState(initial, xDnsPath)
+		if err != nil {
+			watcher.Close()
+			return nil, fmt.Errorf("snapshot watched config: %w", err)
 		}
 	}
 
@@ -134,7 +162,7 @@ func (p *Conf) Watch(filePath, xDnsPath string, opts ValidateOptions, reload fun
 				reloads.Add(1)
 				go func() {
 					defer reloads.Done()
-					p.reloadChanged(done, currentChange, filePath, xDnsPath, opts, reload, rejected)
+					p.reloadChanged(done, currentChange, filePath, xDnsPath, opts, &state, reload, rejected)
 					select {
 					case finished <- struct{}{}:
 					case <-done:
@@ -160,14 +188,7 @@ func (p *Conf) Watch(filePath, xDnsPath string, opts ValidateOptions, reload fun
 
 // reloadChanged validates the latest settled files. The watcher starts only
 // one reload at a time and retains edits arriving during a reload or cooldown.
-func (p *Conf) reloadChanged(done <-chan struct{}, changed, filePath, xDnsPath string, opts ValidateOptions, reload func(), rejected func(error)) {
-	switch filepath.Base(strings.TrimSuffix(changed, "~")) {
-	case filepath.Base(xDnsPath):
-		log.Println("DNS file changed, reloading...")
-	default:
-		log.Println("config file changed, reloading...")
-	}
-
+func (p *Conf) reloadChanged(done <-chan struct{}, changed, filePath, xDnsPath string, opts ValidateOptions, state *watchState, reload func() error, rejected func(error)) {
 	select {
 	case <-done:
 		return
@@ -181,6 +202,10 @@ func (p *Conf) reloadChanged(done <-chan struct{}, changed, filePath, xDnsPath s
 			err = &ValidationError{File: filePath, Issues: added}
 		}
 	}
+	var nextState watchState
+	if err == nil {
+		nextState, err = snapshotWatchState(next, xDnsPath)
+	}
 	if err != nil {
 		if rejected != nil {
 			rejected(err)
@@ -189,8 +214,22 @@ func (p *Conf) reloadChanged(done <-chan struct{}, changed, filePath, xDnsPath s
 		}
 		return
 	}
+	if !state.retry && state.equal(nextState) {
+		return
+	}
+	switch filepath.Base(strings.TrimSuffix(changed, "~")) {
+	case filepath.Base(xDnsPath):
+		log.Println("DNS file changed, reloading...")
+	default:
+		log.Println("config file changed, reloading...")
+	}
 	*p = *next
-	reload()
+	if err := reload(); err != nil {
+		state.retry = true
+		log.Printf("reload failed; the next file write will retry: %s", err)
+		return
+	}
+	*state = nextState
 	log.Println("reload config success")
 }
 

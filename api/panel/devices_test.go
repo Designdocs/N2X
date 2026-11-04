@@ -113,8 +113,8 @@ func TestGetNodeInfoHTTPErrorDoesNotPoisonCache(t *testing.T) {
 	if client.nodeEtag != "" {
 		t.Fatalf("nodeEtag = %q, want empty", client.nodeEtag)
 	}
-	if client.responseBodyHash != "" {
-		t.Fatalf("responseBodyHash = %q, want empty", client.responseBodyHash)
+	if client.nodeConfigHash != "" {
+		t.Fatalf("nodeConfigHash = %q, want empty", client.nodeConfigHash)
 	}
 }
 

@@ -119,6 +119,11 @@ func LoadValidated(filePath string, opts ValidateOptions) (*Conf, error) {
 		return nil, err
 	}
 	c.Warnings = v.warnings
+	state, err := snapshotWatchState(c, "")
+	if err != nil {
+		return nil, fmt.Errorf("snapshot validated config: %w", err)
+	}
+	c.loadedWatchState = &state
 	return c, nil
 }
 

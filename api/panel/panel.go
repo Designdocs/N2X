@@ -29,7 +29,9 @@ type Client struct {
 	etagMu           sync.Mutex
 	nodeEtag         string
 	userEtag         string
-	responseBodyHash string
+	nodeConfigHash   string
+	nodeCacheVersion uint64
+	nodeRetryVersion uint64
 	UserList         *UserListBody
 	AliveMap         *AliveMap
 	aliveMu          sync.Mutex
@@ -241,13 +243,17 @@ func (c *Client) wsSend(event string, data any) error {
 	return driver.Send(event, data)
 }
 
-// InvalidateNodeInfoCache is the exported form of invalidateNodeInfoCache,
-// for callers that have to force a re-pull without a panel push. A reload
+// InvalidateNodeInfoCache forces a rebuild, unlike an ordinary panel push. A reload
 // that aborts halfway leaves the node without an inbound, and GetNodeInfo
-// short-circuits on the body hash it already stored, so without this the
+// short-circuits on the config hash it already stored, so without this the
 // retry would never come.
 func (c *Client) InvalidateNodeInfoCache() {
-	c.invalidateNodeInfoCache()
+	c.etagMu.Lock()
+	c.nodeEtag = ""
+	c.nodeConfigHash = ""
+	c.nodeCacheVersion++
+	c.nodeRetryVersion++
+	c.etagMu.Unlock()
 }
 
 // invalidateNodeInfoCache clears the HTTP ETag state so the next GetNodeInfo
@@ -255,7 +261,9 @@ func (c *Client) InvalidateNodeInfoCache() {
 func (c *Client) invalidateNodeInfoCache() {
 	c.etagMu.Lock()
 	c.nodeEtag = ""
-	c.responseBodyHash = ""
+	// A notification asks us to fetch again, not to discard our knowledge of
+	// the applied content. Duplicate pushes must not rebuild a healthy node.
+	c.nodeCacheVersion++
 	c.etagMu.Unlock()
 	logrus.WithField("component", "panel-ws").
 		WithField("node_id", c.NodeId).

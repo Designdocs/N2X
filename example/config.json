@@ -23,7 +23,7 @@
       },
       "ConnectionConfig": {
         "handshake": 4,
-        "connIdle": 300,
+        "connIdle": 600,
         "uplinkOnly": 2,
         "downlinkOnly": 5,
         "statsUserUplink": false,
@@ -230,7 +230,7 @@
     "Log": "Level 可填 debug/info/warn/error；Output 留空输出到控制台，否则填写日志文件绝对路径。",
     "Cores.Type": "Type 可填 xray 或 sing；如配置多个同类核心，可增加 Name，并在节点中用 CoreName 指定。二进制实际带哪些核心取决于编译标签，可用 `N2X version` 查看。",
     "Cores.Log": "xray 核心的 Level 可填 debug/info/warning/error/none；sing 核心的 Level 可填 trace/debug/info/warn/error/fatal/panic，Disable=true 时完全静音。",
-    "Cores.ConnectionConfig": "仅 xray 核心使用。handshake/connIdle/uplinkOnly/downlinkOnly 单位为秒；bufferSize 单位为 KB。",
+    "Cores.ConnectionConfig": "仅 xray 核心使用。handshake/connIdle/uplinkOnly/downlinkOnly 单位为秒；bufferSize 单位为 KB。connIdle 默认 600 秒（10 分钟），按业务数据空闲计时，不是连接总时长；持续传输会刷新计时。uplinkOnly/downlinkOnly 仅在一侧结束后生效；已显式配置的值优先。",
     "Cores.Paths": "仅 xray 核心使用。DnsConfigPath/OutboundConfigPath/RouteConfigPath 均填写绝对路径；对应文件留空时使用核心内置默认配置。",
     "Cores.EnableBTExtraSniffing": "仅 xray 核心使用。控制 BT DHT 与 UDP tracker 嗅探；不需要时设为 false。",
     "Cores.NTP": "仅 sing 核心使用。Enable=true 时由 sing-box 校时并写入系统时间，Hysteria2/TUIC 等对时间敏感的协议可按需开启。",
