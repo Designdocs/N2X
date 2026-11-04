@@ -73,8 +73,8 @@ func TestCoreConfigKeepsXrayDefaultsWhenKeysOmitted(t *testing.T) {
 	if got := c.XrayConfig.ConnectionConfig.BufferSize; got != 64 {
 		t.Fatalf("default BufferSize = %d, want 64", got)
 	}
-	if got := c.XrayConfig.ConnectionConfig.ConnIdle; got != 600 {
-		t.Fatalf("default ConnIdle = %d, want 600 seconds", got)
+	if got := c.XrayConfig.ConnectionConfig.ConnIdle; got != 300 {
+		t.Fatalf("default ConnIdle = %d, want 300 seconds", got)
 	}
 	if got := c.XrayConfig.ConnectionConfig.DownlinkOnly; got != 5 {
 		t.Fatalf("default DownlinkOnly = %d, want 5 seconds", got)

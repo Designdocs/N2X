@@ -160,7 +160,7 @@ func TestWatchComparesEffectiveOptionsAndPreservesRejectedBaseline(t *testing.T)
 	// _help, comments, formatting and explicitly writing an existing default
 	// change the file but do not change the running proxy configuration.
 	doc["_help"] = map[string]any{"note": "updated documentation"}
-	docCore(doc, 0)["ConnectionConfig"] = map[string]any{"connIdle": 600}
+	docCore(doc, 0)["ConnectionConfig"] = map[string]any{"connIdle": 300}
 	writeFile(t, config, "// documentation only\n"+mustJSON(t, doc))
 	apply()
 	if reloads != 0 || rejections != 0 {

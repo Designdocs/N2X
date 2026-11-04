@@ -60,7 +60,7 @@ func NewXrayConfig() *XrayConfig {
 			StatsUserUplink:   true,
 			StatsUserDownlink: true,
 			Handshake:         4,
-			ConnIdle:          600,
+			ConnIdle:          300,
 			UplinkOnly:        2,
 			DownlinkOnly:      5,
 			BufferSize:        64,
