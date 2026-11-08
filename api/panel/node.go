@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -81,12 +83,50 @@ type CommonNode struct {
 	CertConfig    *conf.CertConfig   `json:"cert_config"`
 }
 
+// LocalCertConfig keeps filesystem and certificate issuance authority with the
+// node operator. A panel-only TLS deployment must configure a local certificate
+// before startup or reload instead of falling back to a cleartext listener.
+func (n *NodeInfo) LocalCertConfig(options *conf.Options) (*conf.CertConfig, error) {
+	var local *conf.CertConfig
+	if options != nil {
+		local = options.CertConfig
+	}
+	if n != nil && n.Security == Tls && n.CertConfig != nil &&
+		n.CertConfig.CertMode != "" && n.CertConfig.CertMode != "none" &&
+		(local == nil || local.CertMode == "" || local.CertMode == "none") {
+		return nil, fmt.Errorf("panel-provided TLS certificate requires a local CertConfig")
+	}
+	return local, nil
+}
+
 type Route struct {
 	Id          int         `json:"id"`
 	Match       interface{} `json:"match"`
 	Action      string      `json:"action"`
 	ActionValue string      `json:"action_value"`
 }
+
+func (r Route) matchValues() ([]string, error) {
+	switch value := r.Match.(type) {
+	case string:
+		return strings.Split(value, ","), nil
+	case []string:
+		return value, nil
+	case []any:
+		matches := make([]string, len(value))
+		for i, item := range value {
+			match, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("match[%d] must be a string", i)
+			}
+			matches[i] = match
+		}
+		return matches, nil
+	default:
+		return nil, fmt.Errorf("match must be a string or an array of strings")
+	}
+}
+
 type BaseConfig struct {
 	PushInterval any `json:"push_interval"`
 	PullInterval any `json:"pull_interval"`
@@ -643,40 +683,47 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	}
 
 	// parse rules and dns
-	for i := range cm.Routes {
-		var matchs []string
-		if _, ok := cm.Routes[i].Match.(string); ok {
-			matchs = strings.Split(cm.Routes[i].Match.(string), ",")
-		} else if _, ok = cm.Routes[i].Match.([]string); ok {
-			matchs = cm.Routes[i].Match.([]string)
-		} else {
-			temp := cm.Routes[i].Match.([]interface{})
-			matchs = make([]string, len(temp))
-			for i := range temp {
-				matchs[i] = temp[i].(string)
-			}
+	for i, route := range cm.Routes {
+		if route.Action != "block" && route.Action != "dns" {
+			continue
 		}
-		switch cm.Routes[i].Action {
+		matches, err := route.matchValues()
+		if err != nil {
+			return nil, fmt.Errorf("route %d: %w", i, err)
+		}
+		switch route.Action {
 		case "block":
-			for _, v := range matchs {
+			for j, v := range matches {
 				if strings.HasPrefix(v, "protocol:") {
-					// protocol
 					node.Rules.Protocol = append(node.Rules.Protocol, strings.TrimPrefix(v, "protocol:"))
 				} else {
-					// domain
-					node.Rules.Regexp = append(node.Rules.Regexp, strings.TrimPrefix(v, "regexp:"))
+					pattern := strings.TrimPrefix(v, "regexp:")
+					if _, err := regexp.Compile(pattern); err != nil {
+						return nil, fmt.Errorf("route %d: match[%d] is not a valid regular expression", i, j)
+					}
+					node.Rules.Regexp = append(node.Rules.Regexp, pattern)
 				}
 			}
 		case "dns":
-			var domains []string
-			domains = append(domains, matchs...)
-			if matchs[0] != "main" {
+			if len(matches) == 0 {
+				return nil, fmt.Errorf("route %d: DNS match must not be empty", i)
+			}
+			if matches[0] != "main" {
+				address := route.ActionValue
+				if strings.Contains(address, ":") && !strings.Contains(address, "/") {
+					if _, _, err := net.SplitHostPort(address); err != nil {
+						return nil, fmt.Errorf("route %d: invalid DNS host and port", i)
+					}
+				}
 				node.RawDNS.DNSMap[strconv.Itoa(i)] = map[string]interface{}{
-					"address": cm.Routes[i].ActionValue,
-					"domains": domains,
+					"address": address,
+					"domains": matches,
 				}
 			} else {
-				dns := []byte(strings.Join(matchs[1:], ""))
+				dns := []byte(strings.Join(matches[1:], ""))
+				if len(dns) > 0 && !json.Valid(dns) {
+					return nil, fmt.Errorf("route %d: invalid inline DNS JSON", i)
+				}
 				node.RawDNS.DNSJson = dns
 			}
 		}

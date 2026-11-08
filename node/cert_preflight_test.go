@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/go-acme/lego/v4/challenge"
 )
@@ -398,7 +397,7 @@ func TestRequestCertDoesNotOrderWithInvalidConfig(t *testing.T) {
 	certConfig := validDNSCertConfig(t)
 	certConfig.Provider = ""
 
-	err := (&Controller{}).requestCert(&panel.NodeInfo{CertConfig: certConfig})
+	err := (&Controller{Options: &conf.Options{CertConfig: certConfig}}).requestCert(nil)
 	assertCertCheckStage(t, err, certCheckConfig)
 	if *orders != 0 {
 		t.Fatalf("expected no ACME order, got %d", *orders)
@@ -411,10 +410,10 @@ func TestRequestCertDoesNotOrderWithInvalidConfig(t *testing.T) {
 func TestRequestCertDoesNotOrderWhenSelfTestFails(t *testing.T) {
 	orders := stubCertIssuance(t, &certCheckError{Stage: certCheckSelfTest, Err: errors.New("zone could not be found")}, nil)
 	certConfig := validDNSCertConfig(t)
-	controller := &Controller{}
+	controller := &Controller{Options: &conf.Options{CertConfig: certConfig}}
 
 	for range 3 {
-		err := controller.requestCert(&panel.NodeInfo{CertConfig: certConfig})
+		err := controller.requestCert(nil)
 		assertCertCheckStage(t, err, certCheckSelfTest)
 	}
 	if *orders != 0 {
@@ -429,7 +428,7 @@ func TestRequestCertOrdersAfterSelfTestPasses(t *testing.T) {
 	orders := stubCertIssuance(t, nil, acmeRejection("dns problem"))
 	certConfig := validDNSCertConfig(t)
 
-	err := (&Controller{}).requestCert(&panel.NodeInfo{CertConfig: certConfig})
+	err := (&Controller{Options: &conf.Options{CertConfig: certConfig}}).requestCert(nil)
 	if err == nil || !strings.Contains(err.Error(), "dns problem") {
 		t.Fatalf("expected the ACME error, got %v", err)
 	}

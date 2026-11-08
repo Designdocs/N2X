@@ -7,7 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/Designdocs/N2X/api/panel"
-	"github.com/Designdocs/N2X/common/cdn"
+	"github.com/Designdocs/N2X/limiter"
 )
 
 // deviceLimitOnlyChange reports whether the only thing that moved between
@@ -40,13 +40,18 @@ func maskDeviceLimit(info *panel.NodeInfo) *panel.NodeInfo {
 
 // applyDeviceLimitInPlace hands the new policy to the running limiter.
 func (c *Controller) applyDeviceLimitInPlace(info *panel.NodeInfo) {
-	c.limiter.SetDeviceTolerance(info.DeviceLimitTolerance)
-	c.limiter.SetIgnoredPrefixes(info.DeviceLimitIgnoredIPs)
-	cdn.SetDisabledProviders(info.DeviceLimitCDNDisabled)
+	c.applyDeviceLimitPolicy(c.limiter, info)
 	log.WithFields(log.Fields{
 		"tag":          c.tag,
 		"tolerance":    info.DeviceLimitTolerance,
 		"ignored_ips":  len(info.DeviceLimitIgnoredIPs),
 		"cdn_disabled": info.DeviceLimitCDNDisabled,
 	}).Info("Device-limit policy updated in place, node kept online")
+}
+
+func (c *Controller) applyDeviceLimitPolicy(l *limiter.Limiter, info *panel.NodeInfo) {
+	l.SetDeviceTolerance(info.DeviceLimitTolerance)
+	l.SetIgnoredPrefixes(info.DeviceLimitIgnoredIPs)
+	l.SetDisabledCDNProviders(info.DeviceLimitCDNDisabled)
+	c.apiClient.SetDisabledCDNProviders(info.DeviceLimitCDNDisabled)
 }

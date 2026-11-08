@@ -89,6 +89,29 @@ func TestSaveDnsConfigCreatesMissingFile(t *testing.T) {
 	}
 }
 
+func TestSaveDnsConfigKeepsCurrentFileForInvalidPanelEntries(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("N2X_DNS_FALLBACK_NOTICE_PATH", filepath.Join(dir, "dns-fallback.notice"))
+	dnsPath := filepath.Join(dir, "dns.json")
+	const current = `{"servers":["localhost"]}`
+	if err := os.WriteFile(dnsPath, []byte(current), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []string{
+		`{"servers":[null]}`,
+		`{"hosts":{"dummy.test":null}}`,
+		`{"servers":["localhost"],"script":"/scratch/dummy.lua"}`,
+	} {
+		if err := saveDnsConfig([]byte(invalid), dnsPath); err != nil {
+			t.Fatal(err)
+		}
+		kept, err := os.ReadFile(dnsPath)
+		if err != nil || string(kept) != current {
+			t.Fatalf("invalid panel DNS replaced the local file: %v", err)
+		}
+	}
+}
+
 // A DNS file that cannot be written must not look like a successful save.
 func TestSaveDnsConfigReportsWriteFailure(t *testing.T) {
 	t.Setenv("N2X_DNS_FALLBACK_NOTICE_PATH", filepath.Join(t.TempDir(), "dns-fallback.notice"))

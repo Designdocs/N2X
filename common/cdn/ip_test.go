@@ -21,7 +21,7 @@ func TestProxyIPRanges(t *testing.T) {
 	}
 	// Plain EC2 space stays a countable device.
 	for _, ip := range []string{"1.1.1.1", "203.0.113.1", "2001:db8::1", "172.63.255.255", "172.72.0.0", "56.69.64.164", "43.216.51.129", "cloudflare.com", "invalid", ""} {
-		if IsProxyIP(ip) {
+		if Provider(ip) != "" {
 			t.Errorf("non-proxy accepted: %q", ip)
 		}
 	}
@@ -60,26 +60,26 @@ func TestGeneratedProviderRanges(t *testing.T) {
 	}
 	// Neighbouring public space stays a countable device.
 	for _, ip := range []string{"151.100.255.255", "23.31.255.255", "35.190.255.255", "34.95.255.255", "2a04:4e41::1"} {
-		if IsProxyIP(ip) {
+		if Provider(ip) != "" {
 			t.Errorf("non-proxy accepted: %q", ip)
 		}
 	}
 }
 
 func TestDisabledProviderCountsAsOrdinaryAddress(t *testing.T) {
-	t.Cleanup(func() { SetDisabledProviders(nil) })
-	SetDisabledProviders([]string{" cloudfront ", "nope"})
+	var policy Policy
+	policy.SetDisabledProviders([]string{" cloudfront ", "nope"})
 	if Provider("15.158.212.208") != CloudFront {
 		t.Fatal("Provider must keep reporting the owner for display")
 	}
-	if Exempt("15.158.212.208") != "" || IsProxyIP("15.158.212.208") {
+	if policy.Exempt("15.158.212.208") != "" || policy.IsProxyIP("15.158.212.208") {
 		t.Fatal("a switched-off provider must not exempt its edges")
 	}
-	if Exempt("104.16.1.1") != Cloudflare {
+	if policy.Exempt("104.16.1.1") != Cloudflare {
 		t.Fatal("other providers stay exempt")
 	}
-	SetDisabledProviders(nil)
-	if !IsProxyIP("15.158.212.208") {
+	policy.SetDisabledProviders(nil)
+	if !policy.IsProxyIP("15.158.212.208") {
 		t.Fatal("clearing the set restores the exemption")
 	}
 }

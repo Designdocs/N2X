@@ -18,10 +18,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (c *Controller) effectiveCertConfig(node *panel.NodeInfo) *conf.CertConfig {
-	if node != nil && node.CertConfig != nil && node.CertConfig.CertMode != "" {
-		return node.CertConfig
-	}
+func (c *Controller) localCertConfig() *conf.CertConfig {
 	if c.Options == nil {
 		return nil
 	}
@@ -51,7 +48,10 @@ func (c *Controller) renewCertTask(certConfig *conf.CertConfig) error {
 }
 
 func (c *Controller) requestCert(node *panel.NodeInfo) error {
-	certConfig := c.effectiveCertConfig(node)
+	certConfig, err := node.LocalCertConfig(c.Options)
+	if err != nil {
+		return err
+	}
 	if certConfig == nil {
 		return fmt.Errorf("cert config not exist")
 	}

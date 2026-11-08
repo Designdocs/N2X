@@ -1,12 +1,10 @@
 package limiter
 
 import (
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
-	"github.com/Designdocs/N2X/common/cdn"
 	"github.com/Designdocs/N2X/common/format"
 	"github.com/Designdocs/N2X/conf"
 )
@@ -103,11 +101,46 @@ func TestSetDeviceToleranceClampsNegative(t *testing.T) {
 // Known IPs (already online this cycle) must stay unaffected by tolerance
 // bookkeeping — regression guard for the OldUserOnline fast path.
 func TestCheckLimitKnownIPStillAdmitted(t *testing.T) {
-	l := newDeviceLimitLimiter(t, 1, 1)
-	l.OldUserOnline = new(sync.Map)
-	l.OldUserOnline.Store("1.2.3.4", 1)
+	l := newDeviceLimitLimiter(t, 1, 0)
+	l.SetDeviceTolerance(0)
+	if _, reject := l.CheckLimit(tagUUID(t), "1.2.3.4", true, true); reject {
+		t.Fatal("first admission was rejected")
+	}
+	_, _ = l.GetOnlineDevice()
+	l.UpdateUser(t.Name(),
+		[]panel.UserInfo{{Id: 1, Uuid: "uuid-1", DeviceLimit: 1, SpeedLimit: 1}},
+		[]panel.UserInfo{{Id: 1, Uuid: "uuid-1", DeviceLimit: 1}})
+	l.UpdateAliveList(map[int]int{1: 1})
 	if _, reject := l.CheckLimit(tagUUID(t), "1.2.3.4", true, true); reject {
 		t.Fatal("an ip carried over from the previous cycle must stay admitted")
+	}
+}
+
+func TestPreviousAdmissionDoesNotCrossUsers(t *testing.T) {
+	for _, scenario := range []string{"first IP", "additional IP"} {
+		t.Run(scenario, func(t *testing.T) {
+			l := newDeviceLimitLimiter(t, 1, 0)
+			l.SetDeviceTolerance(0)
+			l.UpdateUser(t.Name(), []panel.UserInfo{{Id: 2, Uuid: "uuid-2", DeviceLimit: 1}}, nil)
+			other := format.UserTag(t.Name(), "uuid-2")
+			const sharedIP = "192.0.2.10"
+			if _, reject := l.CheckLimit(tagUUID(t), sharedIP, true, true); reject {
+				t.Fatal("first user could not connect")
+			}
+			_, _ = l.GetOnlineDevice()
+			if scenario == "additional IP" {
+				if _, reject := l.CheckLimit(other, "192.0.2.11", true, true); reject {
+					t.Fatal("second user's initial connection was rejected")
+				}
+			}
+			l.UpdateAliveList(map[int]int{1: 1, 2: 1})
+			if _, reject := l.CheckLimit(other, sharedIP, true, true); !reject {
+				t.Fatal("previous admission for the first user bypassed the second user's device limit")
+			}
+			if _, reject := l.CheckLimit(tagUUID(t), sharedIP, true, true); reject {
+				t.Fatal("the original user lost its reconnect allowance")
+			}
+		})
 	}
 }
 
@@ -177,20 +210,31 @@ func TestIgnoredPrefixesBypassDeviceAccounting(t *testing.T) {
 }
 
 func TestSwitchedOffCdnProviderHitsDeviceLimit(t *testing.T) {
-	t.Cleanup(func() { cdn.SetDisabledProviders(nil) })
 	// One device already alive against a limit of one: any plain address is
 	// rejected, only exempt addresses get through.
 	l := newDeviceLimitLimiter(t, 1, 1)
 	l.SetDeviceTolerance(0)
-	cdn.SetDisabledProviders([]string{"CloudFront"})
+	l.SetDisabledCDNProviders([]string{"CloudFront"})
+	otherTag := t.Name() + "-other"
+	other := AddLimiter(otherTag, &conf.LimitConfig{},
+		[]panel.UserInfo{{Id: 1, Uuid: "uuid-1", DeviceLimit: 1}}, map[int]int{1: 1})
+	t.Cleanup(func() { DeleteLimiter(otherTag) })
+	other.SetDeviceTolerance(0)
+	if _, reject := other.CheckLimit(format.UserTag(otherTag, "uuid-1"), "15.158.212.208", true, true); reject {
+		t.Fatal("a provider switch on one limiter changed another limiter's policy")
+	}
 	if _, reject := l.CheckLimit(tagUUID(t), "15.158.212.208", true, true); !reject {
 		t.Fatal("a switched-off provider's edge must hit the device limit like a plain device")
 	}
 	if _, reject := l.CheckLimit(tagUUID(t), "104.16.1.1", true, true); reject {
 		t.Fatal("Cloudflare is still exempt")
 	}
-	cdn.SetDisabledProviders(nil)
+	l.SetDisabledCDNProviders(nil)
 	if _, reject := l.CheckLimit(tagUUID(t), "15.158.212.209", true, true); reject {
 		t.Fatal("clearing the switches restores the CloudFront exemption")
+	}
+	l.SetDisabledCDNProviders([]string{"CloudFront"})
+	if _, reject := l.CheckLimit(tagUUID(t), "15.158.212.209", true, true); !reject {
+		t.Fatal("an exempt connection left behind a device admission")
 	}
 }

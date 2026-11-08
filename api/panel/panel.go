@@ -13,6 +13,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/Designdocs/N2X/common/cdn"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/go-resty/resty/v2"
 )
@@ -37,6 +38,7 @@ type Client struct {
 	aliveMu          sync.Mutex
 	aliveUpdate      func(map[int]int)
 	kickedUpdate     func(map[int]map[string]int64)
+	cdnPolicy        cdn.Policy
 
 	// wsCfg is retained so Start() can spawn the driver lazily after the
 	// owning controller has been fully constructed.
@@ -283,7 +285,7 @@ func (c *Client) invalidateUserListCache() {
 // onSyncDevices consumes X-Board's {users: {uid: [ip...]}} snapshot and
 // updates the alive counters used by the device limiter.
 func (c *Client) onSyncDevices(raw json.RawMessage) {
-	alive, err := decodeDeviceAliveMap(raw)
+	alive, err := decodeDeviceAliveMap(raw, &c.cdnPolicy)
 	if err != nil {
 		logrus.WithError(err).
 			WithField("component", "panel-ws").
@@ -297,6 +299,10 @@ func (c *Client) onSyncDevices(raw json.RawMessage) {
 		WithField("node_id", c.NodeId).
 		WithField("users", len(alive)).
 		Info("ws sync.devices applied")
+}
+
+func (c *Client) SetDisabledCDNProviders(names []string) {
+	c.cdnPolicy.SetDisabledProviders(names)
 }
 
 // onSyncKick consumes the panel's kick broadcast ({kicked: {uid: {ip: ttl}}})

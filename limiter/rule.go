@@ -1,6 +1,7 @@
 package limiter
 
 import (
+	"fmt"
 	"regexp"
 
 	"github.com/Designdocs/N2X/api/panel"
@@ -28,10 +29,15 @@ func (l *Limiter) CheckProtocolRule(protocol string) (reject bool) {
 }
 
 func (l *Limiter) UpdateRule(rule *panel.Rules) error {
-	l.DomainRules = make([]*regexp.Regexp, len(rule.Regexp))
-	for i := range rule.Regexp {
-		l.DomainRules[i] = regexp.MustCompile(rule.Regexp[i])
+	domainRules := make([]*regexp.Regexp, len(rule.Regexp))
+	for i, pattern := range rule.Regexp {
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			return fmt.Errorf("invalid domain rule %d: %w", i, err)
+		}
+		domainRules[i] = compiled
 	}
+	l.DomainRules = domainRules
 	l.ProtocolRules = rule.Protocol
 	return nil
 }

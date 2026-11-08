@@ -57,21 +57,23 @@ func TestBuildInboundTLSConfig_MapsAnyTLSECHServerKeys(t *testing.T) {
 	}
 }
 
-func TestBuildInboundTLSConfigPrefersPanelCertConfig(t *testing.T) {
+func TestBuildInboundTLSConfigUsesOnlyLocalCertConfig(t *testing.T) {
 	option := &conf.Options{
 		XrayOptions: conf.NewXrayOptions(),
 		CertConfig: &conf.CertConfig{
-			CertMode: "none",
+			CertMode:         "file",
+			RejectUnknownSni: true,
+			CertFile:         "/local/cert.pem",
+			KeyFile:          "/local/key.pem",
 		},
 	}
 	nodeInfo := &panel.NodeInfo{
 		Type:     "anytls",
 		Security: panel.Tls,
 		CertConfig: &conf.CertConfig{
-			CertMode:         "file",
-			RejectUnknownSni: true,
-			CertFile:         "/panel/cert.pem",
-			KeyFile:          "/panel/key.pem",
+			CertMode: "file",
+			CertFile: "/panel/cert.pem",
+			KeyFile:  "/panel/key.pem",
 		},
 		AnyTls: &panel.AnyTlsNode{},
 	}
@@ -81,17 +83,17 @@ func TestBuildInboundTLSConfigPrefersPanelCertConfig(t *testing.T) {
 		t.Fatalf("buildInboundTLSConfig returned error: %v", err)
 	}
 	if tlsConfig == nil {
-		t.Fatal("expected tls config from panel cert_config")
+		t.Fatal("expected TLS from the local CertConfig")
 	}
 	if len(tlsConfig.Certs) != 1 {
 		t.Fatalf("expected one certificate entry, got %d", len(tlsConfig.Certs))
 	}
 	cert := tlsConfig.Certs[0]
-	if cert.CertFile != "/panel/cert.pem" || cert.KeyFile != "/panel/key.pem" {
-		t.Fatalf("expected panel cert files, got cert=%q key=%q", cert.CertFile, cert.KeyFile)
+	if cert.CertFile != "/local/cert.pem" || cert.KeyFile != "/local/key.pem" {
+		t.Fatalf("expected local cert files, got cert=%q key=%q", cert.CertFile, cert.KeyFile)
 	}
 	if !tlsConfig.RejectUnknownSNI {
-		t.Fatal("expected panel reject_unknown_sni to be applied")
+		t.Fatal("expected local RejectUnknownSni to be applied")
 	}
 }
 

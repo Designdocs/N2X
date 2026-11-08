@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
-	"github.com/Designdocs/N2X/common/cdn"
 	"github.com/Designdocs/N2X/common/task"
 	"github.com/Designdocs/N2X/conf"
 	vCore "github.com/Designdocs/N2X/core"
@@ -99,9 +98,7 @@ func (c *Controller) Start() error {
 
 	// add limiter
 	l := limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, c.aliveMap)
-	l.SetDeviceTolerance(node.DeviceLimitTolerance)
-	l.SetIgnoredPrefixes(node.DeviceLimitIgnoredIPs)
-	cdn.SetDisabledProviders(node.DeviceLimitCDNDisabled)
+	c.applyDeviceLimitPolicy(l, node)
 	// add rule limiter
 	if err = l.UpdateRule(&node.Rules); err != nil {
 		return startError(StageCore, "update rule error: %w", err)

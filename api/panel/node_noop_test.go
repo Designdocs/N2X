@@ -80,6 +80,38 @@ func TestNodeConfigDecodeFailureIsNotCached(t *testing.T) {
 	}
 }
 
+func TestNodeRoutesRejectInvalidConfigBeforeCaching(t *testing.T) {
+	for _, route := range []string{
+		`{"action":"block","match":null}`,
+		`{"action":"block","match":["example",42]}`,
+		`{"action":"block","match":"regexp:["}`,
+		`{"action":"dns","match":[]}`,
+		`{"action":"dns","match":["main","{"]}`,
+		`{"action":"dns","match":["dummy.test"],"action_value":"[::1"}`,
+	} {
+		t.Run(route, func(t *testing.T) {
+			body := `{"server_port":443,"network":"tcp","routes":[` + route + `]}`
+			c := noopPanelClient(t, func(r *http.Request) (*http.Response, error) {
+				rsp := textResponse(r, http.StatusOK, body)
+				rsp.Header.Set("ETag", "fixture")
+				return rsp, nil
+			})
+			if node, err := c.GetNodeInfo(); err == nil || node != nil || c.nodeEtag != "" {
+				t.Fatalf("invalid routes reached the node cache: node=%v err=%v", node, err)
+			}
+			body = `{"server_port":443,"network":"tcp","routes":[
+				{"action":"block","match":"protocol:bt,regexp:^dummy"},
+				{"action":"dns","match":["dummy.test"],"action_value":"127.0.0.1"},
+				{"action":"ignored"}]}`
+			node, err := c.GetNodeInfo()
+			if err != nil || node == nil || len(node.Rules.Protocol) != 1 ||
+				len(node.Rules.Regexp) != 1 || len(node.RawDNS.DNSMap) != 1 {
+				t.Fatalf("valid legacy routes were not applied: node=%v err=%v", node, err)
+			}
+		})
+	}
+}
+
 func TestNodeConfigInFlightResponsePreservesForcedRetry(t *testing.T) {
 	var invalidate func()
 	c := noopPanelClient(t, func(r *http.Request) (*http.Response, error) {

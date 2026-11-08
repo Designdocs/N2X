@@ -48,7 +48,7 @@ func (c *Controller) refreshHTTPSRedirect(nodeInfo *panel.NodeInfo) {
 	if err := c.httpsRedirectManager.Upsert(
 		c.tag,
 		nodeInfo,
-		c.effectiveCertConfig(nodeInfo),
+		c.localCertConfig(),
 	); err != nil {
 		log.WithFields(log.Fields{
 			"tag": c.tag,

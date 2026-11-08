@@ -47,6 +47,22 @@ func TestBuildInboundVlessEmptyNetwork(t *testing.T) {
 	}
 }
 
+func TestBuildInboundXHTTPDiscardsClientDownloadSettings(t *testing.T) {
+	for _, settings := range []string{
+		`{"path":"/transport","downloadSettings":{"security":"tls","tlsSettings":{"certificates":[{"certificateFile":"/scratch/missing-dummy.pem"}]}}}`,
+		`{"path":"/transport","extra":{"DownloadSettings":{"security":"tls","tlsSettings":{"certificates":[{"certificateFile":"/scratch/missing-dummy.pem"}]}}}}`,
+	} {
+		node := &panel.NodeInfo{
+			Type: "vless", Security: panel.None,
+			Common: &panel.CommonNode{ServerPort: 10443},
+			VAllss: &panel.VAllssNode{Network: "xhttp", NetworkSettings: json.RawMessage(settings)},
+		}
+		if _, err := buildInbound(transportTestOptions(), node, "vless-xhttp"); err != nil {
+			t.Fatalf("client-only download settings affected the inbound: %v", err)
+		}
+	}
+}
+
 // A transport the builder cannot map must be rejected whether or not the panel
 // sent settings for it.
 func TestBuildInboundRejectsUnsupportedNetwork(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/Designdocs/N2X/common/cdn"
 	"github.com/Designdocs/N2X/conf"
 )
 
@@ -21,7 +22,7 @@ func TestDecodeDeviceAliveMapFromSyncDevices(t *testing.T) {
 		"node_id": 10
 	}`)
 
-	alive, err := decodeDeviceAliveMap(raw)
+	alive, err := decodeDeviceAliveMap(raw, &cdn.Policy{})
 	if err != nil {
 		t.Fatalf("decodeDeviceAliveMap() error = %v", err)
 	}
@@ -36,10 +37,22 @@ func TestDecodeDeviceAliveMapFromSyncDevices(t *testing.T) {
 	}
 }
 
+func TestSyncDeviceCDNPolicyIsPerClient(t *testing.T) {
+	first := &Client{AliveMap: &AliveMap{}}
+	second := &Client{AliveMap: &AliveMap{}}
+	first.SetDisabledCDNProviders([]string{"CloudFront"})
+	raw := json.RawMessage(`{"users":{"1":["15.158.212.208"]}}`)
+	first.onSyncDevices(raw)
+	second.onSyncDevices(raw)
+	if first.AliveMap.Alive[1] != 1 || second.AliveMap.Alive[1] != 0 {
+		t.Fatalf("client device policy leaked: first=%v second=%v", first.AliveMap.Alive, second.AliveMap.Alive)
+	}
+}
+
 func TestDecodeDeviceAliveMapAcceptsDevicesWrapper(t *testing.T) {
 	raw := json.RawMessage(`{"devices":{"7":["7.7.7.7"],"8":2}}`)
 
-	alive, err := decodeDeviceAliveMap(raw)
+	alive, err := decodeDeviceAliveMap(raw, &cdn.Policy{})
 	if err != nil {
 		t.Fatalf("decodeDeviceAliveMap() error = %v", err)
 	}
@@ -135,7 +148,7 @@ func textResponse(req *http.Request, status int, body string) *http.Response {
 
 func TestDeviceSyncExcludesCdnProxies(t *testing.T) {
 	raw := json.RawMessage(`{"users":{"1":["172.70.247.212:443","[2606:4700::1234]:443","::ffff:162.158.111.155","::ffff:a29e:6f9b","15.158.212.208:443","3.172.100.226","203.0.113.4","203.0.113.4:443"],"2":{"0":"104.16.0.1","1":"2001:db8::1","2":"::ffff:15.158.212.208"}}}`)
-	alive, err := decodeDeviceAliveMap(raw)
+	alive, err := decodeDeviceAliveMap(raw, &cdn.Policy{})
 	if err != nil || alive[1] != 1 || alive[2] != 1 {
 		t.Fatalf("unexpected device counts: %v, %v", alive, err)
 	}

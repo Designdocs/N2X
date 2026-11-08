@@ -28,7 +28,7 @@ type Limiter struct {
 	ProtocolRules []string
 	SpeedLimit    int
 	UserOnlineIP  *sync.Map      // Key: TagUUID, value: {Key: Ip, value: Uid}
-	OldUserOnline *sync.Map      // Key: Ip, value: Uid
+	OldUserOnline *sync.Map      // Previous period, keyed by the same TagUUID and IP
 	UUIDtoUID     map[string]int // Key: UUID, value: Uid
 	UserLimitInfo *sync.Map      // Key: TagUUID value: UserLimitInfo
 	SpeedLimiter  *sync.Map      // key: TagUUID, value: *ratelimit.Bucket
@@ -51,6 +51,7 @@ type Limiter struct {
 	// probes). Like CDN ranges these addresses are reported but never
 	// occupy a device slot. Replaced wholesale on every config pull.
 	ignoredPrefixes atomic.Pointer[[]netip.Prefix]
+	cdnPolicy       cdn.Policy
 }
 
 type UserLimitInfo struct {
@@ -121,6 +122,7 @@ func (l *Limiter) UpdateUser(tag string, added []panel.UserInfo, deleted []panel
 		tagUUID := format.UserTag(tag, deleted[i].Uuid)
 		if uid, remains := retained[tagUUID]; !remains || uid != deleted[i].Id {
 			delete(l.onlineUsers, tagUUID)
+			l.OldUserOnline.Delete(tagUUID)
 		}
 		l.UserLimitInfo.Delete(tagUUID)
 		l.UserOnlineIP.Delete(tagUUID)
@@ -218,7 +220,7 @@ func (l *Limiter) SetIgnoredPrefixes(entries []string) {
 // isExempt reports whether ip must bypass device accounting: a CDN edge or
 // an operator-ignored address. ip is expected to be unmapped already.
 func (l *Limiter) isExempt(ip string) bool {
-	if cdn.IsProxyIP(ip) {
+	if l.cdnPolicy.IsProxyIP(ip) {
 		return true
 	}
 	prefixes := l.ignoredPrefixes.Load()
@@ -236,6 +238,10 @@ func (l *Limiter) isExempt(ip string) bool {
 		}
 	}
 	return false
+}
+
+func (l *Limiter) SetDisabledCDNProviders(names []string) {
+	l.cdnPolicy.SetDisabledProviders(names)
 }
 
 // MergeKickedList merges panel-issued kicks (uid → ip → remaining ttl in
@@ -321,40 +327,25 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 	// Effective ceiling = device_limit + tolerance: headroom so a device
 	// switching nodes/networks is not blocked by its own stale alive entry.
 	effectiveLimit := deviceLimit + int(l.deviceTolerance.Load())
-	if noSSUDP {
+	if noSSUDP && !isCdn {
 		l.onlineMu.Lock()
 		defer l.onlineMu.Unlock()
-		// Store online user for device limit
-		newipMap := new(sync.Map)
-		newipMap.Store(ip, uid)
-		aliveIp := l.aliveCount(uid)
-		// If any device is online
-		if v, loaded := l.UserOnlineIP.LoadOrStore(taguuid, newipMap); loaded {
-			oldipMap := v.(*sync.Map)
-			// If this is a new ip
-			if _, loaded := oldipMap.LoadOrStore(ip, uid); !loaded {
-				if v, loaded := l.OldUserOnline.Load(ip); loaded {
-					if v.(int) == uid {
-						l.OldUserOnline.Delete(ip)
-					}
-				} else if deviceLimit > 0 && !isCdn {
-					if effectiveLimit <= aliveIp {
-						oldipMap.Delete(ip)
-						return nil, true
-					}
-				}
+		active, exists := l.UserOnlineIP.Load(taguuid)
+		if !exists {
+			active = new(sync.Map)
+		}
+		devices := active.(*sync.Map)
+		currentUID, _ := devices.Load(ip)
+		if currentUID != uid {
+			var previousUID any
+			if previous, exists := l.OldUserOnline.Load(taguuid); exists {
+				previousUID, _ = previous.(*sync.Map).LoadAndDelete(ip)
 			}
-		} else if v, ok := l.OldUserOnline.Load(ip); ok {
-			if v.(int) == uid {
-				l.OldUserOnline.Delete(ip)
+			if previousUID != uid && deviceLimit > 0 && effectiveLimit <= l.aliveCount(uid) {
+				return nil, true
 			}
-		} else {
-			if deviceLimit > 0 && !isCdn {
-				if effectiveLimit <= aliveIp {
-					l.UserOnlineIP.Delete(taguuid)
-					return nil, true
-				}
-			}
+			devices.Store(ip, uid)
+			l.UserOnlineIP.Store(taguuid, devices)
 		}
 	}
 
@@ -376,16 +367,8 @@ func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
 	l.onlineMu.Lock()
 	defer l.onlineMu.Unlock()
 	onlineUser := l.onlineDevicesLocked()
-	l.OldUserOnline = new(sync.Map)
 	// Keep the admission cache's existing cycle; reports use live registrations.
-	l.UserOnlineIP.Range(func(key, value interface{}) bool {
-		value.(*sync.Map).Range(func(ip, uid interface{}) bool {
-			l.OldUserOnline.Store(ip, uid)
-			return true
-		})
-		l.UserOnlineIP.Delete(key)
-		return true
-	})
+	l.OldUserOnline, l.UserOnlineIP = l.UserOnlineIP, new(sync.Map)
 
 	return &onlineUser, nil
 }

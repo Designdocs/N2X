@@ -351,37 +351,37 @@ func Provider(ip string) string {
 	return best.name
 }
 
-// IsProxyIP reports whether ip belongs to a recognized CDN proxy network
-// whose exemption the panel has not switched off.
-func IsProxyIP(ip string) bool {
-	return Exempt(ip) != ""
+// Policy holds the exemptions for one node. Its zero value exempts all
+// recognized CDN proxy addresses.
+type Policy struct {
+	disabled atomic.Pointer[map[string]struct{}]
 }
 
-// disabled holds the providers the panel operator switched off (lower-cased
-// names). Their edges count as ordinary devices again. Process-wide because
-// the setting is panel-wide; replaced wholesale on every config pull.
-var disabled atomic.Pointer[map[string]struct{}]
+// IsProxyIP reports whether a recognized CDN owns ip and is exempt on this node.
+func (p *Policy) IsProxyIP(ip string) bool {
+	return p.Exempt(ip) != ""
+}
 
 // SetDisabledProviders replaces the set of switched-off providers. Names
 // are matched case-insensitively; unknown names are harmless.
-func SetDisabledProviders(names []string) {
+func (p *Policy) SetDisabledProviders(names []string) {
 	set := make(map[string]struct{}, len(names))
 	for _, name := range names {
 		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
 			set[name] = struct{}{}
 		}
 	}
-	disabled.Store(&set)
+	p.disabled.Store(&set)
 }
 
 // Exempt returns the CDN that owns ip when that CDN's exemption is in force,
 // or "" when ip is an ordinary address or belongs to a switched-off provider.
-func Exempt(ip string) string {
+func (p *Policy) Exempt(ip string) string {
 	name := Provider(ip)
 	if name == "" {
 		return ""
 	}
-	if set := disabled.Load(); set != nil {
+	if set := p.disabled.Load(); set != nil {
 		if _, off := (*set)[strings.ToLower(name)]; off {
 			return ""
 		}

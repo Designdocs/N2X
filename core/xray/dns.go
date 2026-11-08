@@ -76,7 +76,7 @@ func saveDnsConfig(dns []byte, dnsPath string) (err error) {
 			log.WithField("err", err).Error("Failed to unmarshal DNS config, keeping previous DNS config")
 			return nil
 		}
-		if _, err = coreDnsConfig.Build(); err != nil {
+		if err = validatePanelDNSConfig(coreDnsConfig); err != nil {
 			recordDNSFallbackNotice("新的 DNS 配置错误，已保留上一份配置", err)
 			log.WithField("err", err).Error("Failed to understand DNS config, keeping previous DNS config. Please check: https://xtls.github.io/config/dns.html for help")
 			return nil
@@ -89,6 +89,21 @@ func saveDnsConfig(dns []byte, dnsPath string) (err error) {
 		clearDNSFallbackNotice()
 	}
 	return nil
+}
+
+func validatePanelDNSConfig(config *coreConf.DNSConfig) (err error) {
+	if config.Script != "" {
+		return errors.New("DNS scripts must be configured locally")
+	}
+	// The upstream builder can panic on null entries in decoded panel data.
+	// Keep the last good DNS file just as for other rejected settings.
+	defer func() {
+		if recover() != nil {
+			err = errors.New("invalid entries in panel DNS config")
+		}
+	}()
+	_, err = config.Build()
+	return err
 }
 
 func recordDNSFallbackNotice(message string, err error) {

@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
 )
 
@@ -185,8 +184,8 @@ func TestRequestCertSkipsACMEWhileCoolingDown(t *testing.T) {
 	}
 	certOrders.RecordFailure(certOrderCooldownKey(certConfig), acmeRejection("zone could not be found"))
 
-	controller := &Controller{}
-	err := controller.requestCert(&panel.NodeInfo{CertConfig: certConfig})
+	controller := &Controller{Options: &conf.Options{CertConfig: certConfig}}
+	err := controller.requestCert(nil)
 	if err == nil {
 		t.Fatal("expected cooldown error")
 	}
@@ -198,13 +197,12 @@ func TestRequestCertSkipsACMEWhileCoolingDown(t *testing.T) {
 func TestRequestCertFileModeReportsMissingFiles(t *testing.T) {
 	directory := t.TempDir()
 	certFile := filepath.Join(directory, "fullchain-us.example.com.cer")
-	controller := &Controller{}
-
-	err := controller.requestCert(&panel.NodeInfo{CertConfig: &conf.CertConfig{
+	controller := &Controller{Options: &conf.Options{CertConfig: &conf.CertConfig{
 		CertMode: "file",
 		CertFile: certFile,
 		KeyFile:  filepath.Join(directory, "cert-us.example.com.key"),
-	}})
+	}}}
+	err := controller.requestCert(nil)
 	if err == nil {
 		t.Fatal("expected missing cert file error")
 	}

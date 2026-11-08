@@ -7,6 +7,26 @@ import (
 	"github.com/Designdocs/N2X/conf"
 )
 
+func TestLocalCertConfigRejectsPanelOnlyTLS(t *testing.T) {
+	node := &NodeInfo{
+		Security:   Tls,
+		CertConfig: &conf.CertConfig{CertMode: "self", CertFile: "/panel/cert.pem"},
+	}
+	options := &conf.Options{CertConfig: &conf.CertConfig{CertMode: "none"}}
+	if _, err := node.LocalCertConfig(options); err == nil {
+		t.Fatal("panel-only TLS silently fell back to plaintext")
+	}
+	options.CertConfig = &conf.CertConfig{CertMode: "file", CertFile: "/local/cert.pem"}
+	if cert, err := node.LocalCertConfig(options); err != nil || cert != options.CertConfig {
+		t.Fatalf("local certificate was not used: %v", err)
+	}
+	node.CertConfig = nil
+	options.CertConfig = &conf.CertConfig{CertMode: "none"}
+	if cert, err := node.LocalCertConfig(options); err != nil || cert.CertMode != "none" {
+		t.Fatalf("local TLS offload was not preserved: %v", err)
+	}
+}
+
 func TestClientGetNodeInfoPromotesPanelCertConfig(t *testing.T) {
 	client, err := New(&conf.ApiConfig{
 		APIHost:  "http://panel.test",

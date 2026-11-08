@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
-	"github.com/Designdocs/N2X/common/cdn"
 	"github.com/Designdocs/N2X/common/task"
 	vCore "github.com/Designdocs/N2X/core"
 	"github.com/Designdocs/N2X/limiter"
@@ -52,7 +51,7 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	// is never stacked onto a panel round trip.
 	c.startArtXPressureSampler(node)
 	if node.Security == panel.Tls {
-		certConfig := c.effectiveCertConfig(node)
+		certConfig := c.localCertConfig()
 		certMode := ""
 		if certConfig != nil {
 			certMode = certConfig.CertMode
@@ -63,7 +62,7 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 			c.renewCertPeriodic = &task.Task{
 				Interval: time.Hour * 24,
 				Execute: func() error {
-					return c.renewCertTask(c.effectiveCertConfig(c.info))
+					return c.renewCertTask(c.localCertConfig())
 				},
 			}
 			log.WithField("tag", c.tag).Info("Start renew cert")
@@ -112,12 +111,16 @@ func (c *Controller) abortReload(reason string, cause error) error {
 func (c *Controller) nodeInfoMonitor() (err error) {
 	// get node info
 	newN, err := c.apiClient.GetNodeInfo()
+	if err == nil && newN != nil {
+		_, err = newN.LocalCertConfig(c.Options)
+	}
 	if err != nil {
 		log.WithFields(log.Fields{
 			"tag": c.tag,
 			"err": err,
 		}).Error("Get node info failed")
-		return nil
+		// Keep the active listener, but still apply changes to its user roster.
+		newN = nil
 	}
 	// get user info
 	newU, err := c.apiClient.GetUserList()
@@ -178,9 +181,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		// its old slice before publishing under the new one.
 		c.clearArtXUserRatesForTag(oldTag)
 		c.limiter = limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, newA)
-		c.limiter.SetDeviceTolerance(newN.DeviceLimitTolerance)
-		c.limiter.SetIgnoredPrefixes(newN.DeviceLimitIgnoredIPs)
-		cdn.SetDisabledProviders(newN.DeviceLimitCDNDisabled)
+		c.applyDeviceLimitPolicy(c.limiter, newN)
 		// update alive list
 		if newA != nil {
 			c.setAliveMap(newA)

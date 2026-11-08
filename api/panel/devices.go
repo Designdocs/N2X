@@ -11,7 +11,7 @@ import (
 	"github.com/Designdocs/N2X/common/cdn"
 )
 
-func decodeDeviceAliveMap(raw json.RawMessage) (map[int]int, error) {
+func decodeDeviceAliveMap(raw json.RawMessage, policy *cdn.Policy) (map[int]int, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return map[int]int{}, nil
 	}
@@ -32,7 +32,7 @@ func decodeDeviceAliveMap(raw json.RawMessage) (map[int]int, error) {
 		if err != nil || uid <= 0 {
 			continue
 		}
-		count, err := countDeviceIPs(rawIPs)
+		count, err := countDeviceIPs(rawIPs, policy)
 		if err != nil {
 			continue
 		}
@@ -57,7 +57,7 @@ func extractDeviceUsers(raw json.RawMessage) (json.RawMessage, error) {
 	return raw, nil
 }
 
-func countDeviceIPs(raw json.RawMessage) (int, error) {
+func countDeviceIPs(raw json.RawMessage, policy *cdn.Policy) (int, error) {
 	var count int
 	if err := json.Unmarshal(raw, &count); err == nil {
 		if count < 0 {
@@ -67,44 +67,44 @@ func countDeviceIPs(raw json.RawMessage) (int, error) {
 	}
 
 	ips := make(map[string]struct{})
-	if err := appendDeviceIPsFromArray(raw, ips); err == nil {
+	if err := appendDeviceIPsFromArray(raw, ips, policy); err == nil {
 		return len(ips), nil
 	}
-	if err := appendDeviceIPsFromObject(raw, ips); err == nil {
+	if err := appendDeviceIPsFromObject(raw, ips, policy); err == nil {
 		return len(ips), nil
 	}
 	return 0, fmt.Errorf("unsupported device ip payload")
 }
 
-func appendDeviceIPsFromArray(raw json.RawMessage, ips map[string]struct{}) error {
+func appendDeviceIPsFromArray(raw json.RawMessage, ips map[string]struct{}, policy *cdn.Policy) error {
 	var values []string
 	if err := json.Unmarshal(raw, &values); err != nil {
 		return err
 	}
 	for _, value := range values {
-		addDeviceIP(ips, value)
+		addDeviceIP(ips, value, policy)
 	}
 	return nil
 }
 
-func appendDeviceIPsFromObject(raw json.RawMessage, ips map[string]struct{}) error {
+func appendDeviceIPsFromObject(raw json.RawMessage, ips map[string]struct{}, policy *cdn.Policy) error {
 	var values map[string]string
 	if err := json.Unmarshal(raw, &values); err != nil {
 		return err
 	}
 	for _, value := range values {
-		addDeviceIP(ips, value)
+		addDeviceIP(ips, value, policy)
 	}
 	return nil
 }
 
-func addDeviceIP(ips map[string]struct{}, ip string) {
+func addDeviceIP(ips map[string]struct{}, ip string, policy *cdn.Policy) {
 	ip = strings.TrimSpace(ip)
 	if ip == "" {
 		return
 	}
 	ip = normalizeDeviceIP(ip)
-	if cdn.IsProxyIP(ip) {
+	if policy.IsProxyIP(ip) {
 		return
 	}
 	ips[ip] = struct{}{}

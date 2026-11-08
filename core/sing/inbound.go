@@ -77,16 +77,20 @@ func buildTLSOptions(info *panel.NodeInfo, c *conf.Options) (option.InboundTLSOp
 	var tls option.InboundTLSOptions
 	switch info.Security {
 	case panel.Tls:
-		if c.CertConfig == nil {
+		certConfig, err := info.LocalCertConfig(c)
+		if err != nil {
+			return tls, err
+		}
+		if certConfig == nil {
 			return tls, fmt.Errorf("the CertConfig is not valid")
 		}
-		switch c.CertConfig.CertMode {
+		switch certConfig.CertMode {
 		case "none", "":
 			// TLS intentionally disabled for this node.
 		default:
 			tls.Enabled = true
-			tls.CertificatePath = c.CertConfig.CertFile
-			tls.KeyPath = c.CertConfig.KeyFile
+			tls.CertificatePath = certConfig.CertFile
+			tls.KeyPath = certConfig.KeyFile
 		}
 	case panel.Reality:
 		// REALITY sits on the stream, below the proxy protocol, so trojan and

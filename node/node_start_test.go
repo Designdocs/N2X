@@ -74,12 +74,12 @@ func TestNodeStartReportsWhichStageFailed(t *testing.T) {
 			wantText: "get node info error",
 		},
 		{
-			name:     "certificate file missing",
+			name:     "panel-only certificate is refused",
 			nodeType: "anytls",
 			nodeBody: nodeBody(`"server_name": "edge.example.com", "cert_config": {"cert_mode": "file", "cert_file": "` +
 				missing + `.pem", "key_file": "` + missing + `.key"}`),
 			want:     StageCert,
-			wantText: "cert file not found",
+			wantText: "requires a local CertConfig",
 		},
 		{
 			name:     "core rejects the node",
@@ -113,5 +113,50 @@ func TestNodeStartReportsWhichStageFailed(t *testing.T) {
 				t.Errorf("failure error = %v, want it to mention %q", got.Err, tt.wantText)
 			}
 		})
+	}
+}
+
+type rosterStubCore struct {
+	vCore.Core
+	deleted []panel.UserInfo
+}
+
+func (c *rosterStubCore) DelUsers(users []panel.UserInfo, _ string, _ *panel.NodeInfo) error {
+	c.deleted = append(c.deleted, users...)
+	return nil
+}
+
+func TestInvalidNodeConfigStillRevokesRemovedUsers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/server/UniProxy/config":
+			_, _ = w.Write([]byte(`{"server_port":443,"routes":[{"action":"dns","match":[]}]}`))
+		case "/api/v1/server/UniProxy/user":
+			_, _ = w.Write([]byte(`{"users":[]}`))
+		case "/api/v1/server/UniProxy/alivelist":
+			_, _ = w.Write([]byte(`{"alive":{}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client, err := panel.New(&conf.ApiConfig{APIHost: server.URL, Key: "dummy", NodeType: "vless", NodeID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	limiter.Init()
+	core := &rosterStubCore{}
+	controller := NewController(core, client, &conf.Options{}, nil)
+	controller.tag = t.Name()
+	controller.info = &panel.NodeInfo{Type: "vless"}
+	controller.userList = []panel.UserInfo{{Id: 1, Uuid: "00000000-0000-0000-0000-000000000001"}}
+	controller.limiter = limiter.AddLimiter(controller.tag, &conf.LimitConfig{}, controller.userList, nil)
+	defer limiter.DeleteLimiter(controller.tag)
+	if err := controller.nodeInfoMonitor(); err != nil {
+		t.Fatal(err)
+	}
+	if len(core.deleted) != 1 || len(controller.userList) != 0 {
+		t.Fatalf("invalid node config blocked credential revocation: deleted=%d", len(core.deleted))
 	}
 }

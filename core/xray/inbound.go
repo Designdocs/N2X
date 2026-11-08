@@ -164,7 +164,10 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 }
 
 func buildInboundTLSConfig(option *conf.Options, nodeInfo *panel.NodeInfo) (*coreConf.TLSConfig, error) {
-	certConfig := getInboundCertConfig(option, nodeInfo)
+	certConfig, err := nodeInfo.LocalCertConfig(option)
+	if err != nil {
+		return nil, err
+	}
 	if certConfig == nil {
 		return nil, errors.New("the CertConfig is not vail")
 	}
@@ -194,16 +197,6 @@ func buildInboundTLSConfig(option *conf.Options, nodeInfo *panel.NodeInfo) (*cor
 	}
 
 	return tlsConfig, nil
-}
-
-func getInboundCertConfig(option *conf.Options, nodeInfo *panel.NodeInfo) *conf.CertConfig {
-	if nodeInfo != nil && nodeInfo.CertConfig != nil && nodeInfo.CertConfig.CertMode != "" {
-		return nodeInfo.CertConfig
-	}
-	if option == nil {
-		return nil
-	}
-	return option.CertConfig
 }
 
 type inboundECHConfig struct {
@@ -405,6 +398,26 @@ func buildStreamSettings(network string, networkSettings json.RawMessage, inboun
 	}
 	if err := json.Unmarshal(networkSettings, settings); err != nil {
 		return fmt.Errorf("unmarshal %s settings error: %w", network, err)
+	}
+	if xhttp := inbound.StreamSetting.SplitHTTPSettings; xhttp != nil {
+		// This client-only configuration can open TLS files during Build.
+		xhttp.DownloadSettings = nil
+		if len(xhttp.Extra) > 0 {
+			var extra map[string]json.RawMessage
+			if err := json.Unmarshal(xhttp.Extra, &extra); err != nil {
+				return fmt.Errorf("unmarshal %s extra settings error: %w", network, err)
+			}
+			for key := range extra {
+				if strings.EqualFold(key, "downloadSettings") {
+					delete(extra, key)
+				}
+			}
+			raw, err := json.Marshal(extra)
+			if err != nil {
+				return fmt.Errorf("marshal %s extra settings error: %w", network, err)
+			}
+			xhttp.Extra = raw
+		}
 	}
 	return nil
 }
