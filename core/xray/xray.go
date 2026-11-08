@@ -1,6 +1,7 @@
 package xray
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -108,19 +109,7 @@ func getCore(c *conf.XrayConfig) *core.Instance {
 			log.WithField("err", err).Panic("Failed to build default DNS config")
 		}
 	}
-	// Routing config
-	coreRouterConfig := &coreConf.RouterConfig{}
-	if c.RouteConfigPath != "" {
-		data, err := os.ReadFile(c.RouteConfigPath)
-		if err != nil {
-			log.WithField("err", err).Panic("Failed to read Routing config file")
-		} else {
-			if err = json.Unmarshal(data, coreRouterConfig); err != nil {
-				log.WithField("err", err).Panic("Failed to unmarshal Routing config")
-			}
-		}
-	}
-	routeConfig, err := coreRouterConfig.Build()
+	routeConfig, err := buildRouteConfig(c)
 	if err != nil {
 		log.WithField("err", err).Panic("Failed to understand Routing config. Please check: https://xtls.github.io/config/routing.html for help")
 	}
@@ -144,49 +133,44 @@ func getCore(c *conf.XrayConfig) *core.Instance {
 		}
 		inBoundConfig = append(inBoundConfig, oc)
 	}
-	// Custom Outbound config
-	var coreCustomOutboundConfig []coreConf.OutboundDetourConfig
-	if c.OutboundConfigPath != "" {
-		data, err := os.ReadFile(c.OutboundConfigPath)
-		if err != nil {
-			log.WithField("err", err).Panic("Failed to read Custom Outbound config file")
-		} else {
-			if err = json.Unmarshal(data, &coreCustomOutboundConfig); err != nil {
-				log.WithField("err", err).Panic("Failed to unmarshal Custom Outbound config")
-			}
-		}
-	}
-	var outBoundConfig []*core.OutboundHandlerConfig
-	for _, config := range coreCustomOutboundConfig {
-		oc, err := config.Build()
-		if err != nil {
-			log.WithField("err", err).Panic("Failed to understand Outbound config, Please check: https://xtls.github.io/config/outbound.html for help")
-		}
-		outBoundConfig = append(outBoundConfig, oc)
+	outboundDefinitions, err := readOutboundDefinitions(c)
+	if err != nil {
+		log.WithField("err", err).Panic("Failed to understand Custom Outbound config")
 	}
 	// Policy config
 	levelPolicyConfig := parseConnectionConfig(c.ConnectionConfig)
 	corePolicyConfig := &coreConf.PolicyConfig{}
 	corePolicyConfig.Levels = map[uint32]*coreConf.Policy{0: levelPolicyConfig}
 	policyConfig, _ := corePolicyConfig.Build()
-	// Build Xray conf
-	config := &core.Config{
-		App: []*serial.TypedMessage{
-			serial.ToTypedMessage(coreLogConfig.Build()),
-			serial.ToTypedMessage(&dispatcher.Config{}),
-			serial.ToTypedMessage(&stats.Config{}),
-			serial.ToTypedMessage(&proxyman.InboundConfig{}),
-			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
-			serial.ToTypedMessage(policyConfig),
-			serial.ToTypedMessage(dnsConfig),
-			serial.ToTypedMessage(routeConfig),
-		},
-		Inbound:  inBoundConfig,
-		Outbound: outBoundConfig,
+	app := []*serial.TypedMessage{
+		serial.ToTypedMessage(coreLogConfig.Build()),
+		serial.ToTypedMessage(&dispatcher.Config{}),
+		serial.ToTypedMessage(&stats.Config{}),
+		serial.ToTypedMessage(&proxyman.InboundConfig{}),
 	}
-	server, err := core.New(config)
+	ctx := context.Background()
+	var manager *outboundManager
+	if c.OutboundConfigPath == "" {
+		app = append(app, serial.ToTypedMessage(&proxyman.OutboundConfig{}))
+	} else {
+		manager, err = newOutboundManager(ctx)
+		if err != nil {
+			log.WithField("err", err).Panic("Failed to create outbound manager")
+		}
+		ctx = dispatcher.WithOutboundManager(ctx, manager)
+	}
+	app = append(app, serial.ToTypedMessage(policyConfig), serial.ToTypedMessage(dnsConfig), serial.ToTypedMessage(routeConfig))
+	server, err := core.NewWithContext(ctx, &core.Config{App: app, Inbound: inBoundConfig})
 	if err != nil {
 		log.WithField("err", err).Panic("failed to create instance")
+	}
+	if manager != nil {
+		finish, err := manager.prepare(outboundDefinitions, outboundFactory(server), false, nil)
+		if err != nil {
+			_ = server.Close()
+			log.WithField("err", err).Panic("Failed to create Custom Outbound handlers")
+		}
+		finish(true)
 	}
 	log.Info("Xray Core Version: ", core.Version())
 	return server

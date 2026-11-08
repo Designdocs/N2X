@@ -111,8 +111,21 @@ type DefaultDispatcher struct {
 	singMux      sync.Map // map[inbound tag]SingMuxOptions
 }
 
+type outboundManagerKey struct{}
+
+// WithOutboundManager provides the manager that the Xray instance should
+// register before resolving its dispatcher, router and dialer dependencies.
+func WithOutboundManager(ctx context.Context, manager outbound.Manager) context.Context {
+	return context.WithValue(ctx, outboundManagerKey{}, manager)
+}
+
 func init() {
 	common.Must(common.RegisterConfig((*Config)(nil), func(ctx context.Context, config interface{}) (interface{}, error) {
+		if manager, ok := ctx.Value(outboundManagerKey{}).(outbound.Manager); ok {
+			if err := core.MustFromContext(ctx).AddFeature(manager); err != nil {
+				return nil, err
+			}
+		}
 		d := new(DefaultDispatcher)
 		if err := core.RequireFeatures(ctx, func(om outbound.Manager, router routing.Router, pm policy.Manager, sm stats.Manager, dc dns.Client) error {
 			core.OptionalFeatures(ctx, func(fdns dns.FakeDNSEngine) {

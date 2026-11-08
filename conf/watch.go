@@ -3,11 +3,10 @@ package conf
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,8 +20,8 @@ var (
 	watchSettle   = 5 * time.Second
 )
 
-// Watch reloads only when the effective config or DNS content changes. A DNS file
-// that does not exist yet is watched through its directory. The new file is
+// Watch reloads when a write to a watched config file changes
+// the effective configuration. The new configuration is
 // validated with opts first; if it has any problem, or a warning the running
 // config does not have, the running config is kept, reload is not called and
 // the error goes to rejected, or to the log when rejected is nil.
@@ -46,25 +45,12 @@ func (p *Conf) WatchWithError(filePath, xDnsPath string, opts ValidateOptions, r
 	if err != nil {
 		return nil, fmt.Errorf("new watcher error: %w", err)
 	}
-	if err := watcher.Add(filePath); err != nil {
+	if _, err := os.Stat(filePath); err != nil {
 		watcher.Close()
 		return nil, fmt.Errorf("watch file error: %w", err)
 	}
-	// dnsDir is set when the DNS file does not exist yet: its directory is
-	// watched instead, so the file is picked up once xray writes it.
-	var dnsDir string
-	if xDnsPath != "" {
-		target := xDnsPath
-		if _, err := os.Stat(xDnsPath); errors.Is(err, fs.ErrNotExist) {
-			dnsDir = filepath.Dir(xDnsPath)
-			target = dnsDir
-		}
-		if err := watcher.Add(target); err != nil {
-			watcher.Close()
-			return nil, fmt.Errorf("watch dns file error: %w", err)
-		}
-	}
 	var state watchState
+	initial := p
 	if p.loadedWatchState != nil {
 		// Use the config actually loaded before startup. Reading the current
 		// file here would silently adopt an edit that has not been applied.
@@ -72,7 +58,7 @@ func (p *Conf) WatchWithError(filePath, xDnsPath string, opts ValidateOptions, r
 		state.addFile(xDnsPath)
 	} else {
 		// Compatibility for callers that constructed Conf themselves.
-		initial, err := LoadValidated(filePath, opts)
+		initial, err = LoadValidated(filePath, opts)
 		if err != nil {
 			watcher.Close()
 			return nil, fmt.Errorf("snapshot watched config: %w", err)
@@ -82,6 +68,11 @@ func (p *Conf) WatchWithError(filePath, xDnsPath string, opts ValidateOptions, r
 			watcher.Close()
 			return nil, fmt.Errorf("snapshot watched config: %w", err)
 		}
+	}
+	targets := watchTargets{watcher: watcher, outbounds: opts.ReloadOutbounds != nil}
+	if _, err := targets.update(filePath, xDnsPath, initial); err != nil {
+		watcher.Close()
+		return nil, err
 	}
 
 	done, exited := make(chan struct{}), make(chan struct{})
@@ -134,6 +125,15 @@ func (p *Conf) WatchWithError(filePath, xDnsPath string, opts ValidateOptions, r
 			}
 			timerC = timer.C
 		}
+		for _, kind := range targets.files {
+			if kind == "outbound" {
+				// An edit can arrive between loading the initial config and
+				// attaching the watches after the nodes start.
+				changed, lastEvent, pending = kind, time.Now(), true
+				schedule()
+				break
+			}
+		}
 		for {
 			select {
 			case <-done:
@@ -147,10 +147,11 @@ func (p *Conf) WatchWithError(filePath, xDnsPath string, opts ValidateOptions, r
 				if event.Op == fsnotify.Chmod {
 					continue
 				}
-				if dnsDir != "" && isOtherFileIn(dnsDir, event.Name, filePath, xDnsPath) {
+				kind, watched := targets.files[filepath.Clean(event.Name)]
+				if !watched {
 					continue
 				}
-				changed, lastEvent, pending = event.Name, time.Now(), true
+				changed, lastEvent, pending = kind, time.Now(), true
 				schedule()
 			case <-timerC:
 				timerC = nil
@@ -170,6 +171,12 @@ func (p *Conf) WatchWithError(filePath, xDnsPath string, opts ValidateOptions, r
 				}()
 			case <-finished:
 				active = false
+				if updated, err := targets.update(filePath, xDnsPath, p); err != nil {
+					log.Printf("File watcher error: %s", err)
+				} else if updated && !pending {
+					// Recheck edits that arrived before a new watch was attached.
+					changed, lastEvent, pending = "config", time.Now(), true
+				}
 				if pending {
 					schedule()
 				}
@@ -206,6 +213,19 @@ func (p *Conf) reloadChanged(done <-chan struct{}, changed, filePath, xDnsPath s
 	if err == nil {
 		nextState, err = snapshotWatchState(next, xDnsPath)
 	}
+	if err == nil && !state.retry && state.equal(nextState) {
+		return
+	}
+	var outbounds map[string]struct{}
+	if err == nil && opts.ReloadOutbounds != nil {
+		outbounds = state.changedOutbounds(nextState, next, xDnsPath)
+		if len(outbounds) > 0 {
+			err = opts.ReloadOutbounds(next, outbounds)
+		}
+	}
+	if err == nil && len(outbounds) == 0 && opts.CheckReload != nil {
+		err = opts.CheckReload(p, next)
+	}
 	if err != nil {
 		if rejected != nil {
 			rejected(err)
@@ -214,15 +234,14 @@ func (p *Conf) reloadChanged(done <-chan struct{}, changed, filePath, xDnsPath s
 		}
 		return
 	}
-	if !state.retry && state.equal(nextState) {
+	if len(outbounds) > 0 {
+		// Leave the main config and node objects in place. The live outbound
+		// managers have accepted the new file contents.
+		*state = nextState
+		log.Println("reload outbound config success")
 		return
 	}
-	switch filepath.Base(strings.TrimSuffix(changed, "~")) {
-	case filepath.Base(xDnsPath):
-		log.Println("DNS file changed, reloading...")
-	default:
-		log.Println("config file changed, reloading...")
-	}
+	log.Printf("%s file changed, reloading...", changed)
 	*p = *next
 	if err := reload(); err != nil {
 		state.retry = true
@@ -233,17 +252,70 @@ func (p *Conf) reloadChanged(done <-chan struct{}, changed, filePath, xDnsPath s
 	log.Println("reload config success")
 }
 
-// isOtherFileIn reports whether name, an event from the watched directory
-// dir, is about a file other than the watched ones.
-func isOtherFileIn(dir, name string, watched ...string) bool {
-	name = filepath.Clean(strings.TrimSuffix(name, "~"))
-	if filepath.Dir(name) != filepath.Clean(dir) {
-		return false
+type watchTargets struct {
+	watcher   *fsnotify.Watcher
+	files     map[string]string
+	dirs      map[string]struct{}
+	outbounds bool
+}
+
+// Watch parent directories so a save that replaces a file with a rename
+// does not detach its watch. Filter events to the configured paths.
+func (w *watchTargets) update(config, dns string, c *Conf) (bool, error) {
+	files := make(map[string]string)
+	dirs := make(map[string]struct{})
+	addFile := func(path, kind string) {
+		dir := filepath.Dir(path)
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
+		files[filepath.Join(dir, filepath.Base(path))] = kind
+		dirs[dir] = struct{}{}
 	}
-	for _, path := range watched {
-		if name == filepath.Clean(path) {
-			return false
+	add := func(path, kind string) {
+		if path == "" {
+			return
+		}
+		if absolute, err := filepath.Abs(path); err == nil {
+			path = absolute
+		}
+		addFile(path, kind)
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			addFile(resolved, kind)
 		}
 	}
-	return true
+	for _, core := range c.CoresConfig {
+		if x := core.XrayConfig; x != nil {
+			if w.outbounds {
+				add(x.OutboundConfigPath, "outbound")
+			}
+			add(x.RouteConfigPath, "route")
+		}
+	}
+	add(dns, "DNS")
+	add(config, "config")
+
+	var added []string
+	for dir := range dirs {
+		if _, ok := w.dirs[dir]; ok {
+			continue
+		}
+		if err := w.watcher.Add(dir); err != nil {
+			for _, dir := range added {
+				_ = w.watcher.Remove(dir)
+			}
+			return false, fmt.Errorf("watch directory %s: %w", dir, err)
+		}
+		added = append(added, dir)
+	}
+	for dir := range w.dirs {
+		if _, keep := dirs[dir]; !keep {
+			if err := w.watcher.Remove(dir); err != nil && !errors.Is(err, fsnotify.ErrNonExistentWatch) {
+				log.Printf("File watcher error: %s", err)
+			}
+		}
+	}
+	updated := !maps.Equal(w.files, files)
+	w.files, w.dirs = files, dirs
+	return updated, nil
 }

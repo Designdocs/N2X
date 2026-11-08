@@ -19,6 +19,7 @@
             "type": "field",
             "outboundTag": "socks5-unlock",
             "domain": [
+                "ipsuper.com",
                 "domain:socks5-unlock.invalid"
             ]
         },

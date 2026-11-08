@@ -41,12 +41,13 @@ func snapshotWatchState(c *Conf, dnsPath string) (watchState, error) {
 	}
 	state := watchState{config: config, files: make(map[string]watchFileState)}
 	state.addFile(dnsPath)
-	// Re-saving the main file is also how operators apply changes to a
-	// referenced route/outbound/original config. These contents are part of
-	// the effective config, even when their path strings did not change.
+	// Referenced file contents are part of the effective config, even when
+	// their paths do not change.
 	for _, core := range c.CoresConfig {
 		if x := core.XrayConfig; x != nil {
-			for _, path := range []string{x.DnsConfigPath, x.RouteConfigPath, x.InboundConfigPath, x.OutboundConfigPath} {
+			state.addFileData(x.RouteConfigPath, x.routeConfigData, nil)
+			state.addFileData(x.OutboundConfigPath, x.outboundConfigData, nil)
+			for _, path := range []string{x.DnsConfigPath, x.InboundConfigPath} {
 				state.addFile(path)
 			}
 		}
@@ -57,6 +58,49 @@ func snapshotWatchState(c *Conf, dnsPath string) (watchState, error) {
 	return state, nil
 }
 
+// changedOutbounds returns the changed files only when all changes can be
+// applied to the running outbound managers without rebuilding a core.
+func (s watchState) changedOutbounds(next watchState, c *Conf, dnsPath string) map[string]struct{} {
+	if s.retry || !bytes.Equal(s.config, next.config) || len(s.files) != len(next.files) {
+		return nil
+	}
+	outbounds := make(map[string]struct{})
+	for _, core := range c.CoresConfig {
+		if x := core.XrayConfig; x != nil && x.OutboundConfigPath != "" {
+			outbounds[x.OutboundConfigPath] = struct{}{}
+		}
+	}
+	delete(outbounds, dnsPath)
+	for _, core := range c.CoresConfig {
+		if x := core.XrayConfig; x != nil {
+			delete(outbounds, x.RouteConfigPath)
+			delete(outbounds, x.DnsConfigPath)
+			delete(outbounds, x.InboundConfigPath)
+		}
+		if sing := core.SingConfig; sing != nil {
+			delete(outbounds, sing.OriginalPath)
+		}
+	}
+	var changed map[string]struct{}
+	for path, file := range next.files {
+		previous, ok := s.files[path]
+		if !ok {
+			return nil
+		}
+		if previous.err == file.err && bytes.Equal(previous.data, file.data) {
+			continue
+		}
+		if _, ok := outbounds[path]; !ok {
+			return nil
+		}
+		if changed == nil {
+			changed = make(map[string]struct{})
+		}
+		changed[path] = struct{}{}
+	}
+	return changed
+}
+
 func (s *watchState) addFile(path string) {
 	if path == "" {
 		return
@@ -65,6 +109,13 @@ func (s *watchState) addFile(path string) {
 		return
 	}
 	data, err := os.ReadFile(path)
+	s.addFileData(path, data, err)
+}
+
+func (s *watchState) addFileData(path string, data []byte, err error) {
+	if path == "" {
+		return
+	}
 	file := watchFileState{data: data}
 	if err != nil {
 		// Pre-existing DNS warnings are allowed; repairing the file still

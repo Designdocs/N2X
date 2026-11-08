@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Designdocs/N2X/common/envfile"
+	"github.com/Designdocs/N2X/conf"
 	vCore "github.com/Designdocs/N2X/core"
 	"github.com/Designdocs/N2X/limiter"
 	"github.com/Designdocs/N2X/node"
@@ -288,7 +289,17 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 	log.Info("Nodes started")
 	if watch {
 		// Stop the watcher before shutdown closes the active core.
-		stopWatch, watchErr := c.WatchWithError(config, xdns, validateOptions(), func() error {
+		opts := validateOptions()
+		opts.CheckReload = func(previous, next *conf.Conf) error {
+			if err := vCore.CheckRouteChanges(vc, previous.CoresConfig, next.CoresConfig); err != nil {
+				return err
+			}
+			return vCore.CheckOutboundChanges(vc, previous.CoresConfig, next.CoresConfig)
+		}
+		opts.ReloadOutbounds = func(next *conf.Conf, changed map[string]struct{}) error {
+			return vCore.ReloadOutbounds(vc, next.CoresConfig, changed)
+		}
+		stopWatch, watchErr := c.WatchWithError(config, xdns, opts, func() error {
 			memory.configure(c.MemoryConfig)
 			scheduled.configure(c.ScheduledRestart)
 			var reloadReport startupReport

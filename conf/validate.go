@@ -21,6 +21,10 @@ type ValidateOptions struct {
 	// CoreTypes lists the core types compiled into the running binary. Empty
 	// skips that check.
 	CoreTypes []string
+	// CheckReload validates runtime-specific changes before Watch applies them.
+	CheckReload func(previous, next *Conf) error
+	// ReloadOutbounds applies outbound-only edits without rebuilding the cores.
+	ReloadOutbounds func(next *Conf, paths map[string]struct{}) error
 }
 
 // IssueKind sorts problems so an operator can tell a broken file from a wrong
@@ -128,9 +132,10 @@ func LoadValidated(filePath string, opts ValidateOptions) (*Conf, error) {
 }
 
 type validator struct {
-	opts     ValidateOptions
-	issues   []Issue
-	warnings []Issue
+	opts      ValidateOptions
+	issues    []Issue
+	warnings  []Issue
+	coreFiles map[string][]byte
 	// envPaths holds values that came from a missing environment variable;
 	// rules skip them because their real value is unknown.
 	envPaths map[string]bool

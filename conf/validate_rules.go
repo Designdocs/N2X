@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"bytes"
 	jsonv2 "encoding/json/v2"
 	"fmt"
 	"net/netip"
@@ -137,9 +138,27 @@ func (v *validator) checkXrayCore(path string, x *XrayConfig) {
 		"reload rejected: xray keeps its current DNS settings", func() {
 			v.checkJSONFile(path+".DnsConfigPath", x.DnsConfigPath, false)
 		})
-	v.checkJSONFile(path+".RouteConfigPath", x.RouteConfigPath, false)
+	x.routeConfigData = v.checkSharedCoreFile(path+".RouteConfigPath", x.RouteConfigPath, false)
 	v.checkJSONFile(path+".InboundConfigPath", x.InboundConfigPath, true)
-	v.checkJSONFile(path+".OutboundConfigPath", x.OutboundConfigPath, true)
+	x.outboundConfigData = v.checkSharedCoreFile(path+".OutboundConfigPath", x.OutboundConfigPath, true)
+}
+
+func (v *validator) checkSharedCoreFile(path, file string, wantArray bool) []byte {
+	if data := v.coreFiles[file]; data != nil {
+		if wantArray == (bytes.TrimSpace(data)[0] == '[') {
+			return data
+		}
+		v.add(path, "%s has a different JSON type than this setting requires", file)
+		return nil
+	}
+	data := v.checkJSONFile(path, file, wantArray)
+	if data != nil {
+		if v.coreFiles == nil {
+			v.coreFiles = make(map[string][]byte)
+		}
+		v.coreFiles[file] = data
+	}
+	return data
 }
 
 func (v *validator) checkSingCore(path string, s *SingConfig) {
@@ -160,14 +179,14 @@ func (v *validator) checkSingCore(path string, s *SingConfig) {
 // checkJSONFile parses a file xray reads itself with strict JSON. A bad
 // route, inbound or outbound file aborts the whole process; a bad DNS file is
 // only logged and xray runs without the DNS settings.
-func (v *validator) checkJSONFile(path, file string, wantArray bool) {
+func (v *validator) checkJSONFile(path, file string, wantArray bool) []byte {
 	if file == "" {
-		return
+		return nil
 	}
 	raw, err := os.ReadFile(file)
 	if err != nil {
 		v.add(path, "cannot read %s: %v", file, err)
-		return
+		return nil
 	}
 	var tree any
 	if err := jsonv2.Unmarshal(raw, &tree); err != nil {
@@ -176,16 +195,19 @@ func (v *validator) checkJSONFile(path, file string, wantArray bool) {
 		for i := before; i < len(v.issues); i++ {
 			v.issues[i] = Issue{Path: path, Message: fmt.Sprintf("%s: %s", file, v.issues[i].String()), Kind: v.issues[i].Kind}
 		}
-		return
+		return nil
 	}
 	switch _, isArray := tree.([]any); {
 	case wantArray && !isArray:
 		v.add(path, "%s must contain a JSON array", file)
+		return nil
 	case !wantArray:
 		if _, isObject := tree.(map[string]any); !isObject {
 			v.add(path, "%s must contain a JSON object", file)
+			return nil
 		}
 	}
+	return raw
 }
 
 func (v *validator) checkParentDir(path, file string) {

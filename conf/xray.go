@@ -2,6 +2,7 @@ package conf
 
 import (
 	"encoding/json"
+	"os"
 
 	"github.com/Designdocs/N2X/decoy"
 )
@@ -20,6 +21,25 @@ type XrayConfig struct {
 	// zero struct, which would turn a plain bool off for every config file
 	// written before this option existed.
 	EnableBTExtraSniffing *bool `json:"EnableBTExtraSniffing"`
+	routeConfigData       []byte
+	outboundConfigData    []byte
+}
+
+// ReadRouteConfig returns the bytes checked by LoadValidated, so a save that
+// arrives during a reload is applied in the next reload.
+func (x *XrayConfig) ReadRouteConfig() ([]byte, error) {
+	if x.routeConfigData != nil || x.RouteConfigPath == "" {
+		return x.routeConfigData, nil
+	}
+	return os.ReadFile(x.RouteConfigPath)
+}
+
+// ReadOutboundConfig uses the same file contents as the validated snapshot.
+func (x *XrayConfig) ReadOutboundConfig() ([]byte, error) {
+	if x.outboundConfigData != nil || x.OutboundConfigPath == "" {
+		return x.outboundConfigData, nil
+	}
+	return os.ReadFile(x.OutboundConfigPath)
 }
 
 // BTExtraSniffingEnabled reports whether the DHT and UDP tracker sniffers
