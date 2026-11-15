@@ -79,13 +79,14 @@ type wsDriverHooks struct {
 
 // wsDriverConfig is the immutable configuration handed to newWSDriver.
 type wsDriverConfig struct {
-	URL      string
-	NodeID   int
-	NodeType string
-	Token    string
-	SendIP   string
-	Debug    bool
-	Hooks    wsDriverHooks
+	URL        string
+	NodeID     int
+	NodeType   string
+	Token      string
+	SendIP     string
+	InstanceID string
+	Debug      bool
+	Hooks      wsDriverHooks
 }
 
 // wsDriver owns the lifecycle of a WebSocket session. One driver per panel
@@ -234,6 +235,9 @@ func (d *wsDriver) runSession() error {
 		return fmt.Errorf("parse url: %w", err)
 	}
 	q := u.Query()
+	if d.cfg.InstanceID != "" {
+		q.Set("instance_id", d.cfg.InstanceID)
+	}
 	q.Set("token", d.cfg.Token)
 	q.Set("node_id", strconv.Itoa(d.cfg.NodeID))
 	u.RawQuery = q.Encode()
@@ -318,7 +322,7 @@ func (d *wsDriver) handleMessage(raw []byte) error {
 			d.cfg.Hooks.OnSyncConfig()
 		}
 
-	case "sync.users":
+	case "sync.users", "sync.user.delta":
 		log.WithFields(d.logFields).Info("ws sync.users")
 		if d.cfg.Hooks.OnSyncUsers != nil {
 			d.cfg.Hooks.OnSyncUsers()

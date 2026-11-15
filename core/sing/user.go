@@ -250,8 +250,8 @@ func (b *Sing) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraffic,
 			return true
 		}
 		if reset {
-			traffic.UpCounter.Store(0)
-			traffic.DownCounter.Store(0)
+			up = traffic.UpCounter.Swap(0)
+			down = traffic.DownCounter.Swap(0)
 		}
 		uid, known := b.users.uidMap[format.UserTag(tag, uuid)]
 		if !known || uid == 0 {

@@ -230,8 +230,8 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 		outboundLink.Writer = managedWriter
 		if w != nil {
 			sessionInbound.CanSpliceCopy = 3
-			inboundLink.Writer = rate.NewRateLimitWriter(inboundLink.Writer, w)
-			outboundLink.Writer = rate.NewRateLimitWriter(outboundLink.Writer, w)
+			inboundLink.Writer = rate.NewRateLimitWriter(inboundLink.Writer, w, ctx)
+			outboundLink.Writer = rate.NewRateLimitWriter(outboundLink.Writer, w, ctx)
 		}
 		ts := d.trafficCounterFor(sessionInbound.Tag).GetCounter(user.Email)
 		upcounter := &counter.XrayTrafficCounter{V: &ts.UpCounter}
@@ -411,13 +411,15 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 		outbound.Writer = managedWriter
 		if w != nil {
 			sessionInbound.CanSpliceCopy = 3
-			outbound.Writer = rate.NewRateLimitWriter(outbound.Writer, w)
+			outbound.Writer = rate.NewRateLimitWriter(outbound.Writer, w, ctx)
 		}
 		ts := d.trafficCounterFor(sessionInbound.Tag).GetCounter(user.Email)
 		downcounter := &counter.XrayTrafficCounter{V: &ts.DownCounter}
 		outbound.Reader = &CounterReader{
 			Reader:  &buf.TimeoutWrapperReader{Reader: outbound.Reader},
 			Counter: &ts.UpCounter,
+			Limiter: w,
+			Context: ctx,
 		}
 		lm.AddLink(managedWriter, outbound.Reader)
 		outbound.Writer = &dispatcher.SizeStatWriter{

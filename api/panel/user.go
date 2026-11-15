@@ -16,10 +16,11 @@ type OnlineUser struct {
 }
 
 type UserInfo struct {
-	Id          int    `json:"id" msgpack:"id"`
-	Uuid        string `json:"uuid" msgpack:"uuid"`
-	SpeedLimit  int    `json:"speed_limit" msgpack:"speed_limit"`
-	DeviceLimit int    `json:"device_limit" msgpack:"device_limit"`
+	Id                 int    `json:"id" msgpack:"id"`
+	Uuid               string `json:"uuid" msgpack:"uuid"`
+	SpeedLimit         int    `json:"speed_limit" msgpack:"speed_limit"`
+	DeviceLimit        int    `json:"device_limit" msgpack:"device_limit"`
+	DynamicSpeedExempt bool   `json:"dynamic_speed_exempt" msgpack:"dynamic_speed_exempt"`
 }
 
 type UserListBody struct {
@@ -219,6 +220,7 @@ func (c *Client) ReportNodeStatus(status *NodeStatus) error {
 // accepted), so the agent can fill what it knows and leave the rest empty
 // without breaking validation.
 type NodeMetrics struct {
+	DynamicSpeedLimit *DynamicSpeedStatus `json:"dynamic_speed_limit,omitempty"`
 	Uptime            int64               `json:"uptime"`
 	Goroutines        int                 `json:"goroutines"`
 	ActiveConnections int                 `json:"active_connections"`

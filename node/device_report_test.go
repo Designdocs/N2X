@@ -41,7 +41,9 @@ func newDeviceReportController(t *testing.T, receive http.HandlerFunc) *Controll
 	limiter.Init()
 	l := limiter.AddLimiter(t.Name(), &conf.LimitConfig{}, []panel.UserInfo{{Id: 1, Uuid: "uuid-1"}}, nil)
 	t.Cleanup(func() { limiter.DeleteLimiter(t.Name()) })
-	return &Controller{server: &deviceTrafficCore{}, apiClient: client, tag: t.Name(), limiter: l, Options: &conf.Options{}}
+	controller := &Controller{server: &deviceTrafficCore{}, apiClient: client, tag: t.Name(), limiter: l, Options: &conf.Options{}}
+	controller.limiterRef.Store(l)
+	return controller
 }
 
 func TestDeviceReportsKeepLiveIPAndClearClosedIP(t *testing.T) {

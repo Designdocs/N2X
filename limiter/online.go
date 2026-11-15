@@ -26,7 +26,9 @@ func (l *Limiter) TrackConnection(tagUUID, ip string) func() {
 		l.onlineMu.Unlock()
 		return func() {}
 	}
+	l.userMu.RLock()
 	uid := info.(*UserLimitInfo).UID
+	l.userMu.RUnlock()
 	if l.onlineUsers == nil {
 		l.onlineUsers = make(map[string]*onlineUser)
 	}

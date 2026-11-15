@@ -11,6 +11,7 @@ import (
 )
 
 func (c *Controller) startTasks(node *panel.NodeInfo) {
+	c.startDynamicSpeedTasks()
 	// fetch node info task
 	c.nodeInfoMonitorPeriodic = &task.Task{
 		Interval: node.PullInterval,
@@ -70,7 +71,7 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 			_ = c.renewCertPeriodic.Start(true)
 		}
 	}
-	if c.LimitConfig.EnableDynamicSpeedLimit && c.LimitConfig.DynamicSpeedLimitConfig != nil {
+	if node.DynamicSpeedLimit == nil && c.LimitConfig.EnableDynamicSpeedLimit && c.LimitConfig.DynamicSpeedLimitConfig != nil {
 		interval := time.Duration(c.LimitConfig.DynamicSpeedLimitConfig.Periodic) * time.Second
 		if interval <= 0 {
 			interval = time.Minute
@@ -109,6 +110,11 @@ func (c *Controller) abortReload(reason string, cause error) error {
 }
 
 func (c *Controller) nodeInfoMonitor() (err error) {
+	c.monitorMu.Lock()
+	defer c.monitorMu.Unlock()
+	if c.closed.Load() {
+		return nil
+	}
 	// get node info
 	newN, err := c.apiClient.GetNodeInfo()
 	if err == nil && newN != nil {
@@ -121,6 +127,19 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}).Error("Get node info failed")
 		// Keep the active listener, but still apply changes to its user roster.
 		newN = nil
+	}
+	// Adopt common policy before fetching users/alive: a failed roster request
+	// must not consume a config hash and silently lose an operator's disable.
+	if newN != nil {
+		if err := c.configureDynamicSpeed(newN); err != nil {
+			c.apiClient.InvalidateNodeInfoCache()
+			return nil
+		}
+		if runtimePolicyOnlyChange(c.info, newN) {
+			c.applyDeviceLimitPolicy(c.limiter, newN)
+			c.info = newN
+			newN = nil
+		}
 	}
 	// get user info
 	newU, err := c.apiClient.GetUserList()
@@ -172,6 +191,8 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}
 
 		// Update limiter
+		c.limiterRef.Store(nil)
+		c.limiter.StopDynamicSampling()
 		oldTag := c.tag
 		if len(c.Options.Name) == 0 {
 			c.tag = c.buildNodeTag(newN)
@@ -181,6 +202,10 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		// its old slice before publishing under the new one.
 		c.clearArtXUserRatesForTag(oldTag)
 		c.limiter = limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, newA)
+		if err := c.configureDynamicSpeed(newN); err != nil {
+			return c.abortReload("Dynamic speed policy failed", err)
+		}
+		c.limiterRef.Store(c.limiter)
 		c.applyDeviceLimitPolicy(c.limiter, newN)
 		// update alive list
 		if newA != nil {
@@ -296,6 +321,11 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 }
 
 func (c *Controller) SpeedChecker() error {
+	c.monitorMu.Lock()
+	defer c.monitorMu.Unlock()
+	if c.closed.Load() || c.info.DynamicSpeedLimit != nil {
+		return nil
+	}
 	if c.LimitConfig.DynamicSpeedLimitConfig == nil {
 		return nil
 	}

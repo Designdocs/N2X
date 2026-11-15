@@ -163,8 +163,10 @@ func (c *Controller) collectNodeMetrics() *panel.NodeMetrics {
 	// Active speed-limit users — drives the destructive "X Limit" row.
 	// Reading via the helper avoids exposing UserLimitInfo internals to
 	// the node package.
-	if c.limiter != nil {
-		limited := c.limiter.LimitedUserCount()
+	activeLimiter := c.limiterRef.Load()
+	if activeLimiter != nil {
+		metrics.DynamicSpeedLimit = activeLimiter.DynamicSpeedStatus()
+		limited := activeLimiter.LimitedUserCount()
 		if limited > 0 {
 			metrics.SpeedLimiter = &panel.NodeMetricsLimiter{
 				HasLimits:    true,

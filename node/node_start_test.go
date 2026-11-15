@@ -152,6 +152,7 @@ func TestInvalidNodeConfigStillRevokesRemovedUsers(t *testing.T) {
 	controller.info = &panel.NodeInfo{Type: "vless"}
 	controller.userList = []panel.UserInfo{{Id: 1, Uuid: "00000000-0000-0000-0000-000000000001"}}
 	controller.limiter = limiter.AddLimiter(controller.tag, &conf.LimitConfig{}, controller.userList, nil)
+	controller.limiterRef.Store(controller.limiter)
 	defer limiter.DeleteLimiter(controller.tag)
 	if err := controller.nodeInfoMonitor(); err != nil {
 		t.Fatal(err)

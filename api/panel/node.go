@@ -39,11 +39,13 @@ func securityFromTLS(tls int) int {
 }
 
 type NodeInfo struct {
-	Id           int
-	Type         string
-	Security     int
-	PushInterval time.Duration
-	PullInterval time.Duration
+	Id                   int
+	Type                 string
+	Security             int
+	PushInterval         time.Duration
+	PullInterval         time.Duration
+	DynamicSpeedLimit    *conf.NodeDynamicSpeedPolicy
+	DynamicSpeedCommands []conf.DynamicSpeedCommand
 	// DeviceLimitTolerance is the panel-configured device-limit headroom
 	// applied by the limiter on top of each user's device_limit.
 	DeviceLimitTolerance int
@@ -73,14 +75,16 @@ type NodeInfo struct {
 }
 
 type CommonNode struct {
-	DecoyFallback *bool              `json:"decoy_fallback,omitempty"`
-	Multiplex     *MultiplexSettings `json:"multiplex,omitempty"`
-	Host          string             `json:"host"`
-	ServerPort    int                `json:"server_port"`
-	ServerName    string             `json:"server_name"`
-	Routes        []Route            `json:"routes"`
-	BaseConfig    *BaseConfig        `json:"base_config"`
-	CertConfig    *conf.CertConfig   `json:"cert_config"`
+	DynamicSpeedLimit    *conf.NodeDynamicSpeedPolicy `json:"dynamic_speed_limit"`
+	DynamicSpeedCommands []conf.DynamicSpeedCommand   `json:"dynamic_speed_limit_commands"`
+	DecoyFallback        *bool                        `json:"decoy_fallback,omitempty"`
+	Multiplex            *MultiplexSettings           `json:"multiplex,omitempty"`
+	Host                 string                       `json:"host"`
+	ServerPort           int                          `json:"server_port"`
+	ServerName           string                       `json:"server_name"`
+	Routes               []Route                      `json:"routes"`
+	BaseConfig           *BaseConfig                  `json:"base_config"`
+	CertConfig           *conf.CertConfig             `json:"cert_config"`
 }
 
 // LocalCertConfig keeps filesystem and certificate issuance authority with the
@@ -747,12 +751,19 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.DeviceLimitCDNDisabled = ignoredIPsToList(cm.BaseConfig.DeviceLimitCDNDisabled)
 	}
 	node.CertConfig = cm.CertConfig
+	node.DynamicSpeedLimit = cm.DynamicSpeedLimit
+	node.DynamicSpeedCommands = cm.DynamicSpeedCommands
+	if err := node.DynamicSpeedLimit.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid panel dynamic speed policy: %w", err)
+	}
 
 	node.Common = cm
 	// clear
 	cm.Routes = nil
 	cm.BaseConfig = nil
 	cm.CertConfig = nil
+	cm.DynamicSpeedLimit = nil
+	cm.DynamicSpeedCommands = nil
 
 	// Compare the decoded, normalized settings, not the panel's JSON bytes.
 	// Formatting, ignored metadata and equivalent legacy aliases do not

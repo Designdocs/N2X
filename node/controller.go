@@ -20,9 +20,14 @@ type Controller struct {
 	apiClient                 *panel.Client
 	tag                       string
 	limiter                   *limiter.Limiter
+	limiterRef                atomic.Pointer[limiter.Limiter]
 	traffic                   map[string]int64
 	userList                  []panel.UserInfo
 	userReportMu              sync.Mutex
+	monitorMu                 sync.Mutex
+	syncStop                  chan struct{}
+	closed                    atomic.Bool
+	dynamicPolicyPeriodic     *task.Task
 	reportedDeviceUsers       map[int]struct{}
 	aliveMap                  map[int]int
 	aliveMu                   sync.RWMutex
@@ -104,6 +109,10 @@ func (c *Controller) Start() error {
 		return startError(StageCore, "update rule error: %w", err)
 	}
 	c.limiter = l
+	c.limiterRef.Store(l)
+	if err := c.configureDynamicSpeed(node); err != nil {
+		return startError(StagePanel, "dynamic speed policy: %w", err)
+	}
 	c.apiClient.SetAliveUpdateHook(c.setAliveMap)
 	c.apiClient.SetKickedUpdateHook(c.setKickedMap)
 	if node.Security == panel.Tls {
@@ -139,6 +148,18 @@ func (c *Controller) Start() error {
 
 // Close implement the Close() function of the service interface
 func (c *Controller) Close() error {
+	if c.closed.Swap(true) {
+		return nil
+	}
+	c.apiClient.SetSyncWakeHook(nil)
+	if c.syncStop != nil {
+		close(c.syncStop)
+	}
+	c.monitorMu.Lock()
+	defer c.monitorMu.Unlock()
+	if active := c.limiterRef.Swap(nil); active != nil {
+		active.StopDynamicSampling()
+	}
 	c.apiClient.SetAliveUpdateHook(nil)
 	c.apiClient.SetKickedUpdateHook(nil)
 	c.stopArtXPressureSampler()
@@ -155,6 +176,9 @@ func (c *Controller) Close() error {
 	}
 	if c.dynamicSpeedLimitPeriodic != nil {
 		c.dynamicSpeedLimitPeriodic.Close()
+	}
+	if c.dynamicPolicyPeriodic != nil {
+		c.dynamicPolicyPeriodic.Close()
 	}
 	if c.onlineIpReportPeriodic != nil {
 		c.onlineIpReportPeriodic.Close()
@@ -182,14 +206,14 @@ func (c *Controller) setAliveMap(alive map[int]int) {
 	c.aliveMap = snapshot
 	c.aliveMu.Unlock()
 
-	if c.limiter != nil {
-		c.limiter.UpdateAliveList(snapshot)
+	if active := c.limiterRef.Load(); active != nil {
+		active.UpdateAliveList(snapshot)
 	}
 }
 
 func (c *Controller) setKickedMap(kicked map[int]map[string]int64) {
-	if c.limiter != nil {
-		c.limiter.MergeKickedList(kicked)
+	if active := c.limiterRef.Load(); active != nil {
+		active.MergeKickedList(kicked)
 	}
 }
 
@@ -203,10 +227,11 @@ func (c *Controller) activeUserCount() int {
 // the node metrics popup. Returns 0 before the limiter is wired so an early
 // metrics tick cannot panic.
 func (c *Controller) activeConnectionCount() int {
-	if c.limiter == nil {
+	active := c.limiterRef.Load()
+	if active == nil {
 		return 0
 	}
-	return c.limiter.CountOnlineIP()
+	return active.CountOnlineIP()
 }
 
 func cloneAliveMap(alive map[int]int) map[int]int {

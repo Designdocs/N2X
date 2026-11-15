@@ -24,6 +24,7 @@ type Client struct {
 	client           *resty.Client
 	APIHost          string
 	APISendIP        string
+	InstanceID       string
 	Token            string
 	NodeType         string
 	NodeId           int
@@ -33,6 +34,7 @@ type Client struct {
 	nodeConfigHash   string
 	nodeCacheVersion uint64
 	nodeRetryVersion uint64
+	syncWake         func()
 	UserList         *UserListBody
 	AliveMap         *AliveMap
 	aliveMu          sync.Mutex
@@ -76,15 +78,16 @@ func New(c *conf.ApiConfig) (*Client, error) {
 	// error hooks. The closures only ever read counters via atomic helpers
 	// so capturing the pointer here is goroutine-safe.
 	cli := &Client{
-		client:    client,
-		Token:     c.Key,
-		APIHost:   c.APIHost,
-		APISendIP: c.APISendIP,
-		NodeType:  c.NodeType,
-		NodeId:    c.NodeID,
-		UserList:  &UserListBody{},
-		AliveMap:  &AliveMap{},
-		wsCfg:     c.WebSocket,
+		client:     client,
+		Token:      c.Key,
+		APIHost:    c.APIHost,
+		APISendIP:  c.APISendIP,
+		InstanceID: backendInstanceID(c.APIHost, c.NodeID, c.APISendIP),
+		NodeType:   c.NodeType,
+		NodeId:     c.NodeID,
+		UserList:   &UserListBody{},
+		AliveMap:   &AliveMap{},
+		wsCfg:      c.WebSocket,
 	}
 	client.OnAfterResponse(func(_ *resty.Client, resp *resty.Response) error {
 		if resp != nil && resp.StatusCode() >= 200 && resp.StatusCode() < 400 {
@@ -126,9 +129,10 @@ func New(c *conf.ApiConfig) (*Client, error) {
 	}
 	// set params
 	client.SetQueryParams(map[string]string{
-		"node_type": c.NodeType,
-		"node_id":   strconv.Itoa(c.NodeID),
-		"token":     c.Key,
+		"instance_id": cli.InstanceID,
+		"node_type":   c.NodeType,
+		"node_id":     strconv.Itoa(c.NodeID),
+		"token":       c.Key,
 	})
 	cli.NodeType = c.NodeType
 	return cli, nil
@@ -188,15 +192,16 @@ func (c *Client) StartWebSocket() {
 	}
 
 	driver, err := newWSDriver(wsDriverConfig{
-		URL:      wsURL,
-		NodeID:   c.NodeId,
-		NodeType: c.NodeType,
-		Token:    c.Token,
-		SendIP:   c.APISendIP,
-		Debug:    c.wsCfg.Debug,
+		URL:        wsURL,
+		NodeID:     c.NodeId,
+		NodeType:   c.NodeType,
+		Token:      c.Token,
+		SendIP:     c.APISendIP,
+		InstanceID: c.InstanceID,
+		Debug:      c.wsCfg.Debug,
 		Hooks: wsDriverHooks{
-			OnSyncConfig:  c.invalidateNodeInfoCache,
-			OnSyncUsers:   c.invalidateUserListCache,
+			OnSyncConfig:  func() { c.invalidateNodeInfoCache(); c.wakeSync() },
+			OnSyncUsers:   func() { c.invalidateUserListCache(); c.wakeSync() },
 			OnSyncDevices: c.onSyncDevices,
 			OnSyncKick:    c.onSyncKick,
 			OnAuthSuccess: c.onAuthSuccess,

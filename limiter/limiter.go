@@ -12,8 +12,8 @@ import (
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/common/cdn"
 	"github.com/Designdocs/N2X/common/format"
+	"github.com/Designdocs/N2X/common/rate"
 	"github.com/Designdocs/N2X/conf"
-	"github.com/juju/ratelimit"
 )
 
 var limitLock sync.RWMutex
@@ -31,8 +31,10 @@ type Limiter struct {
 	OldUserOnline *sync.Map      // Previous period, keyed by the same TagUUID and IP
 	UUIDtoUID     map[string]int // Key: UUID, value: Uid
 	UserLimitInfo *sync.Map      // Key: TagUUID value: UserLimitInfo
-	SpeedLimiter  *sync.Map      // key: TagUUID, value: *ratelimit.Bucket
-	AliveList     map[int]int    // Key: Uid, value: alive_ip
+	SpeedLimiter  *sync.Map      // key: TagUUID, value: *rate.Controller (stable across rate edits)
+	userMu        sync.RWMutex
+	dynamic       dynamicState
+	AliveList     map[int]int // Key: Uid, value: alive_ip
 	aliveMu       sync.RWMutex
 	onlineMu      sync.Mutex
 	onlineUsers   map[string]*onlineUser
@@ -55,12 +57,13 @@ type Limiter struct {
 }
 
 type UserLimitInfo struct {
-	UID               int
-	SpeedLimit        int
-	DeviceLimit       int
-	DynamicSpeedLimit int
-	ExpireTime        int64
-	OverLimit         bool
+	UID                int
+	SpeedLimit         int
+	DeviceLimit        int
+	DynamicSpeedLimit  int
+	ExpireTime         int64
+	OverLimit          bool
+	DynamicSpeedExempt bool
 }
 
 func AddLimiter(tag string, l *conf.LimitConfig, users []panel.UserInfo, aliveList map[int]int) *Limiter {
@@ -79,6 +82,7 @@ func AddLimiter(tag string, l *conf.LimitConfig, users []panel.UserInfo, aliveLi
 		uuidmap[users[i].Uuid] = users[i].Id
 		userLimit := &UserLimitInfo{}
 		userLimit.UID = users[i].Id
+		userLimit.DynamicSpeedExempt = users[i].DynamicSpeedExempt
 		if users[i].SpeedLimit != 0 {
 			userLimit.SpeedLimit = users[i].SpeedLimit
 		}
@@ -114,19 +118,39 @@ func DeleteLimiter(tag string) {
 func (l *Limiter) UpdateUser(tag string, added []panel.UserInfo, deleted []panel.UserInfo) {
 	l.onlineMu.Lock()
 	defer l.onlineMu.Unlock()
+	l.userMu.Lock()
+	defer l.userMu.Unlock()
 	retained := make(map[string]int, len(added))
+	retainedIDs := make(map[int]bool, len(added))
+	movedPenalties := make(map[int]activePenalty)
 	for _, user := range added {
 		retained[format.UserTag(tag, user.Uuid)] = user.Id
+		retainedIDs[user.Id] = true
 	}
 	for i := range deleted {
 		tagUUID := format.UserTag(tag, deleted[i].Uuid)
+		if uid, remains := retained[tagUUID]; remains && uid == deleted[i].Id {
+			continue
+		}
 		if uid, remains := retained[tagUUID]; !remains || uid != deleted[i].Id {
 			delete(l.onlineUsers, tagUUID)
 			l.OldUserOnline.Delete(tagUUID)
 		}
+		if p, ok := l.dynamic.penalties[tagUUID]; ok && retainedIDs[p.UserID] {
+			movedPenalties[p.UserID] = p
+			delete(l.dynamic.penalties, tagUUID)
+			l.dynamic.dirty = true
+		} else if value, ok := l.UserLimitInfo.Load(tagUUID); ok {
+			l.clearPenaltyLocked(tagUUID, value.(*UserLimitInfo), "revoked", time.Now())
+		}
+		if value, ok := l.SpeedLimiter.Load(tagUUID); ok {
+			value.(*rate.Controller).Close()
+		}
 		l.UserLimitInfo.Delete(tagUUID)
 		l.UserOnlineIP.Delete(tagUUID)
 		l.SpeedLimiter.Delete(tagUUID)
+		delete(l.dynamic.samples, tagUUID)
+		delete(l.dynamic.penalties, tagUUID)
 		delete(l.UUIDtoUID, deleted[i].Uuid)
 		l.deleteAlive(deleted[i].Id)
 	}
@@ -135,27 +159,44 @@ func (l *Limiter) UpdateUser(tag string, added []panel.UserInfo, deleted []panel
 		if user := l.onlineUsers[tagUUID]; user != nil && user.uid != added[i].Id {
 			delete(l.onlineUsers, tagUUID)
 		}
-		userLimit := &UserLimitInfo{
-			UID: added[i].Id,
+		userLimit := &UserLimitInfo{UID: added[i].Id}
+		if previous, ok := l.UserLimitInfo.Load(tagUUID); ok {
+			userLimit = previous.(*UserLimitInfo)
 		}
-		if added[i].SpeedLimit != 0 {
-			userLimit.SpeedLimit = added[i].SpeedLimit
-			userLimit.ExpireTime = 0
+		wasExempt := userLimit.DynamicSpeedExempt
+		userLimit.SpeedLimit = added[i].SpeedLimit
+		userLimit.DeviceLimit = added[i].DeviceLimit
+		userLimit.DynamicSpeedExempt = added[i].DynamicSpeedExempt
+		if p, moved := movedPenalties[userLimit.UID]; moved && !userLimit.DynamicSpeedExempt {
+			l.dynamic.penalties[tagUUID] = p
+			userLimit.DynamicSpeedLimit, userLimit.ExpireTime = p.LimitMbps, p.ExpiresAt
 		}
-		if added[i].DeviceLimit != 0 {
-			userLimit.DeviceLimit = added[i].DeviceLimit
+		if userLimit.DynamicSpeedExempt {
+			l.clearPenaltyLocked(tagUUID, userLimit, "exempt", time.Now())
+			userLimit.DynamicSpeedLimit, userLimit.ExpireTime = 0, 0
 		}
 		userLimit.OverLimit = false
 		l.UserLimitInfo.Store(format.UserTag(tag, added[i].Uuid), userLimit)
 		l.UUIDtoUID[added[i].Uuid] = added[i].Id
+		l.updateRateLocked(tagUUID, userLimit)
+		if wasExempt != userLimit.DynamicSpeedExempt {
+			l.resetSampleLocked(tagUUID, time.Now())
+		}
 	}
+	l.persistDynamicLocked()
 }
 
 func (l *Limiter) UpdateDynamicSpeedLimit(tag, uuid string, limit int, expire time.Time) error {
+	l.userMu.Lock()
+	defer l.userMu.Unlock()
 	if v, ok := l.UserLimitInfo.Load(format.UserTag(tag, uuid)); ok {
 		info := v.(*UserLimitInfo)
+		if info.DynamicSpeedExempt || l.dynamic.policy != nil {
+			return nil
+		}
 		info.DynamicSpeedLimit = limit
 		info.ExpireTime = expire.Unix()
+		l.updateRateLocked(format.UserTag(tag, uuid), info)
 	} else {
 		return errors.New("not found")
 	}
@@ -167,6 +208,8 @@ func (l *Limiter) UpdateDynamicSpeedLimit(tag, uuid string, limit int, expire ti
 // dynamic limit. The metrics task uses this to populate the destructive
 // "X Limit" row in the admin popup.
 func (l *Limiter) LimitedUserCount() int {
+	l.userMu.RLock()
+	defer l.userMu.RUnlock()
 	now := time.Now().Unix()
 	count := 0
 	l.UserLimitInfo.Range(func(_, v any) bool {
@@ -289,7 +332,7 @@ func (l *Limiter) isKicked(uid int, ip string) bool {
 	return ok && expiry > time.Now().Unix()
 }
 
-func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool) (Bucket *ratelimit.Bucket, Reject bool) {
+func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool) (Bucket *rate.Controller, Reject bool) {
 	// Normalize mapped IPv4 so tracking and panel-issued kicks use one key.
 	if addr, err := netip.ParseAddr(ip); err == nil {
 		ip = addr.Unmap().String()
@@ -297,28 +340,22 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 	isCdn := l.isExempt(ip)
 
 	// check and gen speed limit Bucket
-	nodeLimit := l.SpeedLimit
-	userLimit := 0
 	deviceLimit := 0
 	var uid int
+	l.userMu.Lock()
 	if v, ok := l.UserLimitInfo.Load(taguuid); ok {
 		u := v.(*UserLimitInfo)
 		deviceLimit = u.DeviceLimit
 		uid = u.UID
-		if u.ExpireTime < time.Now().Unix() && u.ExpireTime != 0 {
-			if u.SpeedLimit != 0 {
-				userLimit = u.SpeedLimit
-				u.DynamicSpeedLimit = 0
-				u.ExpireTime = 0
-			} else {
-				l.UserLimitInfo.Delete(taguuid)
-			}
-		} else {
-			userLimit = determineSpeedLimit(u.SpeedLimit, u.DynamicSpeedLimit)
+		if u.ExpireTime <= time.Now().Unix() && u.ExpireTime != 0 && l.dynamic.policy == nil {
+			u.DynamicSpeedLimit, u.ExpireTime = 0, 0
 		}
+		Bucket = l.rateForLocked(taguuid, u)
 	} else {
+		l.userMu.Unlock()
 		return nil, true
 	}
+	l.userMu.Unlock()
 	// Panel-kicked IPs are rejected before any bookkeeping so they never
 	// re-enter the online table or re-occupy the freed device slot.
 	if l.isKicked(uid, ip) {
@@ -349,18 +386,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 		}
 	}
 
-	limit := int64(determineSpeedLimit(nodeLimit, userLimit)) * 1000000 / 8 // If you need the Speed limit
-	if limit > 0 {
-		Bucket = ratelimit.NewBucketWithQuantum(time.Second, limit, limit) // Byte/s
-		if v, ok := l.SpeedLimiter.LoadOrStore(taguuid, Bucket); ok {
-			return v.(*ratelimit.Bucket), false
-		} else {
-			l.SpeedLimiter.Store(taguuid, Bucket)
-			return Bucket, false
-		}
-	} else {
-		return nil, false
-	}
+	return Bucket, false
 }
 
 func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {

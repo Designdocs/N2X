@@ -41,5 +41,6 @@ func compareUserList(old, new []panel.UserInfo) userListChanges {
 func userLimitFieldsChanged(old, new panel.UserInfo) bool {
 	return old.Id != new.Id ||
 		old.SpeedLimit != new.SpeedLimit ||
-		old.DeviceLimit != new.DeviceLimit
+		old.DeviceLimit != new.DeviceLimit ||
+		old.DynamicSpeedExempt != new.DynamicSpeedExempt
 }

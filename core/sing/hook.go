@@ -9,7 +9,6 @@ import (
 	"github.com/Designdocs/N2X/common/format"
 	"github.com/Designdocs/N2X/common/rate"
 	"github.com/Designdocs/N2X/limiter"
-	"github.com/juju/ratelimit"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
 	tun "github.com/sagernet/sing-tun"
@@ -50,8 +49,8 @@ func (h *HookServer) ModeList() []string {
 
 // checkAccess resolves the owning node, applies its limits and routing rules,
 // and reports whether the connection may proceed. The returned bucket is the
-// user's speed-limit token bucket, and is only meaningful for streams.
-func (h *HookServer) checkAccess(ctx context.Context, m *adapter.InboundContext, isTCP bool) (nodeTag string, bucket *ratelimit.Bucket, onClose func(), ok bool) {
+// user's shared speed controller for both streams and datagrams.
+func (h *HookServer) checkAccess(ctx context.Context, m *adapter.InboundContext, isTCP bool) (nodeTag string, bucket *rate.Controller, onClose func(), ok bool) {
 	nodeTag = h.resolveTag(m.Inbound)
 	l, err := limiter.GetLimiter(nodeTag)
 	if err != nil {
@@ -92,19 +91,20 @@ func (h *HookServer) RoutedConnection(ctx context.Context, conn net.Conn, m adap
 		return conn
 	}
 	if bucket != nil {
-		conn = rate.NewConnRateLimiter(conn, bucket)
+		conn = rate.NewConnRateLimiter(conn, bucket, ctx)
 	}
 	return counter.NewConnCounter(conn, h.storageFor(nodeTag, m.User), onClose)
 }
 
 func (h *HookServer) RoutedPacketConnection(ctx context.Context, conn N.PacketConn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) N.PacketConn {
-	// The datagram path enforces device/connection limits only: the token
-	// bucket in common/rate wraps net.Conn and has no packet equivalent, so
-	// speed limits apply to the stream side.
-	nodeTag, _, onClose, ok := h.checkAccess(ctx, &m, false)
+	// TCP and UDP share the same user's controller, including both directions.
+	nodeTag, bucket, onClose, ok := h.checkAccess(ctx, &m, false)
 	if !ok {
 		conn.Close()
 		return conn
+	}
+	if bucket != nil {
+		conn = rate.NewPacketConnRateLimiter(conn, bucket, ctx)
 	}
 	return counter.NewPacketConnCounter(conn, h.storageFor(nodeTag, m.User), onClose)
 }
