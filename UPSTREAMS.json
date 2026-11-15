@@ -19,13 +19,13 @@
       "module": "github.com/sagernet/sing-box",
       "replacement": "github.com/Designdocs/sing-box_mod",
       "strategy": "replacement",
-      "ref": "v1.13.0-alpha.5.0.20261031161807-e538b1386912",
-      "source_commit": "e538b13869127eb336b2df8f1bd90cfc77dff598",
+      "ref": "v1.13.0-alpha.5.0.20261115142134-a970e771f45b",
+      "source_commit": "a970e771f45b2ead99db9108562d3ea727fcbf51",
       "upstream": "https://github.com/Designdocs/sing-box_mod",
       "official_upstream": "https://github.com/SagerNet/sing-box",
       "stable_tag": "v1.14.4",
       "group": "core",
-      "notes": "Manual stable merge required before repinning. Preserve Scope lifecycle, dynamic users, AnyTLS cleanup, Naive browser proxy and per-node sniff/resolve. Compatibility copy origins are recorded in the fork. CVE-2026-98432 mitigation disables implicit MPTCP while preserving explicit opt-in and existing fork extensions."
+      "notes": "Manual stable merge required before repinning. Preserve Scope lifecycle, dynamic users, AnyTLS cleanup, Naive browser proxy and per-node sniff/resolve. Compatibility copy origins are recorded in the fork. CVE-2026-98432 mitigation disables implicit MPTCP while preserving explicit opt-in and existing fork extensions. TUIC pre-read payloads use owned buffers with synchronized Read/Close state; preserve revocation and active-user wire compatibility."
     },
     {
       "name": "sing",
@@ -85,7 +85,7 @@
     }
   ],
   "local_sync": {
-    "checked_on": "2026-11-02",
+    "checked_on": "2026-11-15",
     "integration": "Published module replacements; optional local go.work for development",
     "published_pins": "Core commits pushed and resolved through the public Go module proxy/checksum workflow. CI, Docker and release builds use GOWORK=off.",
     "xray_core": {
@@ -101,10 +101,10 @@
       "upstream": "https://github.com/SagerNet/sing-box",
       "stable_tag": "v1.14.4",
       "stable_commit": "c005f35300ce76427dc285481ec5695f5b179cd2",
-      "fork_commit": "e538b13869127eb336b2df8f1bd90cfc77dff598",
-      "previous_fork_commit": "1c83277a4b98bd6fdf95e12cca1c65c8fbad9940",
+      "fork_commit": "a970e771f45b2ead99db9108562d3ea727fcbf51",
+      "previous_fork_commit": "e538b13869127eb336b2df8f1bd90cfc77dff598",
       "local_path": "../sing-box_mod-memory",
-      "action": "stable v1.14.4 with dynamic lifecycle, Naive browser/native paths and synchronized shared AnyTLS stream closure; CVE-2026-98432 default MPTCP mitigation"
+      "action": "stable v1.14.4 with dynamic lifecycle, Naive browser/native paths and synchronized shared AnyTLS stream closure; CVE-2026-98432 default MPTCP mitigation; synchronize TUIC pre-read buffer ownership and connection revocation without changing the wire format"
     },
     "resolved_dependencies": {
       "github.com/sagernet/sing": "v0.9.7-0.20261023115459-5dc452e537bf",

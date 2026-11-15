@@ -15,7 +15,6 @@ require (
 	github.com/go-resty/resty/v2 v2.16.5
 	github.com/gofrs/uuid/v5 v5.5.1
 	github.com/gorilla/websocket v1.5.3
-	github.com/juju/ratelimit v1.0.2
 	github.com/sagernet/sing v0.9.7-0.20261023115459-5dc452e537bf
 	github.com/sagernet/sing-box v1.13.0
 	github.com/sagernet/sing-mux v0.3.10-0.20260929204512-caf09fe32475
@@ -145,6 +144,7 @@ require (
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jsimonetti/rtnetlink v1.4.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/juju/ratelimit v1.0.2 // indirect
 	github.com/k0kubun/go-ansi v0.0.0-20180517002512-3bf9e2903213 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
@@ -330,4 +330,4 @@ require (
 
 replace github.com/xtls/xray-core => github.com/Designdocs/Xray-core v0.0.0-20261102105339-fed35a71c367
 
-replace github.com/sagernet/sing-box => github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261031161807-e538b1386912
+replace github.com/sagernet/sing-box => github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261115142134-a970e771f45b
