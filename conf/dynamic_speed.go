@@ -6,22 +6,36 @@ import "fmt"
 // panel has not taken ownership; an explicit disabled policy overrides local
 // legacy dynamic limits. Rates are decimal Mbps and durations are seconds.
 type NodeDynamicSpeedPolicy struct {
-	Version        int   `json:"version"`
-	Revision       int64 `json:"revision"`
-	Enabled        bool  `json:"enabled"`
-	ThresholdMbps  int   `json:"threshold_mbps"`
-	SustainSeconds int   `json:"sustain_seconds"`
-	LimitMbps      int   `json:"limit_mbps"`
-	PenaltySeconds int   `json:"penalty_seconds"`
+	Version              int   `json:"version"`
+	Revision             int64 `json:"revision"`
+	Enabled              bool  `json:"enabled"`
+	ThresholdMbps        int   `json:"threshold_mbps"`
+	SustainSeconds       int   `json:"sustain_seconds"`
+	OverThresholdPercent int   `json:"over_threshold_percent"`
+	LimitMbps            int   `json:"limit_mbps"`
+	PenaltySeconds       int   `json:"penalty_seconds"`
 }
 
-const DynamicSpeedSampleSeconds = 5
+const (
+	DynamicSpeedSampleSeconds               = 5
+	DynamicSpeedPolicyVersion               = 2
+	DynamicSpeedDefaultOverThresholdPercent = 85
+)
+
+// Older panel policies omit the new ratio; adopt the configured default when
+// reading version 1. Version 2 always carries an explicit percentage.
+func (p *NodeDynamicSpeedPolicy) EffectiveOverThresholdPercent() int {
+	if p.Version == 1 && p.OverThresholdPercent == 0 {
+		return DynamicSpeedDefaultOverThresholdPercent
+	}
+	return p.OverThresholdPercent
+}
 
 func (p *NodeDynamicSpeedPolicy) Validate() error {
 	if p == nil {
 		return nil
 	}
-	if p.Version != 1 || p.Revision < 0 {
+	if (p.Version != 1 && p.Version != DynamicSpeedPolicyVersion) || p.Revision < 0 {
 		return fmt.Errorf("unsupported dynamic speed policy version or revision")
 	}
 	if p.ThresholdMbps < 1 || p.ThresholdMbps > 100000 || p.LimitMbps < 1 || p.LimitMbps >= p.ThresholdMbps {
@@ -29,6 +43,9 @@ func (p *NodeDynamicSpeedPolicy) Validate() error {
 	}
 	if p.SustainSeconds < 30 || p.SustainSeconds > 3600 || p.SustainSeconds%DynamicSpeedSampleSeconds != 0 {
 		return fmt.Errorf("dynamic speed duration must be 30..3600 seconds in 5-second steps")
+	}
+	if percent := p.EffectiveOverThresholdPercent(); percent < 1 || percent > 100 {
+		return fmt.Errorf("dynamic speed over-threshold percentage must be 1..100")
 	}
 	if p.PenaltySeconds < 60 || p.PenaltySeconds > 86400 {
 		return fmt.Errorf("dynamic speed penalty must be 60..86400 seconds")

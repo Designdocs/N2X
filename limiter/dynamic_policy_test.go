@@ -1,6 +1,7 @@
 package limiter
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,7 +18,7 @@ func dynamicFixture(t *testing.T, file string) (*Limiter, *conf.NodeDynamicSpeed
 	t.Helper()
 	Init()
 	l := AddLimiter(t.Name(), &conf.LimitConfig{}, []panel.UserInfo{{Id: 7, Uuid: "ordinary", DeviceLimit: 2}}, nil)
-	p := &conf.NodeDynamicSpeedPolicy{Version: 1, Revision: 1, Enabled: true, ThresholdMbps: 50, SustainSeconds: 180, LimitMbps: 5, PenaltySeconds: 1800}
+	p := &conf.NodeDynamicSpeedPolicy{Version: 2, OverThresholdPercent: 85, Revision: 1, Enabled: true, ThresholdMbps: 50, SustainSeconds: 180, LimitMbps: 5, PenaltySeconds: 1800}
 	if err := l.ConfigureDynamic(p, nil, file); err != nil {
 		t.Fatal(err)
 	}
@@ -34,16 +35,20 @@ func dynamicFixture(t *testing.T, file string) (*Limiter, *conf.NodeDynamicSpeed
 }
 
 func feedSpeed(l *Limiter, b *rate.Controller, now time.Time, seconds, mbps int) time.Time {
-	for range seconds / 5 {
-		b.Account(int64(mbps) * 1000000 / 8 * 5)
-		now = now.Add(5 * time.Second)
+	for seconds > 0 {
+		step := min(seconds, 5)
+		seconds -= step
+		b.Account(int64(mbps) * 1000000 / 8 * int64(step))
+		now = now.Add(time.Duration(step) * time.Second)
 		l.SampleDynamic(now)
 	}
 	return now
 }
 
 func TestDynamicSpeedContinuousThresholdAndExistingConnection(t *testing.T) {
-	l, _, b, key, now := dynamicFixture(t, "")
+	l, p, b, key, now := dynamicFixture(t, "")
+	p.OverThresholdPercent = 100
+	_ = l.ConfigureDynamic(p, nil, "")
 	now = feedSpeed(l, b, now, 180, 50)
 	if l.DynamicSpeedStatus().LimitedUsers != 0 {
 		t.Fatal("equal threshold must not trigger")
@@ -77,8 +82,10 @@ func TestDynamicSpeedContinuousThresholdAndExistingConnection(t *testing.T) {
 	_ = now
 }
 
-func TestDynamicSpeedLowSampleAndMissingSampleResetObservation(t *testing.T) {
-	l, _, b, _, now := dynamicFixture(t, "")
+func TestDynamicSpeedStrictRatioAndMissingSampleResetObservation(t *testing.T) {
+	l, p, b, _, now := dynamicFixture(t, "")
+	p.OverThresholdPercent = 100
+	_ = l.ConfigureDynamic(p, nil, "")
 	now = feedSpeed(l, b, now, 175, 60)
 	now = feedSpeed(l, b, now, 5, 0)
 	now = feedSpeed(l, b, now, 175, 60)
@@ -211,7 +218,7 @@ func TestDynamicSpeedCredentialRotationKeepsPenaltyAndRemovalPersists(t *testing
 		t.Fatal("deleted user left active penalty")
 	}
 	restarted := AddLimiter("after-delete", &conf.LimitConfig{}, []panel.UserInfo{rotated}, nil)
-	p := &conf.NodeDynamicSpeedPolicy{Version: 1, Revision: 1, Enabled: true, ThresholdMbps: 50, SustainSeconds: 180, LimitMbps: 5, PenaltySeconds: 1800}
+	p := &conf.NodeDynamicSpeedPolicy{Version: 2, OverThresholdPercent: 85, Revision: 1, Enabled: true, ThresholdMbps: 50, SustainSeconds: 180, LimitMbps: 5, PenaltySeconds: 1800}
 	_ = restarted.ConfigureDynamic(p, nil, file)
 	if restarted.DynamicSpeedStatus().LimitedUsers != 0 {
 		t.Fatal("deleted penalty restored from disk")
@@ -284,5 +291,87 @@ func TestDynamicSpeedMissingManagedPolicyKeepsLastGoodAndReportsPolicyError(t *t
 	_ = l.ConfigureDynamic(p, nil, "")
 	if l.DynamicSpeedStatus().PolicyError != "" {
 		t.Fatal("valid policy did not clear omission notice")
+	}
+}
+
+func TestDynamicSpeedBriefDropStillTriggersAfterFullWindow(t *testing.T) {
+	l, _, b, _, now := dynamicFixture(t, "")
+	now = feedSpeed(l, b, now, 90, 60)
+	now = feedSpeed(l, b, now, 5, 30)
+	now = feedSpeed(l, b, now, 80, 60)
+	if l.DynamicSpeedStatus().LimitedUsers != 0 {
+		t.Fatal("triggered before collecting the full observation window")
+	}
+	feedSpeed(l, b, now, 5, 60)
+	status := l.DynamicSpeedStatus()
+	if status.Version != 2 || status.OverThresholdPercent != 85 || status.LimitedUsers != 1 || b.Rate() != 625000 {
+		t.Fatalf("brief dip evaded the 85%% policy: %+v", status)
+	}
+	if ratio := status.Penalties[0].OverThresholdPercent; ratio < 97 || ratio >= 100 {
+		t.Fatalf("observed ratio = %f", ratio)
+	}
+}
+
+func TestDynamicSpeedRatioUsesElapsedTimeAtExactBoundary(t *testing.T) {
+	for _, highSeconds := range []int{152, 153} {
+		t.Run(fmt.Sprintf("%ds_above_threshold", highSeconds), func(t *testing.T) {
+			l, _, b, _, now := dynamicFixture(t, "")
+			now = feedSpeed(l, b, now, highSeconds, 60)
+			feedSpeed(l, b, now, 180-highSeconds, 30)
+			want := 0
+			if highSeconds == 153 {
+				want = 1
+			}
+			if got := l.DynamicSpeedStatus().LimitedUsers; got != want {
+				t.Fatalf("%d/180 high seconds: limited=%d want=%d", highSeconds, got, want)
+			}
+		})
+	}
+}
+
+func TestDynamicSpeedRatioWeightsUnequalSampleIntervals(t *testing.T) {
+	l, _, b, _, now := dynamicFixture(t, "")
+	for range 18 {
+		b.Account(60 * 1000000 / 8 * 9)
+		now = now.Add(9 * time.Second)
+		l.SampleDynamic(now)
+		b.Account(30 * 1000000 / 8)
+		now = now.Add(time.Second)
+		l.SampleDynamic(now)
+	}
+	if l.DynamicSpeedStatus().LimitedUsers != 1 {
+		t.Fatal("90% elapsed time was mistaken for 50% sample count")
+	}
+}
+
+func TestDynamicSpeedRollingWindowExpiresOldLowSpeedTime(t *testing.T) {
+	l, _, b, _, now := dynamicFixture(t, "")
+	now = feedSpeed(l, b, now, 60, 30)
+	now = feedSpeed(l, b, now, 150, 60)
+	if l.DynamicSpeedStatus().LimitedUsers != 0 {
+		t.Fatal("150/180 seconds incorrectly met 85%")
+	}
+	feedSpeed(l, b, now, 5, 60)
+	if l.DynamicSpeedStatus().LimitedUsers != 1 {
+		t.Fatal("old low-speed time was not trimmed from the rolling window")
+	}
+}
+
+func TestDynamicSpeedRatioPolicyChangeRestartsObservation(t *testing.T) {
+	l, p, b, _, now := dynamicFixture(t, "")
+	feedSpeed(l, b, now, 175, 60)
+	p.OverThresholdPercent = 90
+	p.Revision++
+	if err := l.ConfigureDynamic(p, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	now = time.Now()
+	now = feedSpeed(l, b, now, 175, 60)
+	if l.DynamicSpeedStatus().LimitedUsers != 0 {
+		t.Fatal("ratio edit reused old observation time")
+	}
+	feedSpeed(l, b, now, 5, 60)
+	if l.DynamicSpeedStatus().LimitedUsers != 1 {
+		t.Fatal("ratio edit never collected a new full window")
 	}
 }

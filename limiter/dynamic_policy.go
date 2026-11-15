@@ -17,10 +17,44 @@ import (
 )
 
 type speedSample struct {
-	total int64
-	at    time.Time
-	above time.Duration
+	total     int64
+	at        time.Time
+	above     time.Duration
+	duration  time.Duration
+	intervals []speedInterval
 }
+
+type speedInterval struct {
+	duration time.Duration
+	above    bool
+}
+
+// Merge adjacent equal observations and trim the oldest time, keeping memory
+// bounded by the configured window. Weight elapsed time rather than tick count.
+func (s *speedSample) observe(elapsed time.Duration, above bool, window time.Duration) {
+	n := len(s.intervals)
+	if n > 0 && s.intervals[n-1].above == above {
+		s.intervals[n-1].duration += elapsed
+	} else {
+		s.intervals = append(s.intervals, speedInterval{duration: elapsed, above: above})
+	}
+	s.duration += elapsed
+	if above {
+		s.above += elapsed
+	}
+	for s.duration > window {
+		trim := min(s.duration-window, s.intervals[0].duration)
+		s.intervals[0].duration -= trim
+		s.duration -= trim
+		if s.intervals[0].above {
+			s.above -= trim
+		}
+		if s.intervals[0].duration == 0 {
+			s.intervals = s.intervals[1:]
+		}
+	}
+}
+
 type activePenalty struct {
 	panel.DynamicSpeedPenalty
 	until time.Time
@@ -104,7 +138,7 @@ func (l *Limiter) ConfigureDynamic(policy *conf.NodeDynamicSpeedPolicy, commands
 		l.restoreDynamicLocked(now)
 	}
 	if policy != nil && !reflect.DeepEqual(old, policy) {
-		reset := old == nil || old.Enabled != policy.Enabled || old.ThresholdMbps != policy.ThresholdMbps || old.SustainSeconds != policy.SustainSeconds
+		reset := old == nil || old.Enabled != policy.Enabled || old.ThresholdMbps != policy.ThresholdMbps || old.SustainSeconds != policy.SustainSeconds || old.EffectiveOverThresholdPercent() != policy.EffectiveOverThresholdPercent()
 		l.UserLimitInfo.Range(func(k, v any) bool {
 			key, u := k.(string), v.(*UserLimitInfo)
 			if !policy.Enabled || u.DynamicSpeedExempt {
@@ -173,7 +207,7 @@ func (l *Limiter) dynamicEventLocked(p activePenalty, kind string, now time.Time
 		s.events = s.events[len(s.events)-50:]
 	}
 	s.dirty = true
-	log.WithFields(log.Fields{"user_id": p.UserID, "penalty_id": p.ID, "limit_mbps": p.LimitMbps, "expires_at": p.ExpiresAt}).Info("Dynamic speed limit " + kind)
+	log.WithFields(log.Fields{"user_id": p.UserID, "penalty_id": p.ID, "limit_mbps": p.LimitMbps, "expires_at": p.ExpiresAt, "over_threshold_percent": p.OverThresholdPercent}).Info("Dynamic speed limit " + kind)
 }
 
 // SampleDynamic uses monotonic elapsed time and non-resetting counters owned
@@ -210,22 +244,25 @@ func (l *Limiter) SampleDynamic(now time.Time) {
 			return true
 		}
 		previous := s.samples[key]
-		current := speedSample{total: controller.Total(), at: now}
+		current := previous
+		current.total, current.at = controller.Total(), now
 		elapsed := now.Sub(previous.at)
 		if !previous.at.IsZero() && elapsed > 0 && elapsed <= 2*conf.DynamicSpeedSampleSeconds*time.Second && current.total >= previous.total {
 			mbps := float64(current.total-previous.total) * 8 / elapsed.Seconds() / 1000000
-			if mbps > float64(s.policy.ThresholdMbps) {
-				current.above = previous.above + elapsed
-			}
-			if current.above >= time.Duration(s.policy.SustainSeconds)*time.Second {
+			window := time.Duration(s.policy.SustainSeconds) * time.Second
+			current.observe(elapsed, mbps > float64(s.policy.ThresholdMbps), window)
+			if current.duration >= window && current.above*100 >= window*time.Duration(s.policy.EffectiveOverThresholdPercent()) {
 				until := now.Add(time.Duration(s.policy.PenaltySeconds) * time.Second)
-				p := activePenalty{DynamicSpeedPenalty: panel.DynamicSpeedPenalty{ID: rand.Text(), UserID: u.UID, StartedAt: now.Unix(), ExpiresAt: until.Unix(), LimitMbps: s.policy.LimitMbps, MeasuredMbps: mbps, Revision: s.policy.Revision}, until: until}
+				p := activePenalty{DynamicSpeedPenalty: panel.DynamicSpeedPenalty{ID: rand.Text(), UserID: u.UID, StartedAt: now.Unix(), ExpiresAt: until.Unix(), LimitMbps: s.policy.LimitMbps, MeasuredMbps: mbps, OverThresholdPercent: float64(current.above) * 100 / float64(window), Revision: s.policy.Revision}, until: until}
 				s.penalties[key] = p
 				u.DynamicSpeedLimit, u.ExpireTime = p.LimitMbps, p.ExpiresAt
 				l.updateRateLocked(key, u)
 				l.dynamicEventLocked(p, "triggered", now)
-				current.above = 0
+				current = speedSample{total: current.total, at: now}
 			}
+		} else {
+			// Missing observations are unknown time, not tolerated low-speed time.
+			current = speedSample{total: current.total, at: now}
 		}
 		s.samples[key] = current
 		return true
@@ -349,10 +386,11 @@ func (l *Limiter) DynamicSpeedStatus() *panel.DynamicSpeedStatus {
 	l.userMu.RLock()
 	defer l.userMu.RUnlock()
 	s := &l.dynamic
-	status := &panel.DynamicSpeedStatus{Version: 1, SampleSeconds: conf.DynamicSpeedSampleSeconds, StateError: s.err, Penalties: []panel.DynamicSpeedPenalty{}, Events: append([]panel.DynamicSpeedEvent{}, s.events...), ReleasedCommands: append([]string{}, s.released...)}
+	status := &panel.DynamicSpeedStatus{Version: conf.DynamicSpeedPolicyVersion, SampleSeconds: conf.DynamicSpeedSampleSeconds, StateError: s.err, Penalties: []panel.DynamicSpeedPenalty{}, Events: append([]panel.DynamicSpeedEvent{}, s.events...), ReleasedCommands: append([]string{}, s.released...)}
 	status.PolicyError = s.policyErr
 	if s.policy != nil {
 		status.Enabled, status.AppliedRevision = s.policy.Enabled, s.policy.Revision
+		status.OverThresholdPercent = s.policy.EffectiveOverThresholdPercent()
 	}
 	status.LimitedUsers = len(s.penalties)
 	for _, sample := range s.samples {

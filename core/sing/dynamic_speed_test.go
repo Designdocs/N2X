@@ -52,7 +52,7 @@ func TestDynamicSpeedSingTCPAndUDPSharesCapAndKeepsBilling(t *testing.T) {
 	if reject {
 		t.Fatal("user rejected")
 	}
-	p := &conf.NodeDynamicSpeedPolicy{Version: 1, Revision: 1, Enabled: true, ThresholdMbps: 2, SustainSeconds: 30, LimitMbps: 1, PenaltySeconds: 60}
+	p := &conf.NodeDynamicSpeedPolicy{Version: 2, OverThresholdPercent: 85, Revision: 1, Enabled: true, ThresholdMbps: 2, SustainSeconds: 30, LimitMbps: 1, PenaltySeconds: 60}
 	if err := l.ConfigureDynamic(p, nil, ""); err != nil {
 		t.Fatal(err)
 	}

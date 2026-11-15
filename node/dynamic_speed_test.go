@@ -27,7 +27,7 @@ func TestDynamicSpeedSamplingContinuesWhilePanelSyncIsBlocked(t *testing.T) {
 	limiter.Init()
 	l := limiter.AddLimiter(t.Name(), &conf.LimitConfig{}, []panel.UserInfo{{Id: 1, Uuid: "user"}}, nil)
 	defer limiter.DeleteLimiter(t.Name())
-	p := &conf.NodeDynamicSpeedPolicy{Version: 1, Revision: 1, Enabled: true, ThresholdMbps: 2, SustainSeconds: 30, LimitMbps: 1, PenaltySeconds: 60}
+	p := &conf.NodeDynamicSpeedPolicy{Version: 2, OverThresholdPercent: 85, Revision: 1, Enabled: true, ThresholdMbps: 2, SustainSeconds: 30, LimitMbps: 1, PenaltySeconds: 60}
 	if err := l.ConfigureDynamic(p, nil, ""); err != nil {
 		t.Fatal(err)
 	}
