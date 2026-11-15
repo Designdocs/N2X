@@ -87,6 +87,12 @@ func (c *Controller) Start() error {
 	if err != nil {
 		return startError(StagePanel, "get user list error: %w", err)
 	}
+	rosterApplied := false
+	defer func() {
+		if !rosterApplied {
+			c.apiClient.InvalidateUserListCache()
+		}
+	}()
 	if len(c.userList) == 0 {
 		return startError(StagePanel, "add users error: not have any user")
 	}
@@ -136,6 +142,8 @@ func (c *Controller) Start() error {
 		return startError(StageCore, "add users error: %w", err)
 	}
 	log.WithField("tag", c.tag).Infof("Added %d new users", added)
+	c.limiter.AcknowledgeDynamicExemptions(c.apiClient.UserExemptionsRevision())
+	rosterApplied = true
 	c.info = node
 	// The rate table has to be published before the sampler starts feeding
 	// pressure: a governor ceiling with no per-user rates would size every

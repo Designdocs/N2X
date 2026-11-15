@@ -304,7 +304,7 @@ func TestDynamicSpeedBriefDropStillTriggersAfterFullWindow(t *testing.T) {
 	}
 	feedSpeed(l, b, now, 5, 60)
 	status := l.DynamicSpeedStatus()
-	if status.Version != 2 || status.OverThresholdPercent != 85 || status.LimitedUsers != 1 || b.Rate() != 625000 {
+	if status.Version != conf.DynamicSpeedRuntimeVersion || status.OverThresholdPercent != 85 || status.LimitedUsers != 1 || b.Rate() != 625000 {
 		t.Fatalf("brief dip evaded the 85%% policy: %+v", status)
 	}
 	if ratio := status.Penalties[0].OverThresholdPercent; ratio < 97 || ratio >= 100 {
@@ -373,5 +373,53 @@ func TestDynamicSpeedRatioPolicyChangeRestartsObservation(t *testing.T) {
 	feedSpeed(l, b, now, 5, 60)
 	if l.DynamicSpeedStatus().LimitedUsers != 1 {
 		t.Fatal("ratio edit never collected a new full window")
+	}
+}
+
+func TestDynamicSpeedExemptionRevisionWaitsForAppliedRoster(t *testing.T) {
+	l, p, b, _, now := dynamicFixture(t, "")
+	p.ExemptionsRevision = 1
+	p.Revision++
+	if err := l.ConfigureDynamic(p, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	now = feedSpeed(l, b, now, 360, 60)
+	if status := l.DynamicSpeedStatus(); status.LimitedUsers != 0 || status.ExemptionsAppliedRevision != 0 {
+		t.Fatalf("pending roster issued a penalty: %+v", status)
+	}
+	l.AcknowledgeDynamicExemptions(1)
+	now = feedSpeed(l, b, now, 175, 60)
+	if l.DynamicSpeedStatus().LimitedUsers != 0 {
+		t.Fatal("reused observations from before roster acknowledgement")
+	}
+	now = feedSpeed(l, b, now, 5, 60)
+	if l.DynamicSpeedStatus().LimitedUsers != 1 {
+		t.Fatal("acknowledged roster never resumed detection")
+	}
+	p.ExemptionsRevision = 2
+	p.Revision++
+	if err := l.ConfigureDynamic(p, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	old := panel.UserInfo{Id: 7, Uuid: "ordinary", DeviceLimit: 2}
+	exempt := old
+	exempt.DynamicSpeedExempt, exempt.SpeedLimit = true, 3
+	l.UpdateUser(t.Name(), []panel.UserInfo{exempt}, []panel.UserInfo{old})
+	l.AcknowledgeDynamicExemptions(2)
+	feedSpeed(l, b, now, 360, 60)
+	if status := l.DynamicSpeedStatus(); status.LimitedUsers != 0 || status.ExemptionsAppliedRevision != 2 || b.Rate() != 375000 {
+		t.Fatalf("exemption did not clear only the dynamic penalty: %+v rate=%d", status, b.Rate())
+	}
+}
+
+func TestDynamicSpeedUnmanagedStatusUsesDisabledDefaults(t *testing.T) {
+	l := AddLimiter(t.Name(), &conf.LimitConfig{}, nil, nil)
+	defer DeleteLimiter(t.Name())
+	if err := l.ConfigureDynamic(nil, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	status := l.DynamicSpeedStatus()
+	if status.Enabled || status.ThresholdMbps != 50 || status.SustainSeconds != 180 || status.OverThresholdPercent != 85 || status.LimitMbps != 5 || status.PenaltySeconds != 1800 {
+		t.Fatalf("unexpected default status: %+v", status)
 	}
 }

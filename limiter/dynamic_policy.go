@@ -60,17 +60,28 @@ type activePenalty struct {
 	until time.Time
 }
 type dynamicState struct {
-	policy    *conf.NodeDynamicSpeedPolicy
-	samples   map[string]speedSample
-	penalties map[string]activePenalty
-	events    []panel.DynamicSpeedEvent
-	released  []string
-	file      string
-	loaded    bool
-	dirty     bool
-	err       string
-	policyErr string
-	stopped   bool
+	policy                    *conf.NodeDynamicSpeedPolicy
+	samples                   map[string]speedSample
+	penalties                 map[string]activePenalty
+	events                    []panel.DynamicSpeedEvent
+	released                  []string
+	file                      string
+	loaded                    bool
+	dirty                     bool
+	err                       string
+	policyErr                 string
+	stopped                   bool
+	exemptionsAppliedRevision int64
+}
+
+// Confirm only a roster that was successfully decoded and applied. Saving the
+// node rule alone must not acknowledge exemptions while its user fetch failed.
+func (l *Limiter) AcknowledgeDynamicExemptions(revision int64) {
+	l.userMu.Lock()
+	defer l.userMu.Unlock()
+	if revision >= 0 {
+		l.dynamic.exemptionsAppliedRevision = revision
+	}
 }
 
 func (l *Limiter) effectiveRateLocked(u *UserLimitInfo) int64 {
@@ -243,6 +254,12 @@ func (l *Limiter) SampleDynamic(now time.Time) {
 		if _, penalized := s.penalties[key]; penalized {
 			return true
 		}
+		if s.policy.ExemptionsRevision != s.exemptionsAppliedRevision {
+			// Wait for the matching roster before issuing a new penalty. An
+			// exemption edit can arrive before its user-list refresh succeeds.
+			l.resetSampleLocked(key, now)
+			return true
+		}
 		previous := s.samples[key]
 		current := previous
 		current.total, current.at = controller.Total(), now
@@ -386,12 +403,16 @@ func (l *Limiter) DynamicSpeedStatus() *panel.DynamicSpeedStatus {
 	l.userMu.RLock()
 	defer l.userMu.RUnlock()
 	s := &l.dynamic
-	status := &panel.DynamicSpeedStatus{Version: conf.DynamicSpeedPolicyVersion, SampleSeconds: conf.DynamicSpeedSampleSeconds, StateError: s.err, Penalties: []panel.DynamicSpeedPenalty{}, Events: append([]panel.DynamicSpeedEvent{}, s.events...), ReleasedCommands: append([]string{}, s.released...)}
+	status := &panel.DynamicSpeedStatus{Version: conf.DynamicSpeedRuntimeVersion, SampleSeconds: conf.DynamicSpeedSampleSeconds, StateError: s.err, Penalties: []panel.DynamicSpeedPenalty{}, Events: append([]panel.DynamicSpeedEvent{}, s.events...), ReleasedCommands: append([]string{}, s.released...), ExemptionsAppliedRevision: s.exemptionsAppliedRevision}
 	status.PolicyError = s.policyErr
+	effective := conf.DefaultNodeDynamicSpeedPolicy()
 	if s.policy != nil {
-		status.Enabled, status.AppliedRevision = s.policy.Enabled, s.policy.Revision
-		status.OverThresholdPercent = s.policy.EffectiveOverThresholdPercent()
+		effective = *s.policy
 	}
+	status.Enabled, status.AppliedRevision = effective.Enabled, effective.Revision
+	status.OverThresholdPercent = effective.EffectiveOverThresholdPercent()
+	status.ThresholdMbps, status.SustainSeconds = effective.ThresholdMbps, effective.SustainSeconds
+	status.LimitMbps, status.PenaltySeconds = effective.LimitMbps, effective.PenaltySeconds
 	status.LimitedUsers = len(s.penalties)
 	for _, sample := range s.samples {
 		if sample.above > 0 {

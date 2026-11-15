@@ -22,16 +22,21 @@ type DynamicSpeedEvent struct {
 }
 
 type DynamicSpeedStatus struct {
-	Version              int                   `json:"version"`
-	Enabled              bool                  `json:"enabled"`
-	AppliedRevision      int64                 `json:"applied_revision"`
-	SampleSeconds        int                   `json:"sample_seconds"`
-	OverThresholdPercent int                   `json:"over_threshold_percent"`
-	LimitedUsers         int                   `json:"limited_users"`
-	ObservingUsers       int                   `json:"observing_users"`
-	Penalties            []DynamicSpeedPenalty `json:"penalties"`
-	Events               []DynamicSpeedEvent   `json:"events"`
-	ReleasedCommands     []string              `json:"released_commands"`
-	StateError           string                `json:"state_error,omitempty"`
-	PolicyError          string                `json:"policy_error,omitempty"`
+	Version                   int                   `json:"version"`
+	Enabled                   bool                  `json:"enabled"`
+	AppliedRevision           int64                 `json:"applied_revision"`
+	ExemptionsAppliedRevision int64                 `json:"exemptions_applied_revision"`
+	SampleSeconds             int                   `json:"sample_seconds"`
+	ThresholdMbps             int                   `json:"threshold_mbps"`
+	SustainSeconds            int                   `json:"sustain_seconds"`
+	LimitMbps                 int                   `json:"limit_mbps"`
+	PenaltySeconds            int                   `json:"penalty_seconds"`
+	OverThresholdPercent      int                   `json:"over_threshold_percent"`
+	LimitedUsers              int                   `json:"limited_users"`
+	ObservingUsers            int                   `json:"observing_users"`
+	Penalties                 []DynamicSpeedPenalty `json:"penalties"`
+	Events                    []DynamicSpeedEvent   `json:"events"`
+	ReleasedCommands          []string              `json:"released_commands"`
+	StateError                string                `json:"state_error,omitempty"`
+	PolicyError               string                `json:"policy_error,omitempty"`
 }

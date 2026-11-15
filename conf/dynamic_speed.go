@@ -1,6 +1,9 @@
 package conf
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // NodeDynamicSpeedPolicy is a panel-owned policy. A nil policy means the
 // panel has not taken ownership; an explicit disabled policy overrides local
@@ -8,6 +11,7 @@ import "fmt"
 type NodeDynamicSpeedPolicy struct {
 	Version              int   `json:"version"`
 	Revision             int64 `json:"revision"`
+	ExemptionsRevision   int64 `json:"exemptions_revision"`
 	Enabled              bool  `json:"enabled"`
 	ThresholdMbps        int   `json:"threshold_mbps"`
 	SustainSeconds       int   `json:"sustain_seconds"`
@@ -19,11 +23,30 @@ type NodeDynamicSpeedPolicy struct {
 const (
 	DynamicSpeedSampleSeconds               = 5
 	DynamicSpeedPolicyVersion               = 2
+	DynamicSpeedRuntimeVersion              = 3
 	DynamicSpeedDefaultOverThresholdPercent = 85
 )
 
-// Older panel policies omit the new ratio; adopt the configured default when
-// reading version 1. Version 2 always carries an explicit percentage.
+func DefaultNodeDynamicSpeedPolicy() NodeDynamicSpeedPolicy {
+	return NodeDynamicSpeedPolicy{Version: DynamicSpeedPolicyVersion, Enabled: false,
+		ThresholdMbps: 50, SustainSeconds: 180, OverThresholdPercent: DynamicSpeedDefaultOverThresholdPercent,
+		LimitMbps: 5, PenaltySeconds: 1800}
+}
+
+// Fill only omitted panel fields. Explicit values, including enabled=false,
+// override defaults and are validated before replacing a running policy.
+func (p *NodeDynamicSpeedPolicy) UnmarshalJSON(data []byte) error {
+	type policyWire NodeDynamicSpeedPolicy
+	value := DefaultNodeDynamicSpeedPolicy()
+	if err := json.Unmarshal(data, (*policyWire)(&value)); err != nil {
+		return err
+	}
+	*p = value
+	return nil
+}
+
+// Preserve version 1 policies assembled by legacy callers in memory. JSON
+// policies of either version acquire omitted fields during decoding.
 func (p *NodeDynamicSpeedPolicy) EffectiveOverThresholdPercent() int {
 	if p.Version == 1 && p.OverThresholdPercent == 0 {
 		return DynamicSpeedDefaultOverThresholdPercent
@@ -35,7 +58,7 @@ func (p *NodeDynamicSpeedPolicy) Validate() error {
 	if p == nil {
 		return nil
 	}
-	if (p.Version != 1 && p.Version != DynamicSpeedPolicyVersion) || p.Revision < 0 {
+	if (p.Version != 1 && p.Version != DynamicSpeedPolicyVersion) || p.Revision < 0 || p.ExemptionsRevision < 0 {
 		return fmt.Errorf("unsupported dynamic speed policy version or revision")
 	}
 	if p.ThresholdMbps < 1 || p.ThresholdMbps > 100000 || p.LimitMbps < 1 || p.LimitMbps >= p.ThresholdMbps {

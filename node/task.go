@@ -150,6 +150,12 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}).Error("Get user list failed")
 		return nil
 	}
+	rosterApplied := newU == nil
+	defer func() {
+		if !rosterApplied {
+			c.apiClient.InvalidateUserListCache()
+		}
+	}()
 	// get user alive
 	newA, err := c.apiClient.GetUserAlive()
 	if err != nil {
@@ -258,6 +264,8 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			_ = c.userReportPeriodic.Start(false)
 		}
 		log.WithField("tag", c.tag).Infof("Added %d new users", len(c.userList))
+		c.limiter.AcknowledgeDynamicExemptions(c.apiClient.UserExemptionsRevision())
+		rosterApplied = true
 		// exit
 		return nil
 	}
@@ -307,6 +315,8 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}
 	}
 	c.userList = newU
+	c.limiter.AcknowledgeDynamicExemptions(c.apiClient.UserExemptionsRevision())
+	rosterApplied = true
 	// Republish unconditionally: a plan-rate edit changes no membership, so
 	// it shows up as an empty change set that still has to reach the core.
 	c.publishArtXUserRates()

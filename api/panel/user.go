@@ -2,9 +2,9 @@ package panel
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
-	"encoding/json/jsontext"
 	"encoding/json/v2"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -57,6 +57,14 @@ func (c *Client) GetUserList() ([]UserInfo, error) {
 	if err = c.checkResponse(r, path, err); err != nil {
 		return nil, err
 	}
+	var exemptionsRevision int64
+	if header := r.Header().Get("X-Dynamic-Speed-Exemptions-Revision"); header != "" {
+		value, parseErr := strconv.ParseInt(header, 10, 64)
+		if parseErr != nil || value < 0 {
+			return nil, fmt.Errorf("invalid dynamic speed exemptions revision")
+		}
+		exemptionsRevision = value
+	}
 	userlist := &UserListBody{}
 	if strings.Contains(r.Header().Get("Content-Type"), "application/x-msgpack") {
 		decoder := msgpack.NewDecoder(r.RawResponse.Body)
@@ -64,42 +72,32 @@ func (c *Client) GetUserList() ([]UserInfo, error) {
 			return nil, fmt.Errorf("decode user list error: %w", err)
 		}
 	} else {
-		dec := jsontext.NewDecoder(r.RawResponse.Body)
-		for {
-			tok, err := dec.ReadToken()
-			if err != nil {
-				return nil, fmt.Errorf("decode user list error: %w", err)
-			}
-			if tok.Kind() == '"' && tok.String() == "users" {
-				break
-			}
-		}
-		tok, err := dec.ReadToken()
-		if err != nil {
+		if err := json.UnmarshalRead(r.RawResponse.Body, userlist); err != nil {
 			return nil, fmt.Errorf("decode user list error: %w", err)
-		}
-		if tok.Kind() != '[' {
-			return nil, fmt.Errorf(`decode user list error: expected "users" array`)
-		}
-		for dec.PeekKind() != ']' {
-			val, err := dec.ReadValue()
-			if err != nil {
-				return nil, fmt.Errorf("decode user list error: read user object: %w", err)
-			}
-			var u UserInfo
-			if err := json.Unmarshal(val, &u); err != nil {
-				return nil, fmt.Errorf("decode user list error: unmarshal user error: %w", err)
-			}
-			userlist.Users = append(userlist.Users, u)
 		}
 	}
 	if userlist.Users == nil {
-		userlist.Users = []UserInfo{}
+		return nil, fmt.Errorf(`decode user list error: expected "users" array`)
 	}
 	c.etagMu.Lock()
 	c.userEtag = r.Header().Get("ETag")
+	c.userExemptionsRevision = exemptionsRevision
 	c.etagMu.Unlock()
 	return userlist.Users, nil
+}
+
+func (c *Client) UserExemptionsRevision() int64 {
+	c.etagMu.Lock()
+	defer c.etagMu.Unlock()
+	return c.userExemptionsRevision
+}
+
+// Replay a decoded roster when the controller could not apply it. A later
+// 304 must never acknowledge users that the running core did not receive.
+func (c *Client) InvalidateUserListCache() {
+	c.etagMu.Lock()
+	defer c.etagMu.Unlock()
+	c.userEtag = ""
 }
 
 // GetUserAlive will fetch the alive_ip count for users

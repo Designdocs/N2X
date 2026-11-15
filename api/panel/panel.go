@@ -21,26 +21,27 @@ import (
 // Panel is the interface for different panel's api.
 
 type Client struct {
-	client           *resty.Client
-	APIHost          string
-	APISendIP        string
-	InstanceID       string
-	Token            string
-	NodeType         string
-	NodeId           int
-	etagMu           sync.Mutex
-	nodeEtag         string
-	userEtag         string
-	nodeConfigHash   string
-	nodeCacheVersion uint64
-	nodeRetryVersion uint64
-	syncWake         func()
-	UserList         *UserListBody
-	AliveMap         *AliveMap
-	aliveMu          sync.Mutex
-	aliveUpdate      func(map[int]int)
-	kickedUpdate     func(map[int]map[string]int64)
-	cdnPolicy        cdn.Policy
+	client                 *resty.Client
+	APIHost                string
+	APISendIP              string
+	InstanceID             string
+	Token                  string
+	NodeType               string
+	NodeId                 int
+	etagMu                 sync.Mutex
+	nodeEtag               string
+	userEtag               string
+	userExemptionsRevision int64
+	nodeConfigHash         string
+	nodeCacheVersion       uint64
+	nodeRetryVersion       uint64
+	syncWake               func()
+	UserList               *UserListBody
+	AliveMap               *AliveMap
+	aliveMu                sync.Mutex
+	aliveUpdate            func(map[int]int)
+	kickedUpdate           func(map[int]map[string]int64)
+	cdnPolicy              cdn.Policy
 
 	// wsCfg is retained so Start() can spawn the driver lazily after the
 	// owning controller has been fully constructed.
