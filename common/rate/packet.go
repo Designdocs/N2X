@@ -2,6 +2,7 @@ package rate
 
 import (
 	"context"
+
 	"github.com/sagernet/sing/common/buf"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
@@ -20,6 +21,11 @@ func NewPacketConnRateLimiter(conn N.PacketConn, limiter *Controller, parent con
 	ctx, cancel := context.WithCancel(parent)
 	return &PacketConn{PacketConn: conn, limiter: limiter, ctx: ctx, cancel: cancel}
 }
+
+// Forward buffer requirements without giving the copy loop a way to bypass
+// the limiter. Packet transports such as Snell prepend their wire header.
+func (p *PacketConn) FrontHeadroom() int { return N.CalculateFrontHeadroom(p.PacketConn) }
+func (p *PacketConn) RearHeadroom() int  { return N.CalculateRearHeadroom(p.PacketConn) }
 
 func (p *PacketConn) Close() error { p.cancel(); return p.PacketConn.Close() }
 func (p *PacketConn) ReadPacket(buffer *buf.Buffer) (M.Socksaddr, error) {

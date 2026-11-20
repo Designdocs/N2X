@@ -24,7 +24,7 @@ var (
 	singLogLevels  = []string{"trace", "debug", "info", "warn", "warning", "error", "fatal", "panic"}
 	panelNodeTypes = []string{
 		"v2ray", "anytls", "artx", "vmess", "trojan", "shadowsocks", "vless",
-		"hysteria", "hysteria2", "tuic", "shadowtls", "naive",
+		"hysteria", "hysteria2", "tuic", "shadowtls", "naive", "snell",
 	}
 	xrayDNSTypes = []string{
 		"asis", "useip", "useipv4", "useipv6", "useipv4v6", "useipv6v4",

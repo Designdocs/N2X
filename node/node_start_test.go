@@ -25,9 +25,13 @@ func (c *startStubCore) AddNode(string, *panel.NodeInfo, *conf.Options) error { 
 
 func (c *startStubCore) DelNode(string) error { return nil }
 
-// fakePanel serves a node whose config body is nodeBody, one user
-// and an empty alive list. A nil nodeBody answers the config request with 404.
-func fakePanel(t *testing.T, nodeBody *string) *httptest.Server {
+func (c *startStubCore) AddUsers(p *vCore.AddUsersParams) (int, error) {
+	return len(p.Users), nil
+}
+
+// fakePanel serves a node with the supplied config and user roster.
+// A nil nodeBody answers the config request with 404.
+func fakePanel(t *testing.T, nodeBody *string, roster string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -39,7 +43,7 @@ func fakePanel(t *testing.T, nodeBody *string) *httptest.Server {
 			}
 			_, _ = w.Write([]byte(*nodeBody))
 		case "/api/v1/server/UniProxy/user":
-			_, _ = w.Write([]byte(`{"users":[{"id":1,"uuid":"00000000-0000-0000-0000-000000000001"}]}`))
+			_, _ = w.Write([]byte(roster))
 		case "/api/v1/server/UniProxy/alivelist":
 			_, _ = w.Write([]byte(`{"alive":{}}`))
 		default:
@@ -92,7 +96,7 @@ func TestNodeStartReportsWhichStageFailed(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			panelServer := fakePanel(t, tt.nodeBody)
+			panelServer := fakePanel(t, tt.nodeBody, `{"users":[{"id":1,"uuid":"00000000-0000-0000-0000-000000000001"}]}`)
 			nodes := []conf.NodeConfig{
 				{ApiConfig: conf.ApiConfig{APIHost: panelServer.URL, Key: "token", NodeType: tt.nodeType, NodeID: 7}},
 			}
@@ -114,6 +118,20 @@ func TestNodeStartReportsWhichStageFailed(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSnellStartsWithEmptyRoster(t *testing.T) {
+	limiter.Init()
+	server := fakePanel(t, nodeBody(`"version":6,"psk":"test-shared-key"`), `{"users":[]}`)
+	client, err := panel.New(&conf.ApiConfig{APIHost: server.URL, Key: "token", NodeType: "snell", NodeID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller := NewController(&startStubCore{}, client, &conf.Options{}, nil)
+	if err := controller.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controller.Close() })
 }
 
 type rosterStubCore struct {

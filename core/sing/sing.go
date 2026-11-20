@@ -165,6 +165,7 @@ func (b *Sing) Protocols() []string {
 		"anytls",
 		"shadowtls",
 		"naive",
+		"snell",
 	}
 	return append(protocols, quicProtocols...)
 }

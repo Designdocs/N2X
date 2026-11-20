@@ -124,7 +124,8 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		"hysteria2",
 		"tuic",
 		"shadowtls",
-		"naive":
+		"naive",
+		"snell":
 	default:
 		return nil, fmt.Errorf("unsupported Node type: %s", c.NodeType)
 	}

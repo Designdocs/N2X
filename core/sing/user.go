@@ -94,6 +94,8 @@ func (b *Sing) AddUsers(p *core.AddUsersParams) (added int, err error) {
 			}
 		}
 		err = in.(*anytls.Inbound).AddUsers(us)
+	case "snell":
+		err = in.(*snellInbound).updateUsers(p.Users, nil)
 	case "tuic":
 		us := make([]option.TUICUser, len(p.Users))
 		ids := make([]int, len(p.Users))
@@ -196,6 +198,8 @@ func (b *Sing) DelUsers(users []panel.UserInfo, tag string, info *panel.NodeInfo
 		del = i.(*trojan.Inbound)
 	case "anytls":
 		del = i.(*anytls.Inbound)
+	case "snell":
+		del = i.(*snellInbound)
 	case "tuic":
 		del = i.(*tuic.Inbound)
 	case "hysteria":

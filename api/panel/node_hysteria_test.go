@@ -53,7 +53,7 @@ func newHysteriaTestClient(t *testing.T, nodeType, body string) *Client {
 func TestClientAcceptsNewNodeTypes(t *testing.T) {
 	for _, nodeType := range []string{
 		"hysteria", "hysteria2", "tuic", "shadowtls", "naive",
-		"vmess", "vless", "trojan", "shadowsocks", "anytls", "artx",
+		"vmess", "vless", "trojan", "shadowsocks", "anytls", "artx", "snell",
 	} {
 		if _, err := New(&conf.ApiConfig{
 			APIHost:  "http://panel.test",

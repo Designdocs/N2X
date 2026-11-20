@@ -340,6 +340,21 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 			PaddingScheme:              info.AnyTls.PaddingScheme,
 			InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{TLS: &tls},
 		}
+	case "snell":
+		if info.Snell == nil {
+			return option.Inbound{}, fmt.Errorf("missing snell node settings")
+		}
+		in.Type = "snell"
+		in.Options = &snellInboundOptions{
+			SnellInboundOptions: option.SnellInboundOptions{
+				Version: info.Snell.Version,
+				AbstractSnellInboundOptions: option.AbstractSnellInboundOptions{
+					ListenOptions: listen,
+					PSK:           info.Snell.PSK,
+				},
+			},
+			panelManaged: true,
+		}
 	case "tuic":
 		if info.Tuic == nil {
 			return option.Inbound{}, fmt.Errorf("missing tuic node settings")

@@ -70,6 +70,7 @@ type NodeInfo struct {
 	Hysteria2   *Hysteria2Node
 	ShadowTLS   *ShadowTLSNode
 	Naive       *NaiveNode
+	Snell       *SnellNode
 	Common      *CommonNode
 	CertConfig  *conf.CertConfig
 }
@@ -388,6 +389,14 @@ type NaiveNode struct {
 	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
 }
 
+const SnellVersion = 6
+
+type SnellNode struct {
+	CommonNode
+	Version int    `json:"version"`
+	PSK     string `json:"psk"`
+}
+
 type ArtXNode struct {
 	CommonNode
 	PublicHost      string       `json:"public_host"`
@@ -682,6 +691,19 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		cm = &rsp.CommonNode
 		node.Naive = rsp
 		node.Security = Tls
+	case "snell":
+		rsp := &SnellNode{}
+		if err = json.Unmarshal(r.Body(), rsp); err != nil {
+			return nil, fmt.Errorf("decode snell params error: %w", err)
+		}
+		if rsp.Version != SnellVersion {
+			return nil, fmt.Errorf("unsupported panel Snell version: %d (use %d)", rsp.Version, SnellVersion)
+		}
+		if len(rsp.PSK) < 12 || len(rsp.PSK) > 255 {
+			return nil, fmt.Errorf("snell: psk length must be between 12 and 255 bytes")
+		}
+		cm = &rsp.CommonNode
+		node.Snell = rsp
 	default:
 		return nil, fmt.Errorf("unsupported node type: %s", c.NodeType)
 	}

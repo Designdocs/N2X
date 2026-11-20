@@ -93,7 +93,9 @@ func (c *Controller) Start() error {
 			c.apiClient.InvalidateUserListCache()
 		}
 	}()
-	if len(c.userList) == 0 {
+	// Managed Snell stays in multi-user mode with an empty roster, so it can
+	// start syncing immediately while rejecting proxy requests.
+	if len(c.userList) == 0 && node.Type != "snell" {
 		return startError(StagePanel, "add users error: not have any user")
 	}
 	c.aliveMap, err = c.apiClient.GetUserAlive()

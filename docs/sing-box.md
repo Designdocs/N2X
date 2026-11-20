@@ -27,6 +27,7 @@ exactly one of them; `core/selector.go` decides which.
 | `tuic`        |  —   |  ✅  | Requires the `with_quic` build tag |
 | `shadowtls`   |  —   |  ✅  | |
 | `naive`       |  —   |  ✅  | |
+| `snell`       |  —   |  ✅  | Panel-managed Snell v6 |
 
 `N2X version` prints the cores actually compiled into a binary.
 
@@ -83,8 +84,14 @@ which would fail every client handshake with nothing useful in the log.
 
 **ShadowTLS needs panel support.** It is not in X-Board's `VALID_TYPES`
 (`hysteria, vless, trojan, vmess, tuic, shadowsocks, anytls, artx, socks,
-naive, http, mieru`), so the panel rejects `node_type=shadowtls` before N2X
+naive, http, mieru, snell`), so the panel rejects `node_type=shadowtls` before N2X
 sees a response. The core supports it; the panel has to grow the type first.
+
+**Snell v6.** Create a Snell v6 node in X-Board with a 12 to 255 byte
+pre-shared key (PSK). Use `"NodeType": "snell"` and `"Core": "sing"` in the
+N2X node config. The panel sends the PSK and the authorized users. Clients
+use the PSK and their own `userkey` from the sing-box subscription. The
+listener uses TCP for both TCP and UDP proxy traffic.
 
 ## ShadowTLS is two inbounds
 
@@ -370,7 +377,7 @@ versions again.
 
 `core/sing/registry.go` replaces sing-box's own `include` package. N2X is a
 server-side agent, so it registers only the inbounds it serves plus the
-`direct`/`block`/`dns` outbounds and the DNS transports; TUN, redirect/TProxy,
+`direct`/`block`/`dns`/`snell` outbounds and the DNS transports. TUN, redirect/TProxy,
 SOCKS, HTTP, mixed, Tor, SSH, WireGuard, Tailscale and the management services
 are left out.
 
