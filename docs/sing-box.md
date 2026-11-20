@@ -93,6 +93,24 @@ N2X node config. The panel sends the PSK and the authorized users. Clients
 use the PSK and their own `userkey` from the sing-box subscription. The
 listener uses TCP for both TCP and UDP proxy traffic.
 
+The panel can enable a **ShadowTLS v3** outer layer per Snell node. Set a
+separate ShadowTLS password and a TLS 1.3 handshake host (port 443 by default).
+N2X listens on the node's existing public port and hands authenticated streams
+to Snell internally. Snell keeps the node tag for routing and per-user accounting.
+The sing-box subscription uses a ShadowTLS outbound as the Snell `detour` and
+sets its TLS server name to the configured handshake host.
+
+Clients with Mihomo's Snell v6 `userkey` support can use the X-Board
+subscription parameters `flag=mihomo&snell_v6=1`. X-APP clients with the same
+core capability add `snell_v6=1` to their existing subscription URL. With
+ShadowTLS enabled, the YAML includes `obfs-opts` containing `mode: shadow-tls`,
+version 3, the handshake hostname and the outer password. Clients connect to
+the node's published port. The handshake port is used only by N2X.
+
+Upgrade N2X before enabling the option on a node. Clients refresh their
+subscriptions after changing the option. To restore direct Snell on that port,
+turn the option off in the panel and refresh the clients again.
+
 ## ShadowTLS is two inbounds
 
 sing-box's ShadowTLS inbound performs the camouflage handshake against a real

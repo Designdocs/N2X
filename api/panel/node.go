@@ -393,8 +393,29 @@ const SnellVersion = 6
 
 type SnellNode struct {
 	CommonNode
-	Version int    `json:"version"`
-	PSK     string `json:"psk"`
+	Version   int             `json:"version"`
+	PSK       string          `json:"psk"`
+	ShadowTLS *SnellShadowTLS `json:"shadowtls,omitempty"`
+}
+
+// SnellShadowTLS is present only when the panel enables the v3 outer layer.
+type SnellShadowTLS struct {
+	Password  string             `json:"password"`
+	Handshake ShadowTLSHandshake `json:"handshake"`
+}
+
+func (s *SnellShadowTLS) Validate() error {
+	if strings.TrimSpace(s.Password) == "" {
+		return fmt.Errorf("snell shadowtls requires a password")
+	}
+	host := s.Handshake.Server
+	if host == "" || strings.ContainsAny(host, " /?#@\t\r\n") {
+		return fmt.Errorf("snell shadowtls requires a handshake hostname")
+	}
+	if s.Handshake.ServerPort < 0 || s.Handshake.ServerPort > 65535 {
+		return fmt.Errorf("snell shadowtls handshake port must be between 1 and 65535")
+	}
+	return nil
 }
 
 type ArtXNode struct {
@@ -701,6 +722,11 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		}
 		if len(rsp.PSK) < 12 || len(rsp.PSK) > 255 {
 			return nil, fmt.Errorf("snell: psk length must be between 12 and 255 bytes")
+		}
+		if rsp.ShadowTLS != nil {
+			if err := rsp.ShadowTLS.Validate(); err != nil {
+				return nil, err
+			}
 		}
 		cm = &rsp.CommonNode
 		node.Snell = rsp

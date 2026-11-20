@@ -26,11 +26,17 @@ func (b *Sing) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) e
 	case "naive":
 		err = b.registerNaiveNode(tag, info, config)
 	case "shadowtls":
-		err = b.addShadowTLSNode(tag, info, config)
+		var inbounds []option.Inbound
+		inbounds, err = buildShadowTLSInbounds(tag, info, config)
+		if err == nil {
+			err = b.addChainedInbounds(tag, inbounds)
+		}
 	default:
 		var in option.Inbound
 		in, err = getInboundOptions(tag, info, config)
-		if err == nil {
+		if err == nil && info.Type == "snell" && info.Snell.ShadowTLS != nil {
+			err = b.addSnellShadowTLS(tag, in, info.Snell.ShadowTLS)
+		} else if err == nil {
 			err = b.createInbound(tag, in)
 		}
 	}
@@ -86,14 +92,9 @@ func hysteriaPortHopRanges(info *panel.NodeInfo, config *conf.Options) ([]portho
 	return porthop.ParseRanges(specs)
 }
 
-// addShadowTLSNode brings up the detour before the public listener and rolls
-// the detour back if the listener fails, so a failed AddNode never leaves a
-// half-built node behind.
-func (b *Sing) addShadowTLSNode(tag string, info *panel.NodeInfo, config *conf.Options) error {
-	inbounds, err := buildShadowTLSInbounds(tag, info, config)
-	if err != nil {
-		return err
-	}
+// addChainedInbounds starts the inner inbound first and rolls it back if the
+// public listener fails.
+func (b *Sing) addChainedInbounds(tag string, inbounds []option.Inbound) error {
 	var created []string
 	for _, in := range inbounds {
 		if err := b.createInbound(in.Tag, in); err != nil {
@@ -106,8 +107,11 @@ func (b *Sing) addShadowTLSNode(tag string, info *panel.NodeInfo, config *conf.O
 		}
 		created = append(created, in.Tag)
 	}
-	// Route the detour's traffic and limits back to the node that owns it.
-	b.detourOwners.Store(detourTag(tag), tag)
+	for _, in := range inbounds {
+		if in.Tag != tag {
+			b.detourOwners.Store(in.Tag, tag)
+		}
+	}
 	return nil
 }
 
@@ -145,9 +149,13 @@ func (b *Sing) DelNode(tag string) error {
 			b.removeInbound(tag),
 			b.removeInbound(detour),
 		)
-	default:
-		return errors.Join(err, b.removeInbound(tag))
+	case "snell":
+		outer := snellShadowTLSTag(tag)
+		if _, wrapped := b.detourOwners.LoadAndDelete(outer); wrapped {
+			err = errors.Join(err, b.removeInbound(outer))
+		}
 	}
+	return errors.Join(err, b.removeInbound(tag))
 }
 
 func (b *Sing) removeInbound(tag string) error {

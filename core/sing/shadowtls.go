@@ -63,9 +63,6 @@ func buildShadowTLSInbounds(tag string, info *panel.NodeInfo, c *conf.Options) (
 	if err != nil {
 		return nil, err
 	}
-	// Chain the public listener to the internal Shadowsocks inbound.
-	listen.Detour = detourTag(tag)
-
 	shadowTLSOptions := &option.ShadowTLSInboundOptions{
 		ListenOptions: listen,
 		Version:       version,
@@ -79,17 +76,6 @@ func buildShadowTLSInbounds(tag string, info *panel.NodeInfo, c *conf.Options) (
 		WildcardSNI:            parseWildcardSNI(wildcardSNI),
 		HandshakeForServerName: buildHandshakeForServerName(n.HandshakeForServerName, c),
 	}
-	// v2 authenticates with a single shared password; v3 uses a user list.
-	switch version {
-	case 3:
-		shadowTLSOptions.Users = []option.ShadowTLSUser{{
-			Name:     tag,
-			Password: n.Password,
-		}}
-	case 2:
-		shadowTLSOptions.Password = n.Password
-	}
-
 	detourListen, err := buildDetourListenOptions(c)
 	if err != nil {
 		return nil, err
@@ -99,12 +85,48 @@ func buildShadowTLSInbounds(tag string, info *panel.NodeInfo, c *conf.Options) (
 		Type:    "shadowsocks",
 		Options: buildShadowsocksOptions(detourListen, n.Cipher, n.ServerKey, buildMultiplex(info, c)),
 	}
-	public := option.Inbound{
-		Tag:     tag,
-		Type:    "shadowtls",
-		Options: shadowTLSOptions,
-	}
+	public := shadowTLSOuter(tag, detour.Tag, n.Password, shadowTLSOptions)
 	return []option.Inbound{detour, public}, nil
+}
+
+func shadowTLSOuter(tag, innerTag, password string, options *option.ShadowTLSInboundOptions) option.Inbound {
+	options.Detour = innerTag
+	switch options.Version {
+	case 3:
+		options.Users = []option.ShadowTLSUser{{Name: tag, Password: password}}
+	case 2:
+		options.Password = password
+	}
+	return option.Inbound{Tag: tag, Type: "shadowtls", Options: options}
+}
+
+func snellShadowTLSTag(tag string) string {
+	return tag + "$shadowtls"
+}
+
+func (b *Sing) addSnellShadowTLS(tag string, inner option.Inbound, settings *panel.SnellShadowTLS) error {
+	if err := settings.Validate(); err != nil {
+		return err
+	}
+	options := inner.Options.(*snellInboundOptions)
+	options.detourOnly = true
+	port := settings.Handshake.ServerPort
+	if port == 0 {
+		port = 443
+	}
+	// The logical tag stays on Snell for routing, account limits and traffic.
+	outer := shadowTLSOuter(snellShadowTLSTag(tag), tag, settings.Password, &option.ShadowTLSInboundOptions{
+		ListenOptions: options.ListenOptions,
+		Version:       3,
+		StrictMode:    true,
+		Handshake: option.ShadowTLSHandshakeOptions{
+			ServerOptions: option.ServerOptions{
+				Server:     settings.Handshake.Server,
+				ServerPort: uint16(port),
+			},
+		},
+	})
+	return b.addChainedInbounds(tag, []option.Inbound{inner, outer})
 }
 
 // buildHandshakeForServerName maps client SNIs onto their own camouflage

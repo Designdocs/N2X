@@ -42,9 +42,9 @@ type Sing struct {
 	// tear down the extra inbounds a composite protocol created.
 	nodeTypes sync.Map // tag -> string
 
-	// detourOwners maps an internal detour inbound tag back to the node tag
-	// that owns it, so limits and traffic land on the node (see hook.go).
-	detourOwners sync.Map // detour tag -> node tag
+	// detourOwners maps the extra inbound of a chained node back to the
+	// node tag for accounting and teardown.
+	detourOwners sync.Map // extra inbound tag -> node tag
 
 	// naive owns the rebuild-based user management NaiveProxy needs.
 	naive *naiveState

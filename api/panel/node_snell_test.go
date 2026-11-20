@@ -37,3 +37,25 @@ func TestSnellNodeConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestSnellShadowTLSConfig(t *testing.T) {
+	const base = `{"server_port":8443,"version":6,"psk":"test-shared-key","base_config":{"pull_interval":60,"push_interval":60},`
+	for _, bad := range []string{
+		`"shadowtls":{"handshake":{"server":"cover.example.com"}}}`,
+		`"shadowtls":{"password":"outer-key","handshake":{"server":"https://cover.example.com"}}}`,
+		`"shadowtls":{"password":"outer-key","handshake":{"server":"cover.example.com","server_port":65536}}}`,
+	} {
+		if _, err := newHysteriaTestClient(t, "snell", base+bad).GetNodeInfo(); err == nil {
+			t.Fatal("invalid ShadowTLS settings reached the Snell node")
+		}
+	}
+	node, err := newHysteriaTestClient(t, "snell", base+`"shadowtls":{"password":"outer-key","handshake":{"server":"cover.example.com","server_port":8443}}}`).GetNodeInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.Security != None || node.Snell.ShadowTLS == nil ||
+		node.Snell.ShadowTLS.Handshake != (ShadowTLSHandshake{Server: "cover.example.com", ServerPort: 8443}) ||
+		node.Snell.ShadowTLS.Password != "outer-key" {
+		t.Fatal("valid ShadowTLS settings did not reach the Snell node")
+	}
+}

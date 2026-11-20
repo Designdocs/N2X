@@ -27,14 +27,16 @@ import (
 type snellInboundOptions struct {
 	option.SnellInboundOptions
 	panelManaged bool
+	detourOnly   bool
 }
 
 type snellInbound struct {
 	inbound.Adapter
-	router   adapter.ConnectionRouterEx
-	listener *listener.Listener
-	logger   log.ContextLogger
-	options  snellv6.ServerOptions
+	router         adapter.ConnectionRouterEx
+	listener       *listener.Listener
+	logger         log.ContextLogger
+	options        snellv6.ServerOptions
+	inboundOptions option.InboundOptions
 
 	mu          sync.Mutex
 	service     *snellv6.MultiService[string]
@@ -50,11 +52,12 @@ func newSnellInbound(ctx context.Context, router adapter.Router, logger log.Cont
 		return nil, fmt.Errorf("unsupported panel Snell version: %d", options.Version)
 	}
 	h := &snellInbound{
-		Adapter:     inbound.NewAdapter(C.TypeSnell, tag),
-		router:      uot.NewRouter(router, logger),
-		logger:      logger,
-		users:       make(map[string]struct{}),
-		connections: make(map[*snellConn]string),
+		Adapter:        inbound.NewAdapter(C.TypeSnell, tag),
+		router:         uot.NewRouter(router, logger),
+		logger:         logger,
+		users:          make(map[string]struct{}),
+		connections:    make(map[*snellConn]string),
+		inboundOptions: options.ListenOptions.InboundOptions,
 	}
 	h.options = snellv6.ServerOptions{PSK: []byte(options.PSK), Mode: snellv6.ModeDefault, Handler: h}
 	service, err := snellv6.NewMultiService[string](h.options)
@@ -62,13 +65,15 @@ func newSnellInbound(ctx context.Context, router adapter.Router, logger log.Cont
 		return nil, err
 	}
 	h.service = service
-	h.listener = listener.New(listener.Options{
-		Context:           ctx,
-		Logger:            logger,
-		Network:           []string{N.NetworkTCP},
-		Listen:            options.ListenOptions,
-		ConnectionHandler: h,
-	})
+	if !options.detourOnly {
+		h.listener = listener.New(listener.Options{
+			Context:           ctx,
+			Logger:            logger,
+			Network:           []string{N.NetworkTCP},
+			Listen:            options.ListenOptions,
+			ConnectionHandler: h,
+		})
+	}
 	return h, nil
 }
 
@@ -76,15 +81,20 @@ func (h *snellInbound) Start(stage adapter.StartStage, scope *adapter.Scope) err
 	if stage != adapter.StartStateStart {
 		return nil
 	}
-	if err := h.listener.Start(); err != nil {
-		return err
+	if h.listener != nil {
+		if err := h.listener.Start(); err != nil {
+			return err
+		}
 	}
 	scope.Add(h.close)
 	return nil
 }
 
 func (h *snellInbound) close() error {
-	err := h.listener.Close()
+	var err error
+	if h.listener != nil {
+		err = h.listener.Close()
+	}
 	h.mu.Lock()
 	connections := h.connections
 	h.connections = nil
@@ -175,6 +185,10 @@ func (h *snellInbound) NewConnection(ctx context.Context, conn net.Conn, metadat
 	service := h.service
 	h.mu.Unlock()
 
+	if onClose != nil {
+		onClose = N.OnceClose(onClose)
+	}
+	metadata.InboundOptions = h.inboundOptions
 	ctx = context.WithValue(adapter.WithContext(ctx, &metadata), snellConnKey{}, tracked)
 	if err := service.NewConnection(ctx, tracked, metadata.Source, onClose); err != nil {
 		N.CloseOnHandshakeFailure(tracked, onClose, err)
