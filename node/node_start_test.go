@@ -2,6 +2,8 @@ package node
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -180,6 +182,50 @@ func TestSnellModeReloadRetriesAfterRosterFailure(t *testing.T) {
 	failRoster.Store(false)
 	if err := controller.nodeInfoMonitor(); err != nil || controller.info.Snell.Mode != panel.SnellModeUnshaped {
 		t.Fatalf("next pull should retry the mode: mode=%s err=%v", controller.info.Snell.Mode, err)
+	}
+}
+
+func TestSnellWebsiteFallbackKeepsActiveNodeIfOriginIsInvalid(t *testing.T) {
+	limiter.Init()
+	website := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(website.Close)
+	port := website.Listener.Addr().(*net.TCPAddr).Port
+	const original = `"version":6,"psk":"test-shared-key","shadowtls":{"password":"test-outer-key","handshake":{"server":"cover.example.com"}}`
+	fallback := fmt.Sprintf(`"version":6,"psk":"test-shared-key","shadowtls":{"password":"test-outer-key","handshake":{"server":"127.0.0.1","server_port":%d},"fallback_server_name":"cover.example.com"}`, port)
+	var newOrigin atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/server/UniProxy/config":
+			fields := original
+			if newOrigin.Load() {
+				fields = fallback
+			}
+			_, _ = w.Write([]byte(*nodeBody(fields)))
+		case "/api/v1/server/UniProxy/user":
+			_, _ = w.Write([]byte(`{"users":[]}`))
+		case "/api/v1/server/UniProxy/alivelist":
+			_, _ = w.Write([]byte(`{"alive":{}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client, err := panel.New(&conf.ApiConfig{APIHost: server.URL, Key: "token", NodeType: "snell", NodeID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller := NewController(&startStubCore{}, client, &conf.Options{ListenIP: "0.0.0.0"}, nil)
+	if err := controller.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controller.Close() })
+	current := controller.info
+	newOrigin.Store(true)
+	if err := controller.nodeInfoMonitor(); err != nil || controller.info != current {
+		t.Fatalf("a non-TLS website origin should keep the running Snell node: err=%v", err)
 	}
 }
 

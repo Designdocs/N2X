@@ -15,6 +15,11 @@ import (
 )
 
 func (b *Sing) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) error {
+	if info.Snell != nil && info.Snell.ShadowTLS != nil {
+		if err := info.Snell.ShadowTLS.ValidateListen(config.ListenIP, info.Common.ServerPort); err != nil {
+			return err
+		}
+	}
 	if err := ensureSingOptions(config); err != nil {
 		return err
 	}

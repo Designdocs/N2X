@@ -120,6 +120,12 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	if err == nil && newN != nil {
 		_, err = newN.LocalCertConfig(c.Options)
 	}
+	if err == nil && newN != nil {
+		err = c.validateSnellShadowTLSChange(newN)
+		if err != nil {
+			c.apiClient.InvalidateNodeInfoCache()
+		}
+	}
 	if err != nil {
 		log.WithFields(log.Fields{
 			"tag": c.tag,

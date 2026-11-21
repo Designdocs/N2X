@@ -29,16 +29,20 @@ import (
 func TestManagedSnellV6(t *testing.T) {
 	for _, mode := range []snellv6.Mode{snellv6.ModeDefault, snellv6.ModeUnshaped} {
 		t.Run(mode.String(), func(t *testing.T) {
-			t.Run("direct", func(t *testing.T) { testManagedSnellV6(t, mode, false) })
-			t.Run("shadowtls", func(t *testing.T) { testManagedSnellV6(t, mode, true) })
+			t.Run("direct", func(t *testing.T) { testManagedSnellV6(t, mode, "") })
+			t.Run("shadowtls", func(t *testing.T) { testManagedSnellV6(t, mode, "localhost") })
+			t.Run("website-fallback", func(t *testing.T) { testManagedSnellV6(t, mode, "127.0.0.1") })
 		})
 	}
 }
 
-func testManagedSnellV6(t *testing.T, mode snellv6.Mode, wrapped bool) {
+func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string) {
 	tag := t.Name()
 	const psk = "test-shared-key-12345"
 	const outerKey = "test-shadowtls-key"
+	const sni = "example.com"
+	wrapped := handshakeHost != ""
+	websiteFallback := handshakeHost == "127.0.0.1"
 	server := newLifecycleCore(t)
 	first, second := lifecycleUsers[0], lifecycleUsers[1]
 	limiter.AddLimiter(tag, &conf.LimitConfig{}, lifecycleUsers, nil)
@@ -51,7 +55,11 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, wrapped bool) {
 	}
 	var cover *httptest.Server
 	if wrapped {
-		cover = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cover = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if websiteFallback && r.TLS.ServerName != sni {
+				http.Error(w, "unexpected SNI", http.StatusMisdirectedRequest)
+				return
+			}
 			_, _ = io.WriteString(w, "local handshake server")
 		}))
 		cover.TLS = &tls.Config{MinVersion: tls.VersionTLS13}
@@ -60,9 +68,12 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, wrapped bool) {
 		info.Snell.ShadowTLS = &panel.SnellShadowTLS{
 			Password: outerKey,
 			Handshake: panel.ShadowTLSHandshake{
-				Server:     "localhost",
+				Server:     handshakeHost,
 				ServerPort: cover.Listener.Addr().(*net.TCPAddr).Port,
 			},
+		}
+		if websiteFallback {
+			info.Snell.ShadowTLS.FallbackServerName = sni
 		}
 	}
 	if err := server.AddNode(tag, info, lifecycleOptions(t, false)); err != nil {
@@ -87,7 +98,7 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, wrapped bool) {
 					Password:      password,
 					ServerOptions: option.ServerOptions{Server: "127.0.0.1", ServerPort: uint16(common.ServerPort)},
 					OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{TLS: &option.OutboundTLSOptions{
-						Enabled: true, ServerName: "example.com", MinVersion: "1.3", Certificate: []string{string(cert)},
+						Enabled: true, ServerName: sni, MinVersion: "1.3", Certificate: []string{string(cert)},
 					}},
 				})
 			if err != nil {
@@ -97,6 +108,9 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, wrapped bool) {
 		}
 		httpClient := cover.Client()
 		httpClient.Timeout = 3 * time.Second
+		if websiteFallback {
+			httpClient.Transport.(*http.Transport).TLSClientConfig.ServerName = sni
+		}
 		resp, err := httpClient.Get("https://" + address)
 		if err != nil {
 			t.Fatalf("ordinary TLS request: %v", err)

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/netip"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -405,9 +406,12 @@ type SnellNode struct {
 
 // SnellShadowTLS is present only when the panel enables the v3 outer layer.
 type SnellShadowTLS struct {
-	Password  string             `json:"password"`
-	Handshake ShadowTLSHandshake `json:"handshake"`
+	Password           string             `json:"password"`
+	Handshake          ShadowTLSHandshake `json:"handshake"`
+	FallbackServerName string             `json:"fallback_server_name,omitempty"`
 }
+
+const snellFallbackAddress = "127.0.0.1"
 
 func (s *SnellShadowTLS) Validate() error {
 	if strings.TrimSpace(s.Password) == "" {
@@ -419,6 +423,32 @@ func (s *SnellShadowTLS) Validate() error {
 	}
 	if s.Handshake.ServerPort < 0 || s.Handshake.ServerPort > 65535 {
 		return fmt.Errorf("snell shadowtls handshake port must be between 1 and 65535")
+	}
+	if s.FallbackServerName != "" && host != snellFallbackAddress {
+		return fmt.Errorf("snell shadowtls website fallback must use %s", snellFallbackAddress)
+	}
+	return nil
+}
+
+func (s *SnellShadowTLS) HandshakePort() uint16 {
+	if s.Handshake.ServerPort == 0 {
+		return 443
+	}
+	return uint16(s.Handshake.ServerPort)
+}
+
+// ValidateListen prevents the public listener from dialing itself as its HTTPS origin.
+func (s *SnellShadowTLS) ValidateListen(listenIP string, listenPort int) error {
+	if s.Handshake.Server != snellFallbackAddress || int(s.HandshakePort()) != listenPort {
+		return nil
+	}
+	addr, err := netip.ParseAddr(listenIP)
+	if err != nil {
+		return fmt.Errorf("invalid Snell ListenIP %q: %w", listenIP, err)
+	}
+	addr = addr.Unmap()
+	if addr.IsUnspecified() || addr.String() == snellFallbackAddress {
+		return fmt.Errorf("Snell ShadowTLS and the website fallback both use TCP %d on %s; use a separate HTTPS port or set ListenIP to the node's public interface address", listenPort, snellFallbackAddress)
 	}
 	return nil
 }

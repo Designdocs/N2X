@@ -110,10 +110,6 @@ func (b *Sing) addSnellShadowTLS(tag string, inner option.Inbound, settings *pan
 	}
 	options := inner.Options.(*snellInboundOptions)
 	options.detourOnly = true
-	port := settings.Handshake.ServerPort
-	if port == 0 {
-		port = 443
-	}
 	// The logical tag stays on Snell for routing, account limits and traffic.
 	outer := shadowTLSOuter(snellShadowTLSTag(tag), tag, settings.Password, &option.ShadowTLSInboundOptions{
 		ListenOptions: options.ListenOptions,
@@ -122,7 +118,7 @@ func (b *Sing) addSnellShadowTLS(tag string, inner option.Inbound, settings *pan
 		Handshake: option.ShadowTLSHandshakeOptions{
 			ServerOptions: option.ServerOptions{
 				Server:     settings.Handshake.Server,
-				ServerPort: uint16(port),
+				ServerPort: settings.HandshakePort(),
 			},
 		},
 	})
