@@ -39,9 +39,13 @@ func TestDecoyHTTPSConfigFromEnvironment(t *testing.T) {
 	t.Setenv(decoyHTTPSCertEnvironment, "/etc/N2X/ssl/fullchain.pem")
 	t.Setenv(decoyHTTPSKeyEnvironment, "/etc/N2X/ssl/privkey.pem")
 	config := decoyHTTPSConfig("web")
-	if config == nil || config.ListenAddress != decoy.DefaultHTTPSListenAddress || config.DefaultProfile != "web" ||
+	if config == nil || config.ListenAddress != "127.0.0.1:50443" || config.DefaultProfile != "web" ||
 		config.TLS.CertificateFile != "/etc/N2X/ssl/fullchain.pem" || config.TLS.KeyFile != "/etc/N2X/ssl/privkey.pem" {
 		t.Fatalf("unexpected companion HTTPS settings: %+v", config)
+	}
+	t.Setenv(decoyHTTPSListenEnvironment, "127.0.0.1:8443")
+	if config := decoyHTTPSConfig("web"); config == nil || config.ListenAddress != "127.0.0.1:8443" {
+		t.Fatalf("explicit companion HTTPS address was lost: %+v", config)
 	}
 }
 

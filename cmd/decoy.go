@@ -53,7 +53,10 @@ func init() {
 		"",
 		"default page profile: balanced, web, media or realtime",
 	)
-	decoyServeCommand.Flags().StringVar(&decoyHTTPSListenAddress, "https-listen", "", "optional loopback HTTPS address (default 127.0.0.1:8443 with certificate files)")
+	decoyServeCommand.Flags().StringVar(
+		&decoyHTTPSListenAddress, "https-listen", "",
+		"optional loopback HTTPS address (default "+decoy.DefaultHTTPSListenAddress+" with certificate files)",
+	)
 	decoyServeCommand.Flags().StringVar(&decoyHTTPSCertFile, "https-cert-file", "", "HTTPS certificate chain in PEM format")
 	decoyServeCommand.Flags().StringVar(&decoyHTTPSKeyFile, "https-key-file", "", "HTTPS private key in PEM format")
 	decoyCommand.AddCommand(&decoyServeCommand)

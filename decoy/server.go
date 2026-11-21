@@ -21,7 +21,7 @@ import (
 
 const DefaultListenAddress = "127.0.0.1:60443"
 
-const DefaultHTTPSListenAddress = "127.0.0.1:8443"
+const DefaultHTTPSListenAddress = "127.0.0.1:50443"
 
 const maxHeaderBytes = 16 << 10
 

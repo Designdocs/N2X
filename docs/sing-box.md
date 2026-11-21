@@ -111,7 +111,7 @@ To share public TCP port 443 with an HTTPS website on the VPS, set the
 node's connection and server ports to `443`, enable **ShadowTLS v3** and
 **Local website fallback**, and enter the website's domain as the TLS 1.3
 handshake host. Configure the web server to serve that certificate and TLS 1.3
-on `127.0.0.1:8443`, or enter its loopback HTTPS port in the panel. The node
+on `127.0.0.1:50443`, or enter its loopback HTTPS port in the panel. The node
 connects directly to that loopback address and forwards the client's original
 TLS handshake, including SNI. Browsers and Snell clients use the same public
 TCP 443 listener. To keep the website on `127.0.0.1:443`, set N2X `ListenIP`
@@ -130,7 +130,7 @@ from the same embedded pages as its HTTP listener. Add these lines to the
 companion service's `/etc/N2X/artx-decoy.env`:
 
 ```dotenv
-N2X_ARTX_DECOY_HTTPS_LISTEN=127.0.0.1:8443
+N2X_ARTX_DECOY_HTTPS_LISTEN=127.0.0.1:50443
 N2X_ARTX_DECOY_HTTPS_CERT_FILE=/etc/N2X/ssl/fullchain.pem
 N2X_ARTX_DECOY_HTTPS_KEY_FILE=/etc/N2X/ssl/privkey.pem
 ```
@@ -143,8 +143,12 @@ website before enabling local website fallback in the panel:
 
 ```sh
 curl --noproxy '*' --tlsv1.3 \
-  --connect-to www.example.com:443:127.0.0.1:8443 https://www.example.com/
+  --connect-to www.example.com:443:127.0.0.1:50443 https://www.example.com/
 ```
+
+For an existing node, set `N2X_ARTX_DECOY_HTTPS_LISTEN` explicitly to the
+port already saved in the panel before upgrading. For example, use
+`127.0.0.1:8443` if the panel already uses port `8443`.
 
 For a manually launched companion, `/usr/local/N2X/N2X decoy serve` also accepts
 `--https-listen`, `--https-cert-file`, and `--https-key-file`. On Alpine, use
