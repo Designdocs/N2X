@@ -32,15 +32,16 @@ import (
 func TestManagedSnellV6(t *testing.T) {
 	for _, mode := range []snellv6.Mode{snellv6.ModeDefault, snellv6.ModeUnshaped} {
 		t.Run(mode.String(), func(t *testing.T) {
-			t.Run("direct", func(t *testing.T) { testManagedSnellV6(t, mode, "", false) })
-			t.Run("shadowtls", func(t *testing.T) { testManagedSnellV6(t, mode, "localhost", false) })
-			t.Run("website-fallback", func(t *testing.T) { testManagedSnellV6(t, mode, "127.0.0.1", false) })
-			t.Run("built-in-website", func(t *testing.T) { testManagedSnellV6(t, mode, "127.0.0.1", true) })
+			t.Run("direct", func(t *testing.T) { testManagedSnellV6(t, mode, "", false, false) })
+			t.Run("shadowtls", func(t *testing.T) { testManagedSnellV6(t, mode, "localhost", false, false) })
+			t.Run("website-fallback", func(t *testing.T) { testManagedSnellV6(t, mode, "127.0.0.1", false, false) })
+			t.Run("built-in-website", func(t *testing.T) { testManagedSnellV6(t, mode, "127.0.0.1", true, false) })
+			t.Run("direct-website", func(t *testing.T) { testManagedSnellV6(t, mode, "", true, true) })
 		})
 	}
 }
 
-func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string, builtinWebsite bool) {
+func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string, builtinWebsite, directWebsite bool) {
 	tag := t.Name()
 	const psk = "test-shared-key-12345"
 	const outerKey = "test-shadowtls-key"
@@ -60,7 +61,7 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string, b
 	}
 	var cert []byte
 	var webClient *http.Client
-	if wrapped {
+	if wrapped || directWebsite {
 		var coverPort int
 		if builtinWebsite {
 			sni = "n2x.test"
@@ -85,15 +86,19 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string, b
 			}
 		}
 		webClient.Timeout = 3 * time.Second
-		info.Snell.ShadowTLS = &panel.SnellShadowTLS{
-			Password: outerKey,
-			Handshake: panel.ShadowTLSHandshake{
-				Server:     handshakeHost,
-				ServerPort: coverPort,
-			},
-		}
-		if websiteFallback {
-			info.Snell.ShadowTLS.FallbackServerName = sni
+		if directWebsite {
+			info.Snell.WebsiteFallback = &panel.SnellWebsiteFallback{ServerName: sni, ServerPort: uint16(coverPort)}
+		} else {
+			info.Snell.ShadowTLS = &panel.SnellShadowTLS{
+				Password: outerKey,
+				Handshake: panel.ShadowTLSHandshake{
+					Server:     handshakeHost,
+					ServerPort: coverPort,
+				},
+			}
+			if websiteFallback {
+				info.Snell.ShadowTLS.FallbackServerName = sni
+			}
 		}
 	}
 	if err := server.AddNode(tag, info, lifecycleOptions(t, false)); err != nil {
@@ -125,6 +130,8 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string, b
 			}
 			return client.(*shadowtls.Outbound)
 		}
+	}
+	if webClient != nil {
 		resp, err := webClient.Get("https://" + address)
 		if err != nil {
 			t.Fatalf("ordinary TLS request: %v", err)
@@ -292,6 +299,27 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string, b
 		if _, found := server.box.Inbound().Get(inboundTag); found {
 			t.Fatalf("inbound %s remained after removing the node", inboundTag)
 		}
+	}
+}
+
+func TestSnellWebsiteSniffPreservesInvalidClientHello(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() { _ = client.Close() })
+	t.Cleanup(func() { _ = server.Close() })
+	// Looks like a TLS handshake record, but the ClientHello is truncated.
+	wire := []byte{0x16, 0x03, 0x01, 0, 8, 0x01, 0, 0, 4, 0, 0, 0, 0}
+	go func() {
+		_, _ = client.Write(wire[:3])
+		_, _ = client.Write(wire[3:])
+	}()
+	prepared, website, err := sniffSnellWebsite(context.Background(), server)
+	if err != nil || website {
+		t.Fatalf("invalid TLS should be passed to Snell: website=%t, err=%v", website, err)
+	}
+	_ = client.Close()
+	actual, err := io.ReadAll(prepared)
+	if err != nil || !bytes.Equal(actual, wire) {
+		t.Fatalf("lost bytes after lookahead: %x, %v", actual, err)
 	}
 }
 

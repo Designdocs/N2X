@@ -26,8 +26,9 @@ import (
 
 type snellInboundOptions struct {
 	option.SnellInboundOptions
-	panelManaged bool
-	detourOnly   bool
+	panelManaged    bool
+	detourOnly      bool
+	websiteFallback *panel.SnellWebsiteFallback
 }
 
 type snellInbound struct {
@@ -37,6 +38,7 @@ type snellInbound struct {
 	logger         log.ContextLogger
 	options        snellv6.ServerOptions
 	inboundOptions option.InboundOptions
+	websiteAddress string
 
 	mu          sync.Mutex
 	service     *snellv6.MultiService[string]
@@ -69,6 +71,9 @@ func newSnellInbound(ctx context.Context, router adapter.Router, logger log.Cont
 		return nil, err
 	}
 	h.service = service
+	if options.websiteFallback != nil {
+		h.websiteAddress = options.websiteFallback.Address()
+	}
 	if !options.detourOnly {
 		h.listener = listener.New(listener.Options{
 			Context:           ctx,
@@ -192,10 +197,23 @@ func (h *snellInbound) NewConnection(ctx context.Context, conn net.Conn, metadat
 	if onClose != nil {
 		onClose = N.OnceClose(onClose)
 	}
+	conn = tracked
+	if h.websiteAddress != "" {
+		prepared, website, err := sniffSnellWebsite(ctx, tracked)
+		if err != nil {
+			N.CloseOnHandshakeFailure(tracked, onClose, err)
+			return
+		}
+		if website {
+			h.relaySnellWebsite(ctx, prepared, onClose)
+			return
+		}
+		conn = prepared
+	}
 	metadata.InboundOptions = h.inboundOptions
 	ctx = context.WithValue(adapter.WithContext(ctx, &metadata), snellConnKey{}, tracked)
-	if err := service.NewConnection(ctx, tracked, metadata.Source, onClose); err != nil {
-		N.CloseOnHandshakeFailure(tracked, onClose, err)
+	if err := service.NewConnection(ctx, conn, metadata.Source, onClose); err != nil {
+		N.CloseOnHandshakeFailure(conn, onClose, err)
 		if !E.IsClosedOrCanceled(err) {
 			h.logger.DebugContext(ctx, err)
 		}

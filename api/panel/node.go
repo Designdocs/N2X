@@ -398,10 +398,11 @@ const (
 
 type SnellNode struct {
 	CommonNode
-	Version   int             `json:"version"`
-	PSK       string          `json:"psk"`
-	Mode      string          `json:"mode,omitempty"`
-	ShadowTLS *SnellShadowTLS `json:"shadowtls,omitempty"`
+	Version         int                   `json:"version"`
+	PSK             string                `json:"psk"`
+	Mode            string                `json:"mode,omitempty"`
+	ShadowTLS       *SnellShadowTLS       `json:"shadowtls,omitempty"`
+	WebsiteFallback *SnellWebsiteFallback `json:"website_fallback,omitempty"`
 }
 
 // SnellShadowTLS is present only when the panel enables the v3 outer layer.
@@ -412,6 +413,31 @@ type SnellShadowTLS struct {
 }
 
 const snellFallbackAddress = "127.0.0.1"
+
+type SnellWebsiteFallback struct {
+	ServerName string `json:"server_name"`
+	ServerPort uint16 `json:"server_port"`
+}
+
+func (s SnellWebsiteFallback) Address() string {
+	return net.JoinHostPort(snellFallbackAddress, strconv.Itoa(int(s.ServerPort)))
+}
+
+func (s *SnellNode) validateWebsiteFallback() error {
+	if s.WebsiteFallback == nil {
+		return nil
+	}
+	if s.ShadowTLS != nil {
+		return fmt.Errorf("direct Snell website fallback requires ShadowTLS to be disabled")
+	}
+	if host := s.WebsiteFallback.ServerName; host == "" || strings.ContainsAny(host, " /?#@\\\t\r\n") {
+		return fmt.Errorf("Snell website fallback requires a certificate hostname")
+	}
+	if s.WebsiteFallback.ServerPort == 0 {
+		return fmt.Errorf("Snell website fallback port must be between 1 and 65535")
+	}
+	return nil
+}
 
 func (s *SnellShadowTLS) Validate() error {
 	if strings.TrimSpace(s.Password) == "" {
@@ -438,8 +464,17 @@ func (s *SnellShadowTLS) HandshakePort() uint16 {
 }
 
 // ValidateListen prevents the public listener from dialing itself as its HTTPS origin.
-func (s *SnellShadowTLS) ValidateListen(listenIP string, listenPort int) error {
-	if s.Handshake.Server != snellFallbackAddress || int(s.HandshakePort()) != listenPort {
+func (s *SnellNode) ValidateListen(listenIP string, listenPort int) error {
+	if err := s.validateWebsiteFallback(); err != nil {
+		return err
+	}
+	var originPort uint16
+	if s.WebsiteFallback != nil {
+		originPort = s.WebsiteFallback.ServerPort
+	} else if s.ShadowTLS != nil && s.ShadowTLS.Handshake.Server == snellFallbackAddress {
+		originPort = s.ShadowTLS.HandshakePort()
+	}
+	if originPort == 0 || int(originPort) != listenPort {
 		return nil
 	}
 	addr, err := netip.ParseAddr(listenIP)
@@ -448,7 +483,7 @@ func (s *SnellShadowTLS) ValidateListen(listenIP string, listenPort int) error {
 	}
 	addr = addr.Unmap()
 	if addr.IsUnspecified() || addr.String() == snellFallbackAddress {
-		return fmt.Errorf("Snell ShadowTLS and the website fallback both use TCP %d on %s; use a separate HTTPS port or set ListenIP to the node's public interface address", listenPort, snellFallbackAddress)
+		return fmt.Errorf("Snell and the website fallback both use TCP %d on %s; use a separate HTTPS port or set ListenIP to the node's public interface address", listenPort, snellFallbackAddress)
 	}
 	return nil
 }
@@ -769,6 +804,9 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 			if err := rsp.ShadowTLS.Validate(); err != nil {
 				return nil, err
 			}
+		}
+		if err := rsp.validateWebsiteFallback(); err != nil {
+			return nil, err
 		}
 		cm = &rsp.CommonNode
 		node.Snell = rsp

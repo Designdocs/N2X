@@ -121,7 +121,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		_, err = newN.LocalCertConfig(c.Options)
 	}
 	if err == nil && newN != nil {
-		err = c.validateSnellShadowTLSChange(newN)
+		err = c.validateSnellWebsiteChange(newN)
 		if err != nil {
 			c.apiClient.InvalidateNodeInfoCache()
 		}

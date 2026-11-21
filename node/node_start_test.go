@@ -193,17 +193,17 @@ func TestSnellWebsiteFallbackKeepsActiveNodeIfOriginIsInvalid(t *testing.T) {
 	t.Cleanup(website.Close)
 	port := website.Listener.Addr().(*net.TCPAddr).Port
 	const original = `"version":6,"psk":"test-shared-key","shadowtls":{"password":"test-outer-key","handshake":{"server":"cover.example.com"}}`
-	fallback := fmt.Sprintf(`"version":6,"psk":"test-shared-key","shadowtls":{"password":"test-outer-key","handshake":{"server":"127.0.0.1","server_port":%d},"fallback_server_name":"cover.example.com"}`, port)
-	var newOrigin atomic.Bool
+	configs := []string{
+		original,
+		fmt.Sprintf(`"version":6,"psk":"test-shared-key","shadowtls":{"password":"test-outer-key","handshake":{"server":"127.0.0.1","server_port":%d},"fallback_server_name":"cover.example.com"}`, port),
+		fmt.Sprintf(`"version":6,"psk":"test-shared-key","website_fallback":{"server_name":"cover.example.com","server_port":%d}`, port),
+	}
+	var selected atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/server/UniProxy/config":
-			fields := original
-			if newOrigin.Load() {
-				fields = fallback
-			}
-			_, _ = w.Write([]byte(*nodeBody(fields)))
+			_, _ = w.Write([]byte(*nodeBody(configs[selected.Load()])))
 		case "/api/v1/server/UniProxy/user":
 			_, _ = w.Write([]byte(`{"users":[]}`))
 		case "/api/v1/server/UniProxy/alivelist":
@@ -223,9 +223,13 @@ func TestSnellWebsiteFallbackKeepsActiveNodeIfOriginIsInvalid(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = controller.Close() })
 	current := controller.info
-	newOrigin.Store(true)
-	if err := controller.nodeInfoMonitor(); err != nil || controller.info != current {
-		t.Fatalf("a non-TLS website origin should keep the running Snell node: err=%v", err)
+	for i, name := range []string{"ShadowTLS", "direct"} {
+		t.Run(name, func(t *testing.T) {
+			selected.Store(int32(i + 1))
+			if err := controller.nodeInfoMonitor(); err != nil || controller.info != current {
+				t.Fatalf("a non-TLS website origin should keep the running Snell node: err=%v", err)
+			}
+		})
 	}
 }
 

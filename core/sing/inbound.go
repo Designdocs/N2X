@@ -354,7 +354,8 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 				},
 				V6Options: option.SnellV6Options{Mode: info.Snell.Mode},
 			},
-			panelManaged: true,
+			panelManaged:    true,
+			websiteFallback: info.Snell.WebsiteFallback,
 		}
 	case "tuic":
 		if info.Tuic == nil {

@@ -108,22 +108,24 @@ The sing-box subscription uses a ShadowTLS outbound as the Snell `detour` and
 sets its TLS server name to the configured handshake host.
 
 To share public TCP port 443 with an HTTPS website on the VPS, set the
-node's connection and server ports to `443`, enable **ShadowTLS v3** and
-**Local website fallback**, and enter the website's domain as the TLS 1.3
-handshake host. Configure the web server to serve that certificate and TLS 1.3
-on `127.0.0.1:50443`, or enter its loopback HTTPS port in the panel. The node
-connects directly to that loopback address and forwards the client's original
-TLS handshake, including SNI. Browsers and Snell clients use the same public
-TCP 443 listener. To keep the website on `127.0.0.1:443`, set N2X `ListenIP`
+node's connection and server ports to `443` and enable **Local website fallback**.
+With ShadowTLS v3 disabled, enter the website's certificate hostname. N2X
+forwards TLS ClientHello connections to the loopback HTTPS server and keeps
+Snell connections on the direct listener. With ShadowTLS v3 enabled, enter
+the certificate hostname as the TLS 1.3 handshake host. Both modes forward
+the original TLS handshake, including SNI, to `127.0.0.1:50443` by default.
+Use an updated N2X before enabling direct website fallback in the panel.
+To keep the website on `127.0.0.1:443`, set N2X `ListenIP`
 to the specific address that receives public connections, leaving loopback
 443 available for the web server.
 
-Bring up the website origin before saving. On a running node, N2X tests the
-new origin's TLS 1.3 handshake and certificate before reloading. A successful
-change reloads the listener once and clients reconnect. The origin must be
-available for new handshakes. To revert to an external handshake server,
-turn off local website fallback and restore its hostname and port before
-saving. Refresh client subscriptions if the handshake hostname changes.
+Bring up the website origin before saving. On a running node, N2X checks the
+new origin's HTTPS handshake and certificate before reloading. A successful
+change reloads the listener once and clients reconnect. To return to plain
+Snell, turn off local website fallback with ShadowTLS v3 disabled. To return
+to an external ShadowTLS handshake server, turn off local website fallback
+with ShadowTLS v3 enabled and restore that server's hostname and port.
+Refresh client subscriptions if the ShadowTLS switch or hostname changes.
 
 On a VPS without a web server, the N2X companion website can serve TLS 1.3
 from the same embedded pages as its HTTP listener. Enable the HTTPS listen
@@ -163,9 +165,8 @@ existing node. If the panel uses port `8443`, enter `127.0.0.1:8443`.
 For a manually launched companion, `/usr/local/N2X/N2X decoy serve` also accepts
 `--https-listen`, `--https-cert-file`, and `--https-key-file`. On Alpine, use
 the companion service script that exports the HTTPS settings. To turn off
-the companion HTTPS listener, first move the Snell handshake to its previous
-target in the panel. Then remove the three HTTPS options and restart the
-companion.
+the companion HTTPS listener, first turn off the Snell website fallback in
+the panel. Then remove the three HTTPS options and restart the companion.
 
 Clients with Mihomo's Snell v6 `userkey` support can use the X-Board
 subscription parameters `flag=mihomo&snell_v6=1`. X-APP clients with the same

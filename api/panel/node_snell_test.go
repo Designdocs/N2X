@@ -95,17 +95,46 @@ func TestSnellShadowTLSConfig(t *testing.T) {
 	}
 }
 
-func TestSnellShadowTLSWebsitePortConflict(t *testing.T) {
-	settings := &SnellShadowTLS{Handshake: ShadowTLSHandshake{Server: "127.0.0.1", ServerPort: 443}}
-	for _, address := range []string{"0.0.0.0", "::", "127.0.0.1", "::ffff:127.0.0.1"} {
-		if err := settings.ValidateListen(address, 443); err == nil {
-			t.Errorf("same port on %s should conflict with the loopback origin", address)
+func TestSnellDirectWebsiteFallbackConfig(t *testing.T) {
+	const base = `{"server_port":443,"version":6,"psk":"test-shared-key","base_config":{"pull_interval":60,"push_interval":60},`
+	const website = `"website_fallback":{"server_name":"website.example.com","server_port":50443}`
+	for _, bad := range []string{
+		`"website_fallback":{"server_name":"https://website.example.com","server_port":50443}`,
+		`"website_fallback":{"server_name":"website.example.com","server_port":0}`,
+		`"website_fallback":{"server_name":"website.example.com","server_port":65536}`,
+		website + `,"shadowtls":{"password":"outer-key","handshake":{"server":"cover.example.com"}}`,
+	} {
+		if _, err := newHysteriaTestClient(t, "snell", base+bad+"}").GetNodeInfo(); err == nil {
+			t.Fatalf("invalid website fallback reached the Snell node: %s", bad)
 		}
 	}
-	if err := settings.ValidateListen("192.0.2.1", 443); err != nil {
-		t.Fatalf("a separate listener address should allow port 443: %v", err)
+	node, err := newHysteriaTestClient(t, "snell", base+website+"}").GetNodeInfo()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := settings.ValidateListen("0.0.0.0", 8443); err != nil {
-		t.Fatalf("a different listener port should be allowed: %v", err)
+	if node.Security != None || node.Snell.ShadowTLS != nil || node.Snell.WebsiteFallback == nil ||
+		*node.Snell.WebsiteFallback != (SnellWebsiteFallback{ServerName: "website.example.com", ServerPort: 50443}) {
+		t.Fatal("valid direct website fallback did not reach the Snell node")
+	}
+}
+
+func TestSnellWebsitePortConflict(t *testing.T) {
+	for name, settings := range map[string]SnellNode{
+		"ShadowTLS": {ShadowTLS: &SnellShadowTLS{Handshake: ShadowTLSHandshake{Server: "127.0.0.1", ServerPort: 443}}},
+		"direct":    {WebsiteFallback: &SnellWebsiteFallback{ServerName: "website.example.com", ServerPort: 443}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, address := range []string{"0.0.0.0", "::", "127.0.0.1", "::ffff:127.0.0.1"} {
+				if err := settings.ValidateListen(address, 443); err == nil {
+					t.Errorf("same port on %s should conflict with the loopback origin", address)
+				}
+			}
+			if err := settings.ValidateListen("192.0.2.1", 443); err != nil {
+				t.Fatalf("a separate listener address should allow port 443: %v", err)
+			}
+			if err := settings.ValidateListen("0.0.0.0", 8443); err != nil {
+				t.Fatalf("a different listener port should be allowed: %v", err)
+			}
+		})
 	}
 }
