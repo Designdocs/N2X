@@ -2,6 +2,7 @@ package decoy
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"errors"
 	"fmt"
@@ -19,6 +20,8 @@ import (
 )
 
 const DefaultListenAddress = "127.0.0.1:60443"
+
+const DefaultHTTPSListenAddress = "127.0.0.1:8443"
 
 const maxHeaderBytes = 16 << 10
 
@@ -42,6 +45,12 @@ type Config struct {
 	// itself. Empty means consult ProfileEnvironment, then fall back to
 	// balanced.
 	DefaultProfile string
+	TLS            *TLSFiles
+}
+
+type TLSFiles struct {
+	CertificateFile string
+	KeyFile         string
 }
 
 type Server struct {
@@ -72,6 +81,9 @@ func NewServer(config Config) (*Server, error) {
 	address := config.ListenAddress
 	if address == "" {
 		address = DefaultListenAddress
+		if config.TLS != nil {
+			address = DefaultHTTPSListenAddress
+		}
 	}
 	if err := ValidateListenAddress(address); err != nil {
 		return nil, err
@@ -82,31 +94,50 @@ func NewServer(config Config) (*Server, error) {
 		return nil, err
 	}
 
+	var tlsConfig *tls.Config
+	if config.TLS != nil {
+		if config.TLS.CertificateFile == "" || config.TLS.KeyFile == "" {
+			return nil, errors.New("companion HTTPS requires both certificate and key files")
+		}
+		certificate, err := tls.LoadX509KeyPair(config.TLS.CertificateFile, config.TLS.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load companion HTTPS certificate: %w", err)
+		}
+		tlsConfig = &tls.Config{
+			MinVersion:   tls.VersionTLS13,
+			Certificates: []tls.Certificate{certificate},
+		}
+	}
+
 	listener, err := netutil.ListenTCP("tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("listen on configured address: %w", err)
 	}
 
-	return newServer(listener, profile), nil
+	return newServer(listener, profile, tlsConfig), nil
 }
 
 // newServer wires the HTTP stack onto an already bound listener.
 //
-// The handler is wrapped in h2c because Xray splices raw, TLS-terminated bytes
+// On the plain listener, h2c accepts raw, TLS-terminated bytes forwarded by Xray
 // straight to this port. Inbound TLS advertises "h2" and "http/1.1", so a
 // browser that picks h2 delivers cleartext HTTP/2 frames here; an HTTP/1.1-only
 // listener would reject the preface and the browser would see a protocol error
 // instead of a page.
-func newServer(listener net.Listener, defaultProfile contentProfile) *Server {
-	handler := h2c.NewHandler(newHandler(defaultProfile), &http2.Server{
-		IdleTimeout:      30 * time.Second,
-		MaxReadFrameSize: maxHeaderBytes,
-	})
+func newServer(listener net.Listener, defaultProfile contentProfile, tlsConfig *tls.Config) *Server {
+	handler := newHandler(defaultProfile)
+	if tlsConfig == nil {
+		handler = h2c.NewHandler(handler, &http2.Server{
+			IdleTimeout:      30 * time.Second,
+			MaxReadFrameSize: maxHeaderBytes,
+		})
+	}
 
 	return &Server{
 		httpServer: &http.Server{
 			Addr:              listener.Addr().String(),
 			Handler:           handler,
+			TLSConfig:         tlsConfig,
 			ReadHeaderTimeout: 5 * time.Second,
 			// ReadTimeout and WriteTimeout are deliberately left unset: the h2c
 			// handler hijacks the connection for the lifetime of the HTTP/2
@@ -120,7 +151,13 @@ func newServer(listener net.Listener, defaultProfile contentProfile) *Server {
 }
 
 func (server *Server) Serve() error {
-	err := server.httpServer.Serve(server.listener)
+	defer server.listener.Close()
+	var err error
+	if server.httpServer.TLSConfig == nil {
+		err = server.httpServer.Serve(server.listener)
+	} else {
+		err = server.httpServer.ServeTLS(server.listener, "", "")
+	}
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

@@ -10,14 +10,22 @@ import (
 	"time"
 
 	"github.com/Designdocs/N2X/decoy"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
-const decoyListenEnvironment = decoy.ListenAddressEnvironment
+const (
+	decoyHTTPSListenEnvironment = "N2X_ARTX_DECOY_HTTPS_LISTEN"
+	decoyHTTPSCertEnvironment   = "N2X_ARTX_DECOY_HTTPS_CERT_FILE"
+	decoyHTTPSKeyEnvironment    = "N2X_ARTX_DECOY_HTTPS_KEY_FILE"
+)
 
 var (
-	decoyListenAddress string
-	decoyProfile       string
+	decoyListenAddress      string
+	decoyProfile            string
+	decoyHTTPSListenAddress string
+	decoyHTTPSCertFile      string
+	decoyHTTPSKeyFile       string
 )
 
 var decoyCommand = cobra.Command{
@@ -45,28 +53,53 @@ func init() {
 		"",
 		"default page profile: balanced, web, media or realtime",
 	)
+	decoyServeCommand.Flags().StringVar(&decoyHTTPSListenAddress, "https-listen", "", "optional loopback HTTPS address (default 127.0.0.1:8443 with certificate files)")
+	decoyServeCommand.Flags().StringVar(&decoyHTTPSCertFile, "https-cert-file", "", "HTTPS certificate chain in PEM format")
+	decoyServeCommand.Flags().StringVar(&decoyHTTPSKeyFile, "https-key-file", "", "HTTPS private key in PEM format")
 	decoyCommand.AddCommand(&decoyServeCommand)
 	command.AddCommand(&decoyCommand)
 }
 
 func resolveDecoyListen(flagValue string) string {
-	if address := strings.TrimSpace(flagValue); address != "" {
-		return address
-	}
-	if address := strings.TrimSpace(os.Getenv(decoyListenEnvironment)); address != "" {
+	if address := decoySetting(flagValue, decoy.ListenAddressEnvironment); address != "" {
 		return address
 	}
 	return decoy.DefaultListenAddress
+}
+
+func decoySetting(flagValue, envName string) string {
+	if value := strings.TrimSpace(flagValue); value != "" {
+		return value
+	}
+	return strings.TrimSpace(os.Getenv(envName))
+}
+
+func decoyHTTPSConfig(profile string) *decoy.Config {
+	address := decoySetting(decoyHTTPSListenAddress, decoyHTTPSListenEnvironment)
+	certFile := decoySetting(decoyHTTPSCertFile, decoyHTTPSCertEnvironment)
+	keyFile := decoySetting(decoyHTTPSKeyFile, decoyHTTPSKeyEnvironment)
+	if address == "" && certFile == "" && keyFile == "" {
+		return nil
+	}
+	if address == "" {
+		address = decoy.DefaultHTTPSListenAddress
+	}
+	return &decoy.Config{
+		ListenAddress:  address,
+		DefaultProfile: profile,
+		TLS:            &decoy.TLSFiles{CertificateFile: certFile, KeyFile: keyFile},
+	}
 }
 
 func decoyServe(command *cobra.Command, _ []string) error {
 	ctx, stop := signal.NotifyContext(command.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return runDecoyServer(ctx, resolveDecoyListen(decoyListenAddress), strings.TrimSpace(decoyProfile))
+	profile := strings.TrimSpace(decoyProfile)
+	return runDecoyServer(ctx, resolveDecoyListen(decoyListenAddress), profile, decoyHTTPSConfig(profile))
 }
 
-func runDecoyServer(ctx context.Context, listenAddress string, defaultProfile string) error {
+func runDecoyServer(ctx context.Context, listenAddress string, defaultProfile string, httpsConfig *decoy.Config) error {
 	server, err := decoy.NewServer(decoy.Config{
 		ListenAddress:  listenAddress,
 		DefaultProfile: defaultProfile,
@@ -75,6 +108,30 @@ func runDecoyServer(ctx context.Context, listenAddress string, defaultProfile st
 		return err
 	}
 
+	if httpsConfig != nil {
+		https, err := decoy.NewServer(*httpsConfig)
+		if err != nil {
+			log.WithError(err).Error("Start companion HTTPS website failed")
+		} else {
+			httpsContext, cancelHTTPS := context.WithCancel(ctx)
+			httpsDone := make(chan struct{})
+			go func() {
+				defer close(httpsDone)
+				log.WithField("listen", httpsConfig.ListenAddress).Info("Companion HTTPS website listening")
+				if err := serveDecoy(httpsContext, https); err != nil {
+					log.WithError(err).Error("Serve companion HTTPS website failed")
+				}
+			}()
+			defer func() {
+				cancelHTTPS()
+				<-httpsDone
+			}()
+		}
+	}
+	return serveDecoy(ctx, server)
+}
+
+func serveDecoy(ctx context.Context, server *decoy.Server) error {
 	serveContext, cancelServe := context.WithCancel(ctx)
 	defer cancelServe()
 

@@ -125,6 +125,34 @@ available for new handshakes. To revert to an external handshake server,
 turn off local website fallback and restore its hostname and port before
 saving. Refresh client subscriptions if the handshake hostname changes.
 
+On a VPS without a web server, the N2X companion website can serve TLS 1.3
+from the same embedded pages as its HTTP listener. Add these lines to the
+companion service's `/etc/N2X/artx-decoy.env`:
+
+```dotenv
+N2X_ARTX_DECOY_HTTPS_LISTEN=127.0.0.1:8443
+N2X_ARTX_DECOY_HTTPS_CERT_FILE=/etc/N2X/ssl/fullchain.pem
+N2X_ARTX_DECOY_HTTPS_KEY_FILE=/etc/N2X/ssl/privkey.pem
+```
+
+Use a trusted certificate covering the TLS handshake host, with a readable
+chain and matching key on the VPS. Restart only `N2X-artx-decoy` to load the
+settings or refreshed certificate files. The plain HTTP endpoint remains
+available for inbounds that terminate their own TLS. Verify the TLS 1.3
+website before enabling local website fallback in the panel:
+
+```sh
+curl --noproxy '*' --tlsv1.3 \
+  --connect-to www.example.com:443:127.0.0.1:8443 https://www.example.com/
+```
+
+For a manually launched companion, `/usr/local/N2X/N2X decoy serve` also accepts
+`--https-listen`, `--https-cert-file`, and `--https-key-file`. On Alpine, use
+the companion service script that exports the HTTPS settings. To turn off
+the companion HTTPS listener, first move the Snell handshake to its previous
+target in the panel. Then remove the three HTTPS options and restart the
+companion.
+
 Clients with Mihomo's Snell v6 `userkey` support can use the X-Board
 subscription parameters `flag=mihomo&snell_v6=1`. X-APP clients with the same
 core capability add `snell_v6=1` to their existing subscription URL. With

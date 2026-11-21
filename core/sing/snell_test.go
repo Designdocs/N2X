@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -12,12 +13,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/Designdocs/N2X/core"
+	"github.com/Designdocs/N2X/decoy"
 	"github.com/Designdocs/N2X/limiter"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -29,18 +32,20 @@ import (
 func TestManagedSnellV6(t *testing.T) {
 	for _, mode := range []snellv6.Mode{snellv6.ModeDefault, snellv6.ModeUnshaped} {
 		t.Run(mode.String(), func(t *testing.T) {
-			t.Run("direct", func(t *testing.T) { testManagedSnellV6(t, mode, "") })
-			t.Run("shadowtls", func(t *testing.T) { testManagedSnellV6(t, mode, "localhost") })
-			t.Run("website-fallback", func(t *testing.T) { testManagedSnellV6(t, mode, "127.0.0.1") })
+			t.Run("direct", func(t *testing.T) { testManagedSnellV6(t, mode, "", false) })
+			t.Run("shadowtls", func(t *testing.T) { testManagedSnellV6(t, mode, "localhost", false) })
+			t.Run("website-fallback", func(t *testing.T) { testManagedSnellV6(t, mode, "127.0.0.1", false) })
+			t.Run("built-in-website", func(t *testing.T) { testManagedSnellV6(t, mode, "127.0.0.1", true) })
 		})
 	}
 }
 
-func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string) {
+func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string, builtinWebsite bool) {
 	tag := t.Name()
 	const psk = "test-shared-key-12345"
 	const outerKey = "test-shadowtls-key"
-	const sni = "example.com"
+	sni := "example.com"
+	pageText := "local handshake server"
 	wrapped := handshakeHost != ""
 	websiteFallback := handshakeHost == "127.0.0.1"
 	server := newLifecycleCore(t)
@@ -53,23 +58,38 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string) {
 		Type: "snell", Common: common,
 		Snell: &panel.SnellNode{CommonNode: *common, Version: panel.SnellVersion, PSK: psk, Mode: mode.String()},
 	}
-	var cover *httptest.Server
+	var cert []byte
+	var webClient *http.Client
 	if wrapped {
-		cover = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if websiteFallback && r.TLS.ServerName != sni {
-				http.Error(w, "unexpected SNI", http.StatusMisdirectedRequest)
-				return
+		var coverPort int
+		if builtinWebsite {
+			sni = "n2x.test"
+			pageText = "Ideas for slower mornings"
+			coverPort, cert, webClient = startSnellBuiltInWebsite(t, sni)
+		} else {
+			cover := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if websiteFallback && r.TLS.ServerName != sni {
+					http.Error(w, "unexpected SNI", http.StatusMisdirectedRequest)
+					return
+				}
+				_, _ = io.WriteString(w, pageText)
+			}))
+			cover.TLS = &tls.Config{MinVersion: tls.VersionTLS13}
+			cover.StartTLS()
+			t.Cleanup(cover.Close)
+			coverPort = cover.Listener.Addr().(*net.TCPAddr).Port
+			cert = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cover.Certificate().Raw})
+			webClient = cover.Client()
+			if websiteFallback {
+				webClient.Transport.(*http.Transport).TLSClientConfig.ServerName = sni
 			}
-			_, _ = io.WriteString(w, "local handshake server")
-		}))
-		cover.TLS = &tls.Config{MinVersion: tls.VersionTLS13}
-		cover.StartTLS()
-		t.Cleanup(cover.Close)
+		}
+		webClient.Timeout = 3 * time.Second
 		info.Snell.ShadowTLS = &panel.SnellShadowTLS{
 			Password: outerKey,
 			Handshake: panel.ShadowTLSHandshake{
 				Server:     handshakeHost,
-				ServerPort: cover.Listener.Addr().(*net.TCPAddr).Port,
+				ServerPort: coverPort,
 			},
 		}
 		if websiteFallback {
@@ -89,7 +109,6 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string) {
 		if outer, found := server.box.Inbound().Get(snellShadowTLSTag(tag)); !found || outer.Type() != "shadowtls" {
 			t.Fatal("ShadowTLS did not own the public listener")
 		}
-		cert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cover.Certificate().Raw})
 		outerClient = func(password string) *shadowtls.Outbound {
 			t.Helper()
 			client, err := shadowtls.NewOutbound(server.ctx, server.router, log.NewNOPFactory().Logger(), "shadowtls-client",
@@ -106,19 +125,17 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string) {
 			}
 			return client.(*shadowtls.Outbound)
 		}
-		httpClient := cover.Client()
-		httpClient.Timeout = 3 * time.Second
-		if websiteFallback {
-			httpClient.Transport.(*http.Transport).TLSClientConfig.ServerName = sni
-		}
-		resp, err := httpClient.Get("https://" + address)
+		resp, err := webClient.Get("https://" + address)
 		if err != nil {
 			t.Fatalf("ordinary TLS request: %v", err)
 		}
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if err != nil || string(body) != "local handshake server" {
-			t.Fatalf("ordinary TLS request did not reach the configured target: %q (%v)", body, err)
+		if err != nil || resp.StatusCode != http.StatusOK || !strings.Contains(string(body), pageText) {
+			t.Fatalf("expected the configured website with status 200, got %s (%v)", resp.Status, err)
+		}
+		if builtinWebsite && (resp.ProtoMajor != 2 || resp.TLS.Version != tls.VersionTLS13) {
+			t.Fatalf("expected HTTP/2 over TLS 1.3, got %s over %s", resp.Proto, tls.VersionName(resp.TLS.Version))
 		}
 	}
 	destination := M.ParseSocksaddr(startEchoServer(t))
@@ -276,6 +293,52 @@ func testManagedSnellV6(t *testing.T, mode snellv6.Mode, handshakeHost string) {
 			t.Fatalf("inbound %s remained after removing the node", inboundTag)
 		}
 	}
+}
+
+func startSnellBuiltInWebsite(t *testing.T, sni string) (int, []byte, *http.Client) {
+	t.Helper()
+	port := freePort(t)
+	address := fmt.Sprintf("127.0.0.1:%d", port)
+	files := newTestCert(t)
+	website, err := decoy.NewServer(decoy.Config{
+		ListenAddress:  address,
+		DefaultProfile: "web",
+		TLS:            &decoy.TLSFiles{CertificateFile: files.CertFile, KeyFile: files.KeyFile},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- website.Serve() }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := website.Shutdown(ctx); err != nil {
+			t.Errorf("shut down the built-in website: %v", err)
+		}
+		if err := <-done; err != nil {
+			t.Errorf("serve the built-in website: %v", err)
+		}
+	})
+	cert, err := os.ReadFile(files.CertFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(cert) {
+		t.Fatal("load the built-in website test certificate")
+	}
+	oldTLS := &tls.Config{ServerName: sni, RootCAs: roots, MaxVersion: tls.VersionTLS12}
+	if conn, err := tls.DialWithDialer(&net.Dialer{Timeout: time.Second}, "tcp", address, oldTLS); err == nil {
+		_ = conn.Close()
+		t.Fatal("the built-in HTTPS listener accepted TLS 1.2")
+	}
+	transport := &http.Transport{
+		ForceAttemptHTTP2: true,
+		TLSClientConfig:   &tls.Config{ServerName: sni, RootCAs: roots},
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	return port, cert, &http.Client{Transport: transport}
 }
 
 func TestStaticSnellConfig(t *testing.T) {

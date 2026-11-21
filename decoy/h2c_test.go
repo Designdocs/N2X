@@ -24,7 +24,7 @@ func startTestServer(t *testing.T) string {
 		t.Fatalf("listen: %v", err)
 	}
 
-	server := newServer(listener, contentProfileBalanced)
+	server := newServer(listener, contentProfileBalanced, nil)
 	serveResult := make(chan error, 1)
 	go func() { serveResult <- server.Serve() }()
 
