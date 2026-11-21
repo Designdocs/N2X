@@ -93,6 +93,13 @@ N2X node config. The panel sends the PSK and the authorized users. Clients
 use the PSK and their own `userkey` from the sing-box subscription. The
 listener uses TCP for both TCP and UDP proxy traffic.
 
+Select the **transport mode** in the Snell v6 node form. The default uses
+encryption and PSK-derived shaping. Select encryption only to use `unshaped`.
+X-Board sends the same mode to N2X and compatible subscriptions. Upgrade
+N2X before selecting `unshaped`, then refresh the clients' subscriptions.
+For a gradual change, use a new node and listening port. See the
+[Snell v6 mode design](snell-v6-mode-design.md).
+
 The panel can enable a **ShadowTLS v3** outer layer per Snell node. Set a
 separate ShadowTLS password and a TLS 1.3 handshake host (port 443 by default).
 N2X listens on the node's existing public port and hands authenticated streams

@@ -352,6 +352,7 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 					ListenOptions: listen,
 					PSK:           info.Snell.PSK,
 				},
+				V6Options: option.SnellV6Options{Mode: info.Snell.Mode},
 			},
 			panelManaged: true,
 		}

@@ -51,6 +51,10 @@ func newSnellInbound(ctx context.Context, router adapter.Router, logger log.Cont
 	if options.Version != panel.SnellVersion {
 		return nil, fmt.Errorf("unsupported panel Snell version: %d", options.Version)
 	}
+	mode, err := snellv6.ParseMode(options.V6Options.Mode)
+	if err != nil || mode == snellv6.ModeUnsafeRaw {
+		return nil, fmt.Errorf("unsupported panel Snell mode: %q", options.V6Options.Mode)
+	}
 	h := &snellInbound{
 		Adapter:        inbound.NewAdapter(C.TypeSnell, tag),
 		router:         uot.NewRouter(router, logger),
@@ -59,7 +63,7 @@ func newSnellInbound(ctx context.Context, router adapter.Router, logger log.Cont
 		connections:    make(map[*snellConn]string),
 		inboundOptions: options.ListenOptions.InboundOptions,
 	}
-	h.options = snellv6.ServerOptions{PSK: []byte(options.PSK), Mode: snellv6.ModeDefault, Handler: h}
+	h.options = snellv6.ServerOptions{PSK: []byte(options.PSK), Mode: mode, Handler: h}
 	service, err := snellv6.NewMultiService[string](h.options)
 	if err != nil {
 		return nil, err

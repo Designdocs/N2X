@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Designdocs/N2X/api/panel"
@@ -132,6 +133,54 @@ func TestSnellStartsWithEmptyRoster(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = controller.Close() })
+}
+
+func TestSnellModeReloadRetriesAfterRosterFailure(t *testing.T) {
+	var changing, failRoster atomic.Bool
+	defaultConfig := *nodeBody(`"version":6,"psk":"test-shared-key"`)
+	unshapedConfig := *nodeBody(`"version":6,"psk":"test-shared-key","mode":"unshaped"`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/server/UniProxy/config":
+			body := defaultConfig
+			if changing.Load() {
+				body = unshapedConfig
+			}
+			_, _ = w.Write([]byte(body))
+		case "/api/v1/server/UniProxy/user":
+			if failRoster.Load() {
+				_, _ = w.Write([]byte(`{"users":"invalid"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"users":[]}`))
+		case "/api/v1/server/UniProxy/alivelist":
+			_, _ = w.Write([]byte(`{"alive":{}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client, err := panel.New(&conf.ApiConfig{APIHost: server.URL, Key: "token", NodeType: "snell", NodeID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	limiter.Init()
+	controller := NewController(&startStubCore{}, client, &conf.Options{}, nil)
+	if err := controller.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controller.Close() })
+
+	changing.Store(true)
+	failRoster.Store(true)
+	if err := controller.nodeInfoMonitor(); err != nil || controller.info.Snell.Mode != panel.SnellModeDefault {
+		t.Fatalf("failed fetch should keep the previous mode: mode=%s err=%v", controller.info.Snell.Mode, err)
+	}
+	failRoster.Store(false)
+	if err := controller.nodeInfoMonitor(); err != nil || controller.info.Snell.Mode != panel.SnellModeUnshaped {
+		t.Fatalf("next pull should retry the mode: mode=%s err=%v", controller.info.Snell.Mode, err)
+	}
 }
 
 type rosterStubCore struct {

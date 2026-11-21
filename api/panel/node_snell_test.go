@@ -2,8 +2,11 @@ package panel
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/Designdocs/N2X/conf"
 )
 
 func TestSnellNodeConfig(t *testing.T) {
@@ -31,10 +34,41 @@ func TestSnellNodeConfig(t *testing.T) {
 				t.Fatal(err)
 			}
 			if node.Type != "snell" || node.Security != None || node.Common.ServerPort != 8443 ||
-				node.Snell == nil || node.Snell.Version != SnellVersion || node.Snell.PSK != tc.psk {
+				node.Snell == nil || node.Snell.Version != SnellVersion || node.Snell.PSK != tc.psk ||
+				node.Snell.Mode != SnellModeDefault {
 				t.Fatal("Snell config did not reach the node")
 			}
 		})
+	}
+}
+
+func TestSnellTransportMode(t *testing.T) {
+	client, err := New(&conf.ApiConfig{APIHost: "http://panel.test", Key: "token", NodeType: "snell", NodeID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const config = `{"server_port":8443,"version":6,"psk":"test-shared-key","base_config":{"pull_interval":60,"push_interval":60}`
+	var body string
+	client.client.SetTransport(roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return textResponse(request, http.StatusOK, body), nil
+	}))
+	body = config + "}"
+	if node, err := client.GetNodeInfo(); err != nil || node == nil || node.Snell.Mode != SnellModeDefault {
+		t.Fatalf("missing mode must select default: node=%v err=%v", node, err)
+	}
+	body = config + `,"mode":"default"}`
+	if node, err := client.GetNodeInfo(); err != nil || node != nil {
+		t.Fatalf("explicit default must preserve the effective config: node=%v err=%v", node, err)
+	}
+	body = config + `,"mode":"unshaped"}`
+	if node, err := client.GetNodeInfo(); err != nil || node == nil || node.Snell.Mode != SnellModeUnshaped {
+		t.Fatalf("mode change must reach the node: node=%v err=%v", node, err)
+	}
+	for _, mode := range []string{"unsafe-raw", "invalid"} {
+		body = fmt.Sprintf(`%s,"mode":%q}`, config, mode)
+		if node, err := client.GetNodeInfo(); err == nil || node != nil {
+			t.Fatalf("unsupported mode %q reached the node: node=%v err=%v", mode, node, err)
+		}
 	}
 }
 

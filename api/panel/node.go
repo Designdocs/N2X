@@ -389,12 +389,17 @@ type NaiveNode struct {
 	TlsSettingsBack *TlsSettings `json:"tlsSettings"`
 }
 
-const SnellVersion = 6
+const (
+	SnellVersion      = 6
+	SnellModeDefault  = "default"
+	SnellModeUnshaped = "unshaped"
+)
 
 type SnellNode struct {
 	CommonNode
 	Version   int             `json:"version"`
 	PSK       string          `json:"psk"`
+	Mode      string          `json:"mode,omitempty"`
 	ShadowTLS *SnellShadowTLS `json:"shadowtls,omitempty"`
 }
 
@@ -722,6 +727,13 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		}
 		if len(rsp.PSK) < 12 || len(rsp.PSK) > 255 {
 			return nil, fmt.Errorf("snell: psk length must be between 12 and 255 bytes")
+		}
+		switch rsp.Mode {
+		case "", SnellModeDefault:
+			rsp.Mode = SnellModeDefault
+		case SnellModeUnshaped:
+		default:
+			return nil, fmt.Errorf("unsupported panel Snell mode: %q", rsp.Mode)
 		}
 		if rsp.ShadowTLS != nil {
 			if err := rsp.ShadowTLS.Validate(); err != nil {

@@ -141,6 +141,14 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			newN = nil
 		}
 	}
+	if newN != nil {
+		// A failed roster or device-state pull can leave this parsed config pending.
+		defer func(pending *panel.NodeInfo) {
+			if c.info != pending {
+				c.apiClient.InvalidateNodeInfoCache()
+			}
+		}(newN)
+	}
 	// get user info
 	newU, err := c.apiClient.GetUserList()
 	if err != nil {

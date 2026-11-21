@@ -27,11 +27,15 @@ import (
 )
 
 func TestManagedSnellV6(t *testing.T) {
-	t.Run("direct", func(t *testing.T) { testManagedSnellV6(t, false) })
-	t.Run("shadowtls", func(t *testing.T) { testManagedSnellV6(t, true) })
+	for _, mode := range []snellv6.Mode{snellv6.ModeDefault, snellv6.ModeUnshaped} {
+		t.Run(mode.String(), func(t *testing.T) {
+			t.Run("direct", func(t *testing.T) { testManagedSnellV6(t, mode, false) })
+			t.Run("shadowtls", func(t *testing.T) { testManagedSnellV6(t, mode, true) })
+		})
+	}
 }
 
-func testManagedSnellV6(t *testing.T, wrapped bool) {
+func testManagedSnellV6(t *testing.T, mode snellv6.Mode, wrapped bool) {
 	tag := t.Name()
 	const psk = "test-shared-key-12345"
 	const outerKey = "test-shadowtls-key"
@@ -43,7 +47,7 @@ func testManagedSnellV6(t *testing.T, wrapped bool) {
 	common := &panel.CommonNode{ServerPort: freePort(t)}
 	info := &panel.NodeInfo{
 		Type: "snell", Common: common,
-		Snell: &panel.SnellNode{CommonNode: *common, Version: panel.SnellVersion, PSK: psk},
+		Snell: &panel.SnellNode{CommonNode: *common, Version: panel.SnellVersion, PSK: psk, Mode: mode.String()},
 	}
 	var cover *httptest.Server
 	if wrapped {
@@ -107,7 +111,7 @@ func testManagedSnellV6(t *testing.T, wrapped bool) {
 	payload := []byte("snell echo")
 	newClient := func(key string) *snellv6.Client {
 		t.Helper()
-		client, err := snellv6.NewClient(snellv6.ClientOptions{PSK: []byte(psk), UserKey: []byte(key)})
+		client, err := snellv6.NewClient(snellv6.ClientOptions{PSK: []byte(psk), Mode: mode, UserKey: []byte(key)})
 		if err != nil {
 			t.Fatal(err)
 		}
