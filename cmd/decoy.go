@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Designdocs/N2X/conf"
 	"github.com/Designdocs/N2X/decoy"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -55,7 +56,7 @@ func init() {
 	)
 	decoyServeCommand.Flags().StringVar(
 		&decoyHTTPSListenAddress, "https-listen", "",
-		"optional loopback HTTPS address (default "+decoy.DefaultHTTPSListenAddress+" with certificate files)",
+		"optional loopback HTTPS address (uses managed certificates by default; default address with manual files: "+decoy.DefaultHTTPSListenAddress+")",
 	)
 	decoyServeCommand.Flags().StringVar(&decoyHTTPSCertFile, "https-cert-file", "", "HTTPS certificate chain in PEM format")
 	decoyServeCommand.Flags().StringVar(&decoyHTTPSKeyFile, "https-key-file", "", "HTTPS private key in PEM format")
@@ -87,10 +88,15 @@ func decoyHTTPSConfig(profile string) *decoy.Config {
 	if address == "" {
 		address = decoy.DefaultHTTPSListenAddress
 	}
+	files := &decoy.TLSFiles{CertificateFile: certFile, KeyFile: keyFile}
+	if certFile == "" && keyFile == "" {
+		certificates := &managedDecoyCertificates{directory: conf.ManagedCertificateDirectory}
+		files.GetCertificate = certificates.getCertificate
+	}
 	return &decoy.Config{
 		ListenAddress:  address,
 		DefaultProfile: profile,
-		TLS:            &decoy.TLSFiles{CertificateFile: certFile, KeyFile: keyFile},
+		TLS:            files,
 	}
 }
 

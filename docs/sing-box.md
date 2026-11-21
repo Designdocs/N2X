@@ -126,29 +126,39 @@ turn off local website fallback and restore its hostname and port before
 saving. Refresh client subscriptions if the handshake hostname changes.
 
 On a VPS without a web server, the N2X companion website can serve TLS 1.3
-from the same embedded pages as its HTTP listener. Add these lines to the
-companion service's `/etc/N2X/artx-decoy.env`:
+from the same embedded pages as its HTTP listener. Enable the HTTPS listen
+address in the companion service's `/etc/N2X/artx-decoy.env`.
 
 ```dotenv
 N2X_ARTX_DECOY_HTTPS_LISTEN=127.0.0.1:50443
+```
+
+With only the HTTPS listen address set, the companion selects a trusted
+certificate for the requested TLS hostname from N2X's managed pairs in
+`/etc/N2X`. It reads `fullchain-<domain>.cer` with `cert-<domain>.key` or the
+legacy `fullchain.cer` with `cert.key`. It uses the names in the certificate
+to match the requested hostname, including wildcard names. New connections
+pick up issued or renewed managed certificates within 30 seconds. To use a
+custom pair, set both paths in the same file.
+
+```dotenv
 N2X_ARTX_DECOY_HTTPS_CERT_FILE=/etc/N2X/ssl/fullchain.pem
 N2X_ARTX_DECOY_HTTPS_KEY_FILE=/etc/N2X/ssl/privkey.pem
 ```
 
 Use a trusted certificate covering the TLS handshake host, with a readable
-chain and matching key on the VPS. Restart only `N2X-artx-decoy` to load the
-settings or refreshed certificate files. The plain HTTP endpoint remains
-available for inbounds that terminate their own TLS. Verify the TLS 1.3
-website before enabling local website fallback in the panel:
+chain and matching key on the VPS. Restart `N2X-artx-decoy` to apply settings
+or reload manually configured certificate files. Inbounds that terminate
+their own TLS can use the separate plain HTTP endpoint. Verify the TLS 1.3
+website before enabling local website fallback in the panel.
 
 ```sh
 curl --noproxy '*' --tlsv1.3 \
   --connect-to www.example.com:443:127.0.0.1:50443 https://www.example.com/
 ```
 
-For an existing node, set `N2X_ARTX_DECOY_HTTPS_LISTEN` explicitly to the
-port already saved in the panel before upgrading. For example, use
-`127.0.0.1:8443` if the panel already uses port `8443`.
+Set `N2X_ARTX_DECOY_HTTPS_LISTEN` to the port saved in the panel for an
+existing node. If the panel uses port `8443`, enter `127.0.0.1:8443`.
 
 For a manually launched companion, `/usr/local/N2X/N2X decoy serve` also accepts
 `--https-listen`, `--https-cert-file`, and `--https-key-file`. On Alpine, use

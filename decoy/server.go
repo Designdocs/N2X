@@ -51,6 +51,7 @@ type Config struct {
 type TLSFiles struct {
 	CertificateFile string
 	KeyFile         string
+	GetCertificate  func(*tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
 type Server struct {
@@ -96,16 +97,9 @@ func NewServer(config Config) (*Server, error) {
 
 	var tlsConfig *tls.Config
 	if config.TLS != nil {
-		if config.TLS.CertificateFile == "" || config.TLS.KeyFile == "" {
-			return nil, errors.New("companion HTTPS requires both certificate and key files")
-		}
-		certificate, err := tls.LoadX509KeyPair(config.TLS.CertificateFile, config.TLS.KeyFile)
+		tlsConfig, err = makeTLSConfig(config.TLS)
 		if err != nil {
-			return nil, fmt.Errorf("load companion HTTPS certificate: %w", err)
-		}
-		tlsConfig = &tls.Config{
-			MinVersion:   tls.VersionTLS13,
-			Certificates: []tls.Certificate{certificate},
+			return nil, err
 		}
 	}
 
@@ -115,6 +109,23 @@ func NewServer(config Config) (*Server, error) {
 	}
 
 	return newServer(listener, profile, tlsConfig), nil
+}
+
+func makeTLSConfig(files *TLSFiles) (*tls.Config, error) {
+	config := &tls.Config{MinVersion: tls.VersionTLS13}
+	if files.CertificateFile == "" && files.KeyFile == "" && files.GetCertificate != nil {
+		config.GetCertificate = files.GetCertificate
+		return config, nil
+	}
+	if files.CertificateFile == "" || files.KeyFile == "" {
+		return nil, errors.New("companion HTTPS requires both certificate and key files when specifying paths")
+	}
+	certificate, err := tls.LoadX509KeyPair(files.CertificateFile, files.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load companion HTTPS certificate: %w", err)
+	}
+	config.Certificates = []tls.Certificate{certificate}
+	return config, nil
 }
 
 // newServer wires the HTTP stack onto an already bound listener.

@@ -6,14 +6,33 @@ import (
 	"unicode"
 )
 
+const ManagedCertificateDirectory = "/etc/N2X"
+
 const (
-	legacyCertFile = "/etc/N2X/fullchain.cer"
-	legacyKeyFile  = "/etc/N2X/cert.key"
-	certFilePrefix = "/etc/N2X/fullchain-"
+	legacyCertName = "fullchain.cer"
+	legacyKeyName  = "cert.key"
+	certNamePrefix = "fullchain-"
+	keyNamePrefix  = "cert-"
 	certFileSuffix = ".cer"
-	keyFilePrefix  = "/etc/N2X/cert-"
 	keyFileSuffix  = ".key"
+
+	legacyCertFile = ManagedCertificateDirectory + "/" + legacyCertName
+	legacyKeyFile  = ManagedCertificateDirectory + "/" + legacyKeyName
+	certFilePrefix = ManagedCertificateDirectory + "/" + certNamePrefix
+	keyFilePrefix  = ManagedCertificateDirectory + "/" + keyNamePrefix
 )
+
+// ManagedCertificateKeyName pairs the filenames used for automatic certificates.
+func ManagedCertificateKeyName(certName string) (string, bool) {
+	if certName == legacyCertName {
+		return legacyKeyName, true
+	}
+	domain, ok := managedPathDomain(certName, certNamePrefix, certFileSuffix)
+	if !ok {
+		return "", false
+	}
+	return keyNamePrefix + domain + keyFileSuffix, true
+}
 
 type CertConfig struct {
 	CertMode         string            `json:"CertMode"` // none, file, http, dns

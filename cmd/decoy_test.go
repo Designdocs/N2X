@@ -36,11 +36,16 @@ func TestDecoyHTTPSConfigFromEnvironment(t *testing.T) {
 	if config := decoyHTTPSConfig("web"); config != nil {
 		t.Fatal("HTTPS should be off without local settings")
 	}
+	t.Setenv(decoyHTTPSListenEnvironment, "127.0.0.1:50443")
+	if config := decoyHTTPSConfig("web"); config == nil || config.ListenAddress != "127.0.0.1:50443" || config.TLS.GetCertificate == nil {
+		t.Fatalf("HTTPS listen address alone should use managed certificates: %+v", config)
+	}
+	t.Setenv(decoyHTTPSListenEnvironment, "")
 	t.Setenv(decoyHTTPSCertEnvironment, "/etc/N2X/ssl/fullchain.pem")
 	t.Setenv(decoyHTTPSKeyEnvironment, "/etc/N2X/ssl/privkey.pem")
 	config := decoyHTTPSConfig("web")
 	if config == nil || config.ListenAddress != "127.0.0.1:50443" || config.DefaultProfile != "web" ||
-		config.TLS.CertificateFile != "/etc/N2X/ssl/fullchain.pem" || config.TLS.KeyFile != "/etc/N2X/ssl/privkey.pem" {
+		config.TLS.CertificateFile != "/etc/N2X/ssl/fullchain.pem" || config.TLS.KeyFile != "/etc/N2X/ssl/privkey.pem" || config.TLS.GetCertificate != nil {
 		t.Fatalf("unexpected companion HTTPS settings: %+v", config)
 	}
 	t.Setenv(decoyHTTPSListenEnvironment, "127.0.0.1:8443")
