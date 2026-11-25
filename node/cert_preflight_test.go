@@ -440,7 +440,7 @@ func TestRequestCertOrdersAfterSelfTestPasses(t *testing.T) {
 	}
 }
 
-func writeTestCertificate(t *testing.T, path string, notAfter time.Time) {
+func writeTestCertificate(t *testing.T, path string, notAfter time.Time) (*x509.Certificate, *rsa.PrivateKey) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -449,6 +449,7 @@ func writeTestCertificate(t *testing.T, path string, notAfter time.Time) {
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: "us.example.com"},
+		DNSNames:     []string{"us.example.com", "second.example.com"},
 		NotBefore:    notAfter.Add(-90 * 24 * time.Hour),
 		NotAfter:     notAfter,
 	}
@@ -459,6 +460,11 @@ func writeTestCertificate(t *testing.T, path string, notAfter time.Time) {
 	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return leaf, key
 }
 
 func TestCertRenewalDue(t *testing.T) {

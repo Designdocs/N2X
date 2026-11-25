@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Designdocs/N2X/common/websitecert"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/Designdocs/N2X/decoy"
 	log "github.com/sirupsen/logrus"
@@ -90,8 +91,8 @@ func decoyHTTPSConfig(profile string) *decoy.Config {
 	}
 	files := &decoy.TLSFiles{CertificateFile: certFile, KeyFile: keyFile}
 	if certFile == "" && keyFile == "" {
-		certificates := &managedDecoyCertificates{directory: conf.ManagedCertificateDirectory}
-		files.GetCertificate = certificates.getCertificate
+		certificates := websitecert.New(conf.ManagedCertificateDirectory, "", "")
+		files.GetCertificate = certificates.GetCertificate
 	}
 	return &decoy.Config{
 		ListenAddress:  address,

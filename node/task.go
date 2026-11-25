@@ -128,8 +128,10 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	if err == nil && newN != nil {
 		_, err = newN.LocalCertConfig(c.Options)
 	}
+	var website *snellWebsiteChange
 	if err == nil && newN != nil {
-		err = c.validateSnellWebsiteChange(newN)
+		website, err = c.prepareSnellWebsite(newN)
+		defer website.discard()
 		if err != nil {
 			c.apiClient.InvalidateNodeInfoCache()
 		}
@@ -149,7 +151,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			c.apiClient.InvalidateNodeInfoCache()
 			return nil
 		}
-		if runtimePolicyOnlyChange(c.info, newN) {
+		if website == nil && runtimePolicyOnlyChange(c.info, newN) {
 			c.applyDeviceLimitPolicy(c.limiter, newN)
 			c.info = newN
 			newN = nil
@@ -187,7 +189,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}).Error("Get alive list failed")
 		return nil
 	}
-	if newN != nil && artXFlowControlOnlyChange(c.info, newN) && c.retierArtXFlowControl(newN) {
+	if newN != nil && website == nil && artXFlowControlOnlyChange(c.info, newN) && c.retierArtXFlowControl(newN) {
 		// The ArtX flow-control tier is the only thing that moved and the
 		// running inbound has taken it in place. Adopt the new body and
 		// fall through to the user diff below, so an operator changing a
@@ -196,7 +198,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		c.info = newN
 		newN = nil
 	}
-	if newN != nil && deviceLimitOnlyChange(c.info, newN) {
+	if newN != nil && website == nil && deviceLimitOnlyChange(c.info, newN) {
 		// Only the device-limit policy moved (typically a relay exit that
 		// re-resolved). The limiter takes it in place; a reload would drop
 		// every session on the node for nothing.
@@ -266,6 +268,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		if err != nil {
 			return c.abortReload("Add users failed", err)
 		}
+		website.apply(c)
 		c.syncCertRenewal(newN)
 		c.refreshHTTPSRedirect(newN)
 		c.publishArtXUserRates()

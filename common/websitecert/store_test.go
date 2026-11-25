@@ -1,4 +1,4 @@
-package cmd
+package websitecert
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func TestManagedDecoyHTTPSReusesAndReloadsCertificates(t *testing.T) {
 	}, nil)
 	roots := x509.NewCertPool()
 	roots.AddCert(root.cert)
-	store := &managedDecoyCertificates{directory: t.TempDir(), roots: roots}
+	store := &Store{directory: t.TempDir(), roots: roots}
 	refreshOnNextHandshake := func() {
 		store.mu.Lock()
 		defer store.mu.Unlock()
@@ -44,7 +44,7 @@ func TestManagedDecoyHTTPSReusesAndReloadsCertificates(t *testing.T) {
 	_ = listener.Close()
 	server, err := decoy.NewServer(decoy.Config{
 		ListenAddress: address,
-		TLS:           &decoy.TLSFiles{GetCertificate: store.getCertificate},
+		TLS:           &decoy.TLSFiles{GetCertificate: store.GetCertificate},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +123,7 @@ func TestManagedDecoyHTTPSReusesAndReloadsCertificates(t *testing.T) {
 	handshake("legacy.example.test", 4)
 	for _, name := range []string{"outside.example.test", "nested.page.web.example.test", "untrusted.example.test", "expired.example.test"} {
 		hello := &tls.ClientHelloInfo{ServerName: name, SupportedVersions: []uint16{tls.VersionTLS13}}
-		if _, err := store.getCertificate(hello); err == nil {
+		if _, err := store.GetCertificate(hello); err == nil {
 			t.Errorf("selected a certificate for %q", name)
 		}
 	}

@@ -1,7 +1,13 @@
 package node
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
+	"io"
+	"os"
+
 	"fmt"
 	"net"
 	"net/http"
@@ -240,10 +246,12 @@ func TestSnellDirectFallbackCertificateLifecycle(t *testing.T) {
 	orders := stubCertIssuance(t, nil, nil)
 	// Simulate an issuer returning a short-lived certificate so the first
 	// scheduled expiry check also exercises the renewal path.
+	roots := x509.NewCertPool()
 	issueCert = func(*conf.CertConfig) error {
 		*orders++
-		writeTestCertificate(t, cfg.CertFile, time.Now().Add(10*24*time.Hour))
-		return nil
+		leaf, key := writeTestCertificate(t, cfg.CertFile, time.Now().Add(10*24*time.Hour))
+		roots.AddCert(leaf)
+		return os.WriteFile(cfg.KeyFile, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600)
 	}
 	renewed := make(chan struct{}, 1)
 	oldRenew := renewIssuedCert
@@ -251,14 +259,27 @@ func TestSnellDirectFallbackCertificateLifecycle(t *testing.T) {
 	t.Cleanup(func() { renewIssuedCert = oldRenew })
 
 	const direct = `"version":6,"psk":"test-shared-key"`
-	const fallback = direct + `,"website_fallback":{"server_name":"us.example.com","server_port":50443}`
-	body := nodeBody(fallback)
+	freePort := func() uint16 {
+		l, err := net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		return uint16(l.Addr().(*net.TCPAddr).Port)
+	}
+	fallback := func(port uint16) string {
+		return direct + fmt.Sprintf(`,"website_fallback":{"server_name":"us.example.com","server_port":%d}`, port)
+	}
+	first := freePort()
+
+	body := nodeBody(fallback(first))
 	server := fakePanel(t, body, `{"users":[]}`)
 	client, err := panel.New(&conf.ApiConfig{APIHost: server.URL, Key: "token", NodeType: "snell", NodeID: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	controller := NewController(&startStubCore{}, client, &conf.Options{CertConfig: cfg}, nil)
+	controller.websites.roots = roots
 	if err := controller.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -272,6 +293,55 @@ func TestSnellDirectFallbackCertificateLifecycle(t *testing.T) {
 	if *orders != 1 || task == nil || task.Interval != 24*time.Hour {
 		t.Fatal("expected initial issuance and daily renewal")
 	}
+	readPage := func(origin panel.SnellWebsiteFallback) {
+		client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{
+			DisableKeepAlives: true,
+			TLSClientConfig:   &tls.Config{RootCAs: roots, ServerName: origin.ServerName},
+		}}
+		resp, err := client.Get("https://" + origin.Address() + "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		page, err := io.ReadAll(resp.Body)
+		if err != nil || resp.StatusCode != 200 || len(page) == 0 {
+			t.Fatal("missing HTTPS page")
+		}
+	}
+	original := controller.websiteOrigin
+	readPage(original)
+	// A second node on this port must survive the first node's port change.
+	second := panel.SnellWebsiteFallback{ServerName: "second.example.com", ServerPort: first}
+	shared, err := controller.websites.acquire(second, cfg)
+	if err != nil || shared == nil {
+		t.Fatalf("share: %v", err)
+	}
+	defer func() {
+		if shared != nil {
+			shared.release()
+		}
+	}()
+	readPage(second)
+	newPort := freePort()
+	*body = *nodeBody(fallback(newPort))
+	core := controller.server.(*startStubCore)
+	core.addErr = errors.New("temporary listener failure")
+	if err := controller.nodeInfoMonitor(); err != nil || controller.websiteOrigin != original {
+		t.Fatalf("premature listener switch: %v", err)
+	}
+	readPage(original)
+	core.addErr = nil
+	if err := controller.nodeInfoMonitor(); err != nil || controller.websiteOrigin.ServerPort != newPort {
+		t.Fatalf("port switch: %v", err)
+	}
+	readPage(controller.websiteOrigin)
+	readPage(second)
+	shared.release()
+	shared = nil
+	if conn, err := net.DialTimeout("tcp", original.Address(), time.Second); err == nil {
+		conn.Close()
+		t.Fatal("unused port still listening")
+	}
 	*body = *nodeBody(direct)
 	if err := controller.nodeInfoMonitor(); err != nil || controller.renewCertPeriodic != nil {
 		t.Fatalf("disabling fallback must stop renewals: %v", err)
@@ -279,11 +349,47 @@ func TestSnellDirectFallbackCertificateLifecycle(t *testing.T) {
 	if err := task.Execute(); err != nil || len(renewed) != 0 {
 		t.Fatal("disabled fallback still renewed")
 	}
-	*body = *nodeBody(fallback)
+	if err := os.Remove(cfg.KeyFile); err != nil {
+		t.Fatal(err)
+	}
+	*body = *nodeBody(fallback(first))
 	issueCert = func(*conf.CertConfig) error { *orders++; return errors.New("ACME unavailable") }
 	if err := controller.nodeInfoMonitor(); err != nil || *orders != 2 ||
 		controller.info.Snell.WebsiteFallback != nil || controller.renewCertPeriodic != nil {
 		t.Fatal("failed hot-enable must attempt issuance and preserve direct mode")
+	}
+}
+
+func TestSnellReusesExistingHTTPSListener(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "external") }))
+	defer server.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	c := &Controller{Options: &conf.Options{ListenIP: "0.0.0.0"}, websites: &snellWebsites{roots: roots}}
+	origin := panel.SnellWebsiteFallback{ServerName: server.Certificate().DNSNames[0], ServerPort: uint16(server.Listener.Addr().(*net.TCPAddr).Port)}
+	next := &panel.NodeInfo{Snell: &panel.SnellNode{WebsiteFallback: &origin}}
+	next.Common = &panel.CommonNode{ServerPort: 8443}
+	change, err := c.prepareSnellWebsite(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if change.lease != nil {
+		t.Fatal("external listener incorrectly owned")
+	}
+	change.apply(c)
+	off, err := c.prepareSnellWebsite(&panel.NodeInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	off.apply(c)
+	resp, err := server.Client().Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	page, err := io.ReadAll(resp.Body)
+	if err != nil || string(page) != "external" {
+		t.Fatal("external listener was changed")
 	}
 }
 

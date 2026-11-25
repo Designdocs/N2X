@@ -1,4 +1,4 @@
-package cmd
+package websitecert
 
 import (
 	"crypto/tls"
@@ -20,16 +20,23 @@ type managedDecoyCertificate struct {
 	pair *tls.Certificate
 }
 
-type managedDecoyCertificates struct {
-	directory string
-	roots     *x509.CertPool // nil uses the system trust store
+// New returns a reloading certificate store for either one configured key pair
+// or the managed certificates in directory.
+func New(directory, certFile, keyFile string) *Store {
+	return &Store{directory: directory, certFile: certFile, keyFile: keyFile}
+}
+
+type Store struct {
+	certFile, keyFile string
+	directory         string
+	roots             *x509.CertPool // nil uses the system trust store
 
 	mu           sync.Mutex
 	refreshAt    time.Time
 	certificates []managedDecoyCertificate
 }
 
-func (store *managedDecoyCertificates) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+func (store *Store) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if hello.ServerName == "" {
 		return nil, errors.New("managed companion HTTPS certificates require a TLS server name")
 	}
@@ -45,14 +52,26 @@ func (store *managedDecoyCertificates) getCertificate(hello *tls.ClientHelloInfo
 
 	for _, certificate := range certificates {
 		leaf := certificate.pair.Leaf
-		if !now.Before(leaf.NotBefore) && now.Before(leaf.NotAfter) && hello.SupportsCertificate(certificate.pair) == nil {
+		if leaf != nil && !now.Before(leaf.NotBefore) && now.Before(leaf.NotAfter) && hello.SupportsCertificate(certificate.pair) == nil {
 			return certificate.pair, nil
 		}
 	}
 	return nil, fmt.Errorf("no trusted companion HTTPS certificate in %s for %q", store.directory, hello.ServerName)
 }
 
-func (store *managedDecoyCertificates) refresh(now time.Time) {
+func (store *Store) refresh(now time.Time) {
+	if store.certFile != "" || store.keyFile != "" {
+		pair, err := tls.LoadX509KeyPair(store.certFile, store.keyFile)
+		if err == nil && pair.Leaf == nil {
+			pair.Leaf, err = x509.ParseCertificate(pair.Certificate[0])
+		}
+		if err == nil {
+			store.certificates = []managedDecoyCertificate{{name: store.certFile, pair: &pair}}
+		} else if errors.Is(err, os.ErrNotExist) {
+			store.certificates = nil
+		}
+		return
+	}
 	entries, err := os.ReadDir(store.directory)
 	if err != nil {
 		store.certificates = nil
@@ -85,7 +104,7 @@ func (store *managedDecoyCertificates) refresh(now time.Time) {
 	store.certificates = certificates
 }
 
-func (store *managedDecoyCertificates) trusted(pair *tls.Certificate, now time.Time) bool {
+func (store *Store) trusted(pair *tls.Certificate, now time.Time) bool {
 	leaf := pair.Leaf
 	if leaf == nil {
 		var err error

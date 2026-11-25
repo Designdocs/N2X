@@ -107,66 +107,31 @@ to Snell internally. Snell keeps the node tag for routing and per-user accountin
 The sing-box subscription uses a ShadowTLS outbound as the Snell `detour` and
 sets its TLS server name to the configured handshake host.
 
-To share public TCP port 443 with an HTTPS website on the VPS, set the
-node's connection and server ports to `443` and enable **Local website fallback**.
-With ShadowTLS v3 disabled, enter the website's certificate hostname. N2X
-forwards TLS ClientHello connections to the loopback HTTPS server and keeps
-Snell connections on the direct listener. With ShadowTLS v3 enabled, enter
-the certificate hostname as the TLS 1.3 handshake host. Both modes forward
-the original TLS handshake, including SNI, to `127.0.0.1:50443` by default.
-Use an updated N2X before enabling direct website fallback in the panel.
-To keep the website on `127.0.0.1:443`, set N2X `ListenIP`
-to the specific address that receives public connections, leaving loopback
-443 available for the web server.
+Enable **Local website fallback** and enter the website certificate hostname and
+loopback HTTPS port (default `50443`). N2X serves its built-in website on
+`127.0.0.1` at that port. If another HTTPS server already listens there, N2X
+checks its handshake and certificate and uses that server. The public Snell
+port can be `443`, `8443`, or another configured TCP port. Include the public
+port in the browser URL when using a port other than `443`.
 
-Bring up the website origin before saving. On a running node, N2X checks the
-new origin's HTTPS handshake and certificate before reloading. A successful
-change reloads the listener once and clients reconnect. To return to plain
-Snell, turn off local website fallback with ShadowTLS v3 disabled. To return
-to an external ShadowTLS handshake server, turn off local website fallback
-with ShadowTLS v3 enabled and restore that server's hostname and port.
-Refresh client subscriptions if the ShadowTLS switch or hostname changes.
+Use a trusted certificate covering the website hostname. For direct Snell,
+local `CertConfig` with `dns` or `http` enables automatic issuance and
+renewal. The built-in website reads the configured certificate and key. With
+certificate management disabled it looks for matching managed pairs in
+`/etc/N2X`. New handshakes pick up renewed certificates within 30 seconds.
 
-On a VPS without a web server, the N2X companion website can serve TLS 1.3
-from the same embedded pages as its HTTP listener. Enable the HTTPS listen
-address in the companion service's `/etc/N2X/artx-decoy.env`.
+Saving a different fallback port starts and checks the new origin before
+switching the running node. Nodes may share a port with different certificate
+hostnames. Disabling the last fallback using a built-in listener releases
+the port. A separately managed web server keeps running.
 
-```dotenv
-N2X_ARTX_DECOY_HTTPS_LISTEN=127.0.0.1:50443
-```
-
-With only the HTTPS listen address set, the companion selects a trusted
-certificate for the requested TLS hostname from N2X's managed pairs in
-`/etc/N2X`. It reads `fullchain-<domain>.cer` with `cert-<domain>.key` or the
-legacy `fullchain.cer` with `cert.key`. It uses the names in the certificate
-to match the requested hostname, including wildcard names. New connections
-pick up issued or renewed managed certificates within 30 seconds. To use a
-custom pair, set both paths in the same file.
-
-```dotenv
-N2X_ARTX_DECOY_HTTPS_CERT_FILE=/etc/N2X/ssl/fullchain.pem
-N2X_ARTX_DECOY_HTTPS_KEY_FILE=/etc/N2X/ssl/privkey.pem
-```
-
-Use a trusted certificate covering the TLS handshake host, with a readable
-chain and matching key on the VPS. Restart `N2X-artx-decoy` to apply settings
-or reload manually configured certificate files. Inbounds that terminate
-their own TLS can use the separate plain HTTP endpoint. Verify the TLS 1.3
-website before enabling local website fallback in the panel.
+To check the loopback service on the VPS, substitute the panel's website
+hostname and local port:
 
 ```sh
-curl --noproxy '*' --tlsv1.3 \
-  --connect-to www.example.com:443:127.0.0.1:50443 https://www.example.com/
+curl --noproxy '*' --connect-to www.example.com:443:127.0.0.1:50443 https://www.example.com/
 ```
 
-Set `N2X_ARTX_DECOY_HTTPS_LISTEN` to the port saved in the panel for an
-existing node. If the panel uses port `8443`, enter `127.0.0.1:8443`.
-
-For a manually launched companion, `/usr/local/N2X/N2X decoy serve` also accepts
-`--https-listen`, `--https-cert-file`, and `--https-key-file`. On Alpine, use
-the companion service script that exports the HTTPS settings. To turn off
-the companion HTTPS listener, first turn off the Snell website fallback in
-the panel. Then remove the three HTTPS options and restart the companion.
 
 Clients with Mihomo's Snell v6 `userkey` support can use the X-Board
 subscription parameters `flag=mihomo&snell_v6=1`. X-APP clients with the same

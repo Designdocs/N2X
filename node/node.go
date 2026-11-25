@@ -18,6 +18,7 @@ const (
 )
 
 type Node struct {
+	websites             snellWebsites
 	mu                   sync.Mutex
 	controllers          []*Controller
 	httpsRedirectManager *httpsRedirectManager
@@ -94,6 +95,7 @@ func (n *Node) startController(
 	options *conf.Options,
 ) error {
 	controller := NewController(core, client, options, n.httpsRedirectManager)
+	controller.websites = &n.websites
 	if err := controller.Start(); err != nil {
 		// Start can fail after registering the limiter, hooks or the core
 		// node; roll those back so the next attempt starts clean.

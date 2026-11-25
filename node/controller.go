@@ -16,6 +16,10 @@ import (
 )
 
 type Controller struct {
+	websites                  *snellWebsites
+	websiteLease              *snellWebsiteLease
+	websiteOrigin             panel.SnellWebsiteFallback
+	websiteTLS                uint16
 	server                    vCore.Core
 	apiClient                 *panel.Client
 	tag                       string
@@ -67,6 +71,7 @@ func NewController(
 ) *Controller {
 	controller := &Controller{
 		server:               server,
+		websites:             &snellWebsites{},
 		Options:              config,
 		apiClient:            api,
 		httpsRedirectManager: redirectManager,
@@ -123,12 +128,17 @@ func (c *Controller) Start() error {
 	}
 	c.apiClient.SetAliveUpdateHook(c.setAliveMap)
 	c.apiClient.SetKickedUpdateHook(c.setKickedMap)
-	if node.Security == panel.Tls || c.managesSnellWebsiteCert(node) {
+	if node.Security == panel.Tls {
 		err = c.requestCert(node)
 		if err != nil {
 			return startError(StageCert, "request cert error: %w", err)
 		}
 	}
+	website, err := c.prepareSnellWebsite(node)
+	if err != nil {
+		return startError(StageCert, "prepare Snell website: %w", err)
+	}
+	defer website.discard()
 	c.prepareHTTPSRedirect(node)
 	// Add new tag
 	err = c.server.AddNode(c.tag, node, c.Options)
@@ -145,6 +155,7 @@ func (c *Controller) Start() error {
 	}
 	log.WithField("tag", c.tag).Infof("Added %d new users", added)
 	c.limiter.AcknowledgeDynamicExemptions(c.apiClient.UserExemptionsRevision())
+	website.apply(c)
 	rosterApplied = true
 	c.info = node
 	// The rate table has to be published before the sampler starts feeding
@@ -172,6 +183,8 @@ func (c *Controller) Close() error {
 	}
 	c.apiClient.SetAliveUpdateHook(nil)
 	c.apiClient.SetKickedUpdateHook(nil)
+	c.websiteLease.release()
+	c.websiteLease = nil
 	c.stopArtXPressureSampler()
 	c.clearArtXUserRates()
 	limiter.DeleteLimiter(c.tag)
