@@ -110,7 +110,9 @@ sets its TLS server name to the configured handshake host.
 Enable **Local website fallback** and enter the website certificate hostname and
 loopback HTTPS port (default `50443`). N2X serves its built-in website on
 `127.0.0.1` at that port. If another HTTPS server already listens there, N2X
-checks its handshake and certificate and uses that server. The public Snell
+checks its handshake and certificate and uses that server. While fallback is enabled,
+N2X retries the loopback bind every two seconds until the port is available,
+then serves the built-in page with the local website certificate. The public Snell
 port can be `443`, `8443`, or another configured TCP port. Include the public
 port in the browser URL when using a port other than `443`.
 

@@ -373,7 +373,7 @@ func TestSnellReusesExistingHTTPSListener(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if change.lease != nil {
+	if change.lease == nil || c.websites.ports[origin.Address()].server != nil {
 		t.Fatal("external listener incorrectly owned")
 	}
 	change.apply(c)

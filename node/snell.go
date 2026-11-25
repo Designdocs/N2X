@@ -30,6 +30,7 @@ func (change *snellWebsiteChange) apply(c *Controller) {
 	c.websiteLease.release()
 	c.websiteLease, change.lease = change.lease, nil
 	c.websiteOrigin, c.websiteTLS = change.origin, change.minTLS
+	c.websiteLease.watchExternal()
 }
 
 func (c *Controller) prepareSnellWebsite(next *panel.NodeInfo) (*snellWebsiteChange, error) {
