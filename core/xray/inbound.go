@@ -14,7 +14,9 @@ import (
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
+	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/core"
 	coreConf "github.com/xtls/xray-core/infra/conf"
 )
@@ -168,7 +170,22 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 		break
 	}
 	in.Tag = tag
-	return in.Build()
+	built, err := in.Build()
+	if err != nil {
+		return nil, err
+	}
+	website := resolveRealityWebsite(option, nodeInfo, network)
+	if website == nil {
+		return built, nil
+	}
+	receiver, err := built.ReceiverSettings.GetInstance()
+	if err != nil {
+		return nil, err
+	}
+	settings := receiver.(*proxyman.ReceiverConfig)
+	settings.StreamSettings.Tcpmasks = append(settings.StreamSettings.Tcpmasks, serial.ToTypedMessage(website))
+	built.ReceiverSettings = serial.ToTypedMessage(settings)
+	return built, nil
 }
 
 func realityFallbackLimit(limit *conf.RealityFallbackLimit) coreConf.LimitFallback {

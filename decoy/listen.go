@@ -18,6 +18,8 @@ const Selector = "n2x://decoy"
 // there, so every consumer must agree on the name.
 const ListenAddressEnvironment = "N2X_ARTX_DECOY_LISTEN"
 
+const HTTPSListenEnvironment = "N2X_ARTX_DECOY_HTTPS_LISTEN"
+
 // ProfileEnvironment names the environment variable that selects which page the
 // companion web service serves at "/" when the request does not choose one.
 //

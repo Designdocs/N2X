@@ -15,6 +15,7 @@ require (
 	github.com/go-resty/resty/v2 v2.16.5
 	github.com/gofrs/uuid/v5 v5.5.1
 	github.com/gorilla/websocket v1.5.3
+	github.com/pires/go-proxyproto v0.16.0
 	github.com/sagernet/sing v0.9.7-0.20261023115459-5dc452e537bf
 	github.com/sagernet/sing-box v1.13.0
 	github.com/sagernet/sing-mux v0.3.10-0.20260929204512-caf09fe32475
@@ -202,7 +203,6 @@ require (
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/stun/v3 v3.1.7 // indirect
 	github.com/pion/transport/v4 v4.1.0 // indirect
-	github.com/pires/go-proxyproto v0.16.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect

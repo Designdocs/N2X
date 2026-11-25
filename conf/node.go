@@ -137,6 +137,7 @@ type RealityFallbackLimit struct {
 }
 
 type Options struct {
+	RealityWebsite         *RealityWebsite       `json:"RealityWebsite,omitempty"`
 	LimitFallbackUpload    *RealityFallbackLimit `json:"limitFallbackUpload,omitempty"`
 	LimitFallbackDownload  *RealityFallbackLimit `json:"limitFallbackDownload,omitempty"`
 	Name                   string                `json:"Name"`

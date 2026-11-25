@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	decoyHTTPSListenEnvironment = "N2X_ARTX_DECOY_HTTPS_LISTEN"
+	decoyHTTPSListenEnvironment = decoy.HTTPSListenEnvironment
 	decoyHTTPSCertEnvironment   = "N2X_ARTX_DECOY_HTTPS_CERT_FILE"
 	decoyHTTPSKeyEnvironment    = "N2X_ARTX_DECOY_HTTPS_KEY_FILE"
 )

@@ -600,6 +600,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	r, err := c.client.
 		R().
 		SetHeader("If-None-Match", currentEtag).
+		SetHeader("X-N2X-Reality-Host", "1").
 		ForceContentType("application/json").
 		Get(path)
 

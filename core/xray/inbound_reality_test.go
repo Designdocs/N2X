@@ -113,3 +113,28 @@ func TestBuildInboundRealityFallbackParameters(t *testing.T) {
 		t.Fatalf("expected fallback configuration error for plain TLS, got %v", err)
 	}
 }
+
+func TestRealityWebsiteSkipsUnavailableRoutes(t *testing.T) {
+	node := &panel.NodeInfo{Type: "vless", Security: panel.Reality, Common: &panel.CommonNode{ServerPort: 443, Host: "site.example"}, VAllss: &panel.VAllssNode{Tls: panel.Reality, Network: "tcp", TlsSettings: realityTlsSettings()}}
+	options := transportTestOptions()
+	for _, w := range []*conf.RealityWebsite{
+		{Port: 443}, {Port: 65536}, {ServerName: "*.example"}, {ServerName: "WWW.EXAMPLE.COM"}, {Disabled: true},
+	} {
+		options.RealityWebsite = w
+		if _, err := buildInbound(options, node, "split"); err != nil {
+			t.Fatal(err)
+		}
+		if split := resolveRealityWebsite(options, node, "tcp"); split != nil {
+			t.Fatalf("unexpected split: %v", split)
+		}
+	}
+	options.RealityWebsite = nil
+	auto := resolveRealityWebsite(options, node, "tcp")
+	if auto == nil || auto.Address != "" || auto.ServerName != "site.example" {
+		t.Fatalf("missing auto config: %v", auto)
+	}
+	node.Common.Host = ""
+	if split := resolveRealityWebsite(options, node, "tcp"); split != nil {
+		t.Fatalf("unidentified host: %v", split)
+	}
+}

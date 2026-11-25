@@ -67,6 +67,7 @@ func TestXrayVLESSRealityVisionPublicClient(t *testing.T) {
 		{"sing", "", false, false}, {"sing", "xtls-rprx-vision", false, false}, {"xray", "xtls-rprx-vision", false, false},
 		{"sing", "xtls-rprx-vision", true, false}, {"xray", "xtls-rprx-vision", true, false},
 		{"xray-legacy-fingerprint", "xtls-rprx-vision", true, false},
+		{"xray-website", "xtls-rprx-vision", true, false},
 		{"sing", "xtls-rprx-vision", false, true},
 	} {
 		flow := tc.flow
@@ -79,6 +80,10 @@ func TestXrayVLESSRealityVisionPublicClient(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			options := &conf.Options{ListenIP: "127.0.0.1", XrayOptions: conf.NewXrayOptions()}
+			if tc.client == "xray-website" {
+				// The Vision path must work without starting a website listener.
+				options.RealityWebsite = &conf.RealityWebsite{ServerName: "site.example", Port: 8443}
+			}
 			address := startRealityNode(t, host, port, base64.RawURLEncoding.EncodeToString(key.Bytes()), flow, options)
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
@@ -88,7 +93,7 @@ func TestXrayVLESSRealityVisionPublicClient(t *testing.T) {
 			}
 			pubkey := base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
 			var conn net.Conn
-			if tc.client == "xray" || tc.client == "xray-legacy-fingerprint" {
+			if tc.client != "sing" {
 				fingerprint := "chrome"
 				if tc.client == "xray-legacy-fingerprint" {
 					fingerprint = "hellochrome_120"
@@ -173,6 +178,11 @@ func TestXrayVLESSRealityVisionPublicClient(t *testing.T) {
 
 func startRealityNode(t *testing.T, host, port, privateKey, flow string, options *conf.Options) string {
 	t.Helper()
+	return startNamedRealityNode(t, host, port, privateKey, flow, options, "n2x.test", "", freeLoopbackPort(t))
+}
+
+func startNamedRealityNode(t *testing.T, host, port, privateKey, flow string, options *conf.Options, serverName, nodeHost string, nodePort int) string {
+	t.Helper()
 	initLimiterOnce.Do(limiter.Init)
 	outbounds := filepath.Join(t.TempDir(), "outbound.json")
 	// A loopback echo target is permitted explicitly for this isolated fixture.
@@ -191,9 +201,8 @@ func startRealityNode(t *testing.T, host, port, privateKey, flow string, options
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { server.Close() })
-	nodePort := freeLoopbackPort(t)
 	tag := "xray-reality-wire-" + flow
-	info := &panel.NodeInfo{Type: "vless", Security: panel.Reality, Common: &panel.CommonNode{ServerPort: nodePort}, VAllss: &panel.VAllssNode{Network: "tcp", Flow: flow, Tls: panel.Reality, TlsSettings: panel.TlsSettings{ServerName: "n2x.test", Dest: host, ServerPort: port, PrivateKey: privateKey, ShortId: "0123456789abcdef"}}}
+	info := &panel.NodeInfo{Type: "vless", Security: panel.Reality, Common: &panel.CommonNode{ServerPort: nodePort, Host: nodeHost}, VAllss: &panel.VAllssNode{Network: "tcp", Flow: flow, Tls: panel.Reality, TlsSettings: panel.TlsSettings{ServerName: serverName, Dest: host, ServerPort: port, PrivateKey: privateKey, ShortId: "0123456789abcdef"}}}
 	if err := server.AddNode(tag, info, options); err != nil {
 		t.Fatal(err)
 	}
