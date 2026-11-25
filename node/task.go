@@ -11,6 +11,7 @@ import (
 )
 
 func (c *Controller) startTasks(node *panel.NodeInfo) {
+	c.syncCertRenewal(node)
 	c.startDynamicSpeedTasks()
 	// fetch node info task
 	c.nodeInfoMonitorPeriodic = &task.Task{
@@ -51,26 +52,6 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	// own cadence rather than on the report path so the blocking CPU probe
 	// is never stacked onto a panel round trip.
 	c.startArtXPressureSampler(node)
-	if node.Security == panel.Tls {
-		certConfig := c.localCertConfig()
-		certMode := ""
-		if certConfig != nil {
-			certMode = certConfig.CertMode
-		}
-		switch certMode {
-		case "none", "", "file", "self":
-		default:
-			c.renewCertPeriodic = &task.Task{
-				Interval: time.Hour * 24,
-				Execute: func() error {
-					return c.renewCertTask(c.localCertConfig())
-				},
-			}
-			log.WithField("tag", c.tag).Info("Start renew cert")
-			// delay to start renewCert
-			_ = c.renewCertPeriodic.Start(true)
-		}
-	}
 	if node.DynamicSpeedLimit == nil && c.LimitConfig.EnableDynamicSpeedLimit && c.LimitConfig.DynamicSpeedLimitConfig != nil {
 		interval := time.Duration(c.LimitConfig.DynamicSpeedLimitConfig.Periodic) * time.Second
 		if interval <= 0 {
@@ -84,6 +65,33 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 		log.Printf("[%s: %d] Start dynamic speed limit", c.apiClient.NodeType, c.apiClient.NodeId)
 		_ = c.dynamicSpeedLimitPeriodic.Start(false)
 	}
+}
+
+func (c *Controller) syncCertRenewal(node *panel.NodeInfo) {
+	cfg := c.localCertConfig()
+	enabled := cfg != nil && (cfg.CertMode == "dns" || cfg.CertMode == "http") &&
+		(node.Security == panel.Tls || c.managesSnellWebsiteCert(node))
+	if !enabled {
+		if c.renewCertPeriodic != nil {
+			c.renewCertPeriodic.Close()
+			c.renewCertPeriodic = nil
+		}
+		return
+	}
+	if c.renewCertPeriodic != nil {
+		return
+	}
+	renew := &task.Task{Interval: 24 * time.Hour}
+	renew.Execute = func() error {
+		c.monitorMu.Lock()
+		defer c.monitorMu.Unlock()
+		if c.closed.Load() || c.renewCertPeriodic != renew {
+			return nil
+		}
+		return c.renewCertTask(cfg)
+	}
+	c.renewCertPeriodic = renew
+	_ = renew.Start(true)
 }
 
 // abortReload gives up on the current reload without taking the process
@@ -258,6 +266,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		if err != nil {
 			return c.abortReload("Add users failed", err)
 		}
+		c.syncCertRenewal(newN)
 		c.refreshHTTPSRedirect(newN)
 		c.publishArtXUserRates()
 		// The replacement node may have switched into or out of native

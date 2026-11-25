@@ -70,16 +70,19 @@ func collectNodeStatus() *panel.NodeStatus {
 // reportNodeStatusTask gathers system metrics and pushes them to the panel.
 // Errors are logged but not returned, so the periodic task keeps running.
 func (c *Controller) reportNodeStatusTask() error {
+	c.monitorMu.Lock()
+	tag := c.tag
+	c.monitorMu.Unlock()
 	status := collectNodeStatus()
 	if err := c.apiClient.ReportNodeStatus(status); err != nil {
 		log.WithFields(log.Fields{
-			"tag": c.tag,
+			"tag": tag,
 			"err": err,
 		}).Info("Report node status failed")
 		return nil
 	}
 	log.WithFields(log.Fields{
-		"tag":  c.tag,
+		"tag":  tag,
 		"cpu":  status.Cpu,
 		"mem":  status.Mem.Used,
 		"disk": status.Disk.Used,
@@ -98,6 +101,7 @@ func (c *Controller) reportNodeStatusTask() error {
 // metrics tick. The first invocation seeds the baseline and reports zero
 // rate, which matches what the official Xboard-Node does on startup.
 func (c *Controller) collectNodeMetrics() *panel.NodeMetrics {
+	c.monitorMu.Lock()
 	metrics := &panel.NodeMetrics{
 		Uptime:            int64(time.Since(processStartTime).Seconds()),
 		Goroutines:        runtime.NumGoroutine(),
@@ -107,6 +111,7 @@ func (c *Controller) collectNodeMetrics() *panel.NodeMetrics {
 		KernelStatus:      true,
 	}
 	c.applyProtocolRuntimeStats(metrics)
+	c.monitorMu.Unlock()
 
 	// per-core CPU snapshot — short window keeps the call non-blocking.
 	if perCore, err := cpu.Percent(500*time.Millisecond, true); err == nil {
@@ -305,16 +310,19 @@ func boundedMetricInt(value uint64) int {
 // keeps the popup populated. Like the status task it never propagates errors
 // so a transient panel outage cannot tear down the periodic loop.
 func (c *Controller) reportNodeMetricsTask() error {
+	c.monitorMu.Lock()
+	tag := c.tag
+	c.monitorMu.Unlock()
 	metrics := c.collectNodeMetrics()
 	if err := c.apiClient.ReportNodeMetrics(metrics); err != nil {
 		log.WithFields(log.Fields{
-			"tag": c.tag,
+			"tag": tag,
 			"err": err,
 		}).Info("Report node metrics failed")
 		return nil
 	}
 	log.WithFields(log.Fields{
-		"tag":         c.tag,
+		"tag":         tag,
 		"uptime":      metrics.Uptime,
 		"goroutines":  metrics.Goroutines,
 		"total_users": metrics.TotalUsers,

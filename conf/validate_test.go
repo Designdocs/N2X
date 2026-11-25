@@ -533,6 +533,25 @@ func TestLoadValidatedChecksCertConfig(t *testing.T) {
 	})
 }
 
+func TestSnellMayLeaveFallbackTokenBlankUntilIssuance(t *testing.T) {
+	doc := validDoc()
+	node := docNode(doc, 0)
+	node["NodeType"] = "snell"
+	node["Core"] = "sing"
+	docCore(doc, 0)["Type"] = "sing"
+	node["CertConfig"] = map[string]any{
+		"CertMode": "dns", "CertDomain": "all.nom-loc.com", "Provider": "cloudflare",
+		"DNSEnv": map[string]any{"CF_DNS_API_TOKEN": ""},
+	}
+	cfg, err := LoadValidated(writeDoc(t, doc), ValidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateACMECertConfig(cfg.NodeConfig[0].Options.CertConfig); err == nil {
+		t.Fatal("an ACME order must still require the token")
+	}
+}
+
 func TestLoadValidatedChecksAcrossNodes(t *testing.T) {
 	t.Run("same panel node twice", func(t *testing.T) {
 		doc := validDoc()

@@ -25,6 +25,14 @@ func (c *Controller) localCertConfig() *conf.CertConfig {
 	return c.CertConfig
 }
 
+// Snell's direct listener has no TLS layer of its own. Only its optional
+// local HTTPS origin needs the operator's ACME certificate.
+func (c *Controller) managesSnellWebsiteCert(node *panel.NodeInfo) bool {
+	cfg := c.localCertConfig()
+	return node.Snell != nil && node.Snell.ShadowTLS == nil && node.Snell.WebsiteFallback != nil &&
+		cfg != nil && (cfg.CertMode == "http" || cfg.CertMode == "dns")
+}
+
 func (c *Controller) renewCertTask(certConfig *conf.CertConfig) error {
 	if certConfig == nil || (certConfig.CertMode != "dns" && certConfig.CertMode != "http") {
 		return nil

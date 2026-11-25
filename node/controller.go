@@ -123,7 +123,7 @@ func (c *Controller) Start() error {
 	}
 	c.apiClient.SetAliveUpdateHook(c.setAliveMap)
 	c.apiClient.SetKickedUpdateHook(c.setKickedMap)
-	if node.Security == panel.Tls {
+	if node.Security == panel.Tls || c.managesSnellWebsiteCert(node) {
 		err = c.requestCert(node)
 		if err != nil {
 			return startError(StageCert, "request cert error: %w", err)

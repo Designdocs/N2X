@@ -25,6 +25,7 @@ func (v *validator) checkNodes(nodes []NodeConfig, cores map[string]string) {
 		v.checkAPI(apiPath, &node.ApiConfig)
 		v.checkCoreSelection(optPath, &node.Options, cores)
 		v.checkOptions(optPath, &node.Options, cores)
+		v.checkCert(optPath+".CertConfig", node.Options.CertConfig, strings.EqualFold(node.ApiConfig.NodeType, "snell"))
 
 		identity := nodeIdentity(&node.ApiConfig)
 		if first, dup := identities[identity]; dup {
@@ -148,7 +149,6 @@ func (v *validator) checkOptions(path string, o *Options, cores map[string]strin
 			v.add(path+".ArtXOptions.WindowBudgetReservePercent", "must be between 0 and %d, got %d", maxArtXReservePercent, artx.WindowBudgetReservePercent)
 		}
 	}
-	v.checkCert(path+".CertConfig", o.CertConfig)
 	if err := o.DDNSConfig.Effective(o.CertConfig).Validate(); err != nil {
 		v.add(path+".DDNSConfig", "%v", err)
 	}
@@ -262,7 +262,7 @@ func (v *validator) checkSingOptions(path string, s *SingOptions) {
 	}
 }
 
-func (v *validator) checkCert(path string, c *CertConfig) {
+func (v *validator) checkCert(path string, c *CertConfig, snell bool) {
 	if c == nil || c.CertMode == "" {
 		return
 	}
@@ -296,6 +296,15 @@ func (v *validator) checkCert(path string, c *CertConfig) {
 			}
 		}
 	case "dns", "http":
+		// The Snell wizard leaves the token blank until the operator enables
+		// website fallback. Issuance still validates the original credentials.
+		if snell && c.CertMode == "dns" && c.Provider == "cloudflare" && len(c.DNSEnv) == 1 {
+			if token, ok := c.DNSEnv["CF_DNS_API_TOKEN"]; ok && token == "" {
+				template := *c
+				template.DNSEnv = nil
+				c = &template
+			}
+		}
 		if err := ValidateACMECertConfig(c); err != nil {
 			v.add(path, "%v", err)
 		}

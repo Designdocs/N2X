@@ -27,6 +27,18 @@ func (c *Controller) validateSnellWebsiteChange(next *panel.NodeInfo) error {
 		}
 	}
 
+	// A newly enabled website can only complete its first handshake after
+	// its certificate exists. Keep the active listener until both steps pass.
+	if c.managesSnellWebsiteCert(next) {
+		if err := c.requestCert(next); err != nil {
+			return fmt.Errorf("request Snell website certificate: %w", err)
+		}
+		if c.renewCertPeriodic == nil {
+			// The origin may already have an expired certificate from an earlier run.
+			_ = c.renewCertTask(c.localCertConfig())
+		}
+	}
+
 	// Probe the new TLS origin before deleting the active listener. Its certificate
 	// must cover the same SNI that the panel gives to clients.
 	address := origin.Address()

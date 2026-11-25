@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
@@ -230,6 +231,59 @@ func TestSnellWebsiteFallbackKeepsActiveNodeIfOriginIsInvalid(t *testing.T) {
 				t.Fatalf("a non-TLS website origin should keep the running Snell node: err=%v", err)
 			}
 		})
+	}
+}
+
+func TestSnellDirectFallbackCertificateLifecycle(t *testing.T) {
+	limiter.Init()
+	cfg := validDNSCertConfig(t)
+	orders := stubCertIssuance(t, nil, nil)
+	// Simulate an issuer returning a short-lived certificate so the first
+	// scheduled expiry check also exercises the renewal path.
+	issueCert = func(*conf.CertConfig) error {
+		*orders++
+		writeTestCertificate(t, cfg.CertFile, time.Now().Add(10*24*time.Hour))
+		return nil
+	}
+	renewed := make(chan struct{}, 1)
+	oldRenew := renewIssuedCert
+	renewIssuedCert = func(*conf.CertConfig) error { renewed <- struct{}{}; return nil }
+	t.Cleanup(func() { renewIssuedCert = oldRenew })
+
+	const direct = `"version":6,"psk":"test-shared-key"`
+	const fallback = direct + `,"website_fallback":{"server_name":"us.example.com","server_port":50443}`
+	body := nodeBody(fallback)
+	server := fakePanel(t, body, `{"users":[]}`)
+	client, err := panel.New(&conf.ApiConfig{APIHost: server.URL, Key: "token", NodeType: "snell", NodeID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller := NewController(&startStubCore{}, client, &conf.Options{CertConfig: cfg}, nil)
+	if err := controller.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controller.Close() })
+	select {
+	case <-renewed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fallback certificate did not renew")
+	}
+	task := controller.renewCertPeriodic
+	if *orders != 1 || task == nil || task.Interval != 24*time.Hour {
+		t.Fatal("expected initial issuance and daily renewal")
+	}
+	*body = *nodeBody(direct)
+	if err := controller.nodeInfoMonitor(); err != nil || controller.renewCertPeriodic != nil {
+		t.Fatalf("disabling fallback must stop renewals: %v", err)
+	}
+	if err := task.Execute(); err != nil || len(renewed) != 0 {
+		t.Fatal("disabled fallback still renewed")
+	}
+	*body = *nodeBody(fallback)
+	issueCert = func(*conf.CertConfig) error { *orders++; return errors.New("ACME unavailable") }
+	if err := controller.nodeInfoMonitor(); err != nil || *orders != 2 ||
+		controller.info.Snell.WebsiteFallback != nil || controller.renewCertPeriodic != nil {
+		t.Fatal("failed hot-enable must attempt issuance and preserve direct mode")
 	}
 }
 
