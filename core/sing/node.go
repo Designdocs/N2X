@@ -15,6 +15,9 @@ import (
 )
 
 func (b *Sing) AddNode(tag string, info *panel.NodeInfo, config *conf.Options) error {
+	if err := config.CheckRealityFallbackLimits("sing"); err != nil {
+		return err
+	}
 	if info.Snell != nil {
 		if err := info.Snell.ValidateListen(config.ListenIP, info.Common.ServerPort); err != nil {
 			return err

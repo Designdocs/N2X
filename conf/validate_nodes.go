@@ -135,6 +135,16 @@ func (v *validator) checkOptions(path string, o *Options, cores map[string]strin
 	if o.Core == "" && len(o.RawOptions) > 0 {
 		xray, sing = v.decodeUnpinnedOptions(path, o, cores)
 	}
+	coreType := o.Core
+	if coreType == "" {
+		coreType = cores[o.CoreName]
+		if coreType == "" && !coreTypeConfigured(cores, "xray") && coreTypeConfigured(cores, "sing") {
+			coreType = "sing"
+		}
+	}
+	if err := o.CheckRealityFallbackLimits(coreType); err != nil {
+		v.add(path, "%v", err)
+	}
 	if xray != nil {
 		v.checkXrayOptions(path, xray)
 	}

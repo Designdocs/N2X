@@ -3,6 +3,7 @@ package conf
 import (
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -128,21 +129,54 @@ func (n *NodeConfig) UnmarshalJSON(data []byte) (err error) {
 	return
 }
 
+// RealityFallbackLimit applies to one direction of an unauthenticated connection.
+type RealityFallbackLimit struct {
+	AfterBytes       uint64 `json:"afterBytes"`
+	BytesPerSec      uint64 `json:"bytesPerSec"`
+	BurstBytesPerSec uint64 `json:"burstBytesPerSec"`
+}
+
 type Options struct {
-	Name                   string          `json:"Name"`
-	Core                   string          `json:"Core"`
-	CoreName               string          `json:"CoreName"`
-	ListenIP               string          `json:"ListenIP"`
-	SendIP                 string          `json:"SendIP"`
-	DeviceOnlineMinTraffic int64           `json:"DeviceOnlineMinTraffic"`
-	ReportMinTraffic       int64           `json:"ReportMinTraffic"`
-	LimitConfig            LimitConfig     `json:"LimitConfig"`
-	RawOptions             json.RawMessage `json:"RawOptions"`
-	XrayOptions            *XrayOptions    `json:"XrayOptions"`
-	SingOptions            *SingOptions    `json:"SingOptions"`
-	ArtXOptions            *ArtXOptions    `json:"ArtXOptions"`
-	CertConfig             *CertConfig     `json:"CertConfig"`
-	DDNSConfig             DDNSConfig      `json:"DDNSConfig"`
+	LimitFallbackUpload    *RealityFallbackLimit `json:"limitFallbackUpload,omitempty"`
+	LimitFallbackDownload  *RealityFallbackLimit `json:"limitFallbackDownload,omitempty"`
+	Name                   string                `json:"Name"`
+	Core                   string                `json:"Core"`
+	CoreName               string                `json:"CoreName"`
+	ListenIP               string                `json:"ListenIP"`
+	SendIP                 string                `json:"SendIP"`
+	DeviceOnlineMinTraffic int64                 `json:"DeviceOnlineMinTraffic"`
+	ReportMinTraffic       int64                 `json:"ReportMinTraffic"`
+	LimitConfig            LimitConfig           `json:"LimitConfig"`
+	RawOptions             json.RawMessage       `json:"RawOptions"`
+	XrayOptions            *XrayOptions          `json:"XrayOptions"`
+	SingOptions            *SingOptions          `json:"SingOptions"`
+	ArtXOptions            *ArtXOptions          `json:"ArtXOptions"`
+	CertConfig             *CertConfig           `json:"CertConfig"`
+	DDNSConfig             DDNSConfig            `json:"DDNSConfig"`
+}
+
+// CheckRealityFallbackLimits also runs after automatic core selection.
+func (o *Options) CheckRealityFallbackLimits(coreType string) error {
+	for _, direction := range []struct {
+		name  string
+		limit *RealityFallbackLimit
+	}{
+		{"limitFallbackUpload", o.LimitFallbackUpload},
+		{"limitFallbackDownload", o.LimitFallbackDownload},
+	} {
+		if direction.limit == nil {
+			continue
+		}
+		if coreType == "sing" {
+			return fmt.Errorf("%s requires Xray REALITY; sing-box does not support REALITY fallback rate limits", direction.name)
+		}
+		// Xray uses signed byte counts for the allowance and token bucket.
+		l := direction.limit
+		if l.AfterBytes > math.MaxInt64 || l.BytesPerSec > math.MaxInt64 || l.BurstBytesPerSec > math.MaxInt64 {
+			return fmt.Errorf("%s byte counts must fit in a signed 64-bit integer", direction.name)
+		}
+	}
+	return nil
 }
 
 func (o *Options) UnmarshalJSON(data []byte) error {

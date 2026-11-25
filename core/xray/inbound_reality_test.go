@@ -1,9 +1,11 @@
 package xray
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Designdocs/N2X/api/panel"
+	"github.com/Designdocs/N2X/conf"
 	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/transport/internet/reality"
 )
@@ -19,9 +21,9 @@ func realityTlsSettings() panel.TlsSettings {
 }
 
 // realitySettingsOf digs the built REALITY config out of an inbound handler.
-func realitySettingsOf(t *testing.T, node *panel.NodeInfo, tag string) *reality.Config {
+func realitySettingsOf(t *testing.T, options *conf.Options, node *panel.NodeInfo, tag string) *reality.Config {
 	t.Helper()
-	inbound, err := buildInbound(transportTestOptions(), node, tag)
+	inbound, err := buildInbound(options, node, tag)
 	if err != nil {
 		t.Fatalf("buildInbound() error = %v", err)
 	}
@@ -54,7 +56,7 @@ func TestBuildInboundTrojanReality(t *testing.T) {
 		Trojan:   &panel.TrojanNode{Network: "tcp", Tls: panel.Reality, TlsSettings: realityTlsSettings()},
 	}
 
-	settings := realitySettingsOf(t, node, "trojan-reality")
+	settings := realitySettingsOf(t, transportTestOptions(), node, "trojan-reality")
 	if len(settings.ServerNames) != 1 || settings.ServerNames[0] != "www.example.com" {
 		t.Fatalf("server names = %v", settings.ServerNames)
 	}
@@ -71,7 +73,7 @@ func TestBuildInboundAnyTLSReality(t *testing.T) {
 		AnyTls:   &panel.AnyTlsNode{Tls: panel.Reality, TlsSettings: realityTlsSettings()},
 	}
 
-	settings := realitySettingsOf(t, node, "anytls-reality")
+	settings := realitySettingsOf(t, transportTestOptions(), node, "anytls-reality")
 	if len(settings.ServerNames) != 1 || settings.ServerNames[0] != "www.example.com" {
 		t.Fatalf("server names = %v", settings.ServerNames)
 	}
@@ -89,5 +91,25 @@ func TestBuildInboundRealityWithoutSettings(t *testing.T) {
 
 	if _, err := buildInbound(transportTestOptions(), node, "ss-reality"); err == nil {
 		t.Fatal("buildInbound() returned no error for a node type without REALITY settings")
+	}
+}
+
+func TestBuildInboundRealityFallbackParameters(t *testing.T) {
+	node := &panel.NodeInfo{
+		Type: "trojan", Security: panel.Reality, Common: &panel.CommonNode{ServerPort: 10443},
+		Trojan: &panel.TrojanNode{Network: "tcp", Tls: panel.Reality, TlsSettings: realityTlsSettings()},
+	}
+	options := transportTestOptions()
+	options.LimitFallbackUpload = &conf.RealityFallbackLimit{AfterBytes: 100, BytesPerSec: 200, BurstBytesPerSec: 300}
+	options.LimitFallbackDownload = &conf.RealityFallbackLimit{AfterBytes: 400, BytesPerSec: 500, BurstBytesPerSec: 600}
+	settings := realitySettingsOf(t, options, node, "limited")
+	up, down := settings.GetLimitFallbackUpload(), settings.GetLimitFallbackDownload()
+	if up.GetAfterBytes() != 100 || up.GetBytesPerSec() != 200 || up.GetBurstBytesPerSec() != 300 ||
+		down.GetAfterBytes() != 400 || down.GetBytesPerSec() != 500 || down.GetBurstBytesPerSec() != 600 {
+		t.Fatalf("unexpected Xray fallback settings: up=%v down=%v", up, down)
+	}
+	node.Security = panel.Tls
+	if _, err := buildInbound(options, node, "plain-tls"); err == nil || !strings.Contains(err.Error(), "require a REALITY inbound") {
+		t.Fatalf("expected fallback configuration error for plain TLS, got %v", err)
 	}
 }

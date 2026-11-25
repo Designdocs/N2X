@@ -21,6 +21,12 @@ import (
 
 // BuildInbound build Inbound config for different protocol
 func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerConfig, error) {
+	if err := option.CheckRealityFallbackLimits("xray"); err != nil {
+		return nil, err
+	}
+	if (option.LimitFallbackUpload != nil || option.LimitFallbackDownload != nil) && nodeInfo.Security != panel.Reality {
+		return nil, errors.New("limitFallbackUpload and limitFallbackDownload require a REALITY inbound")
+	}
 	option = panelFallbackOptions(option, nodeInfo)
 	in := &coreConf.InboundDetourConfig{}
 	var err error
@@ -145,22 +151,31 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 		}
 		mtd, _ := time.ParseDuration(realityConfig.MaxTimeDiff)
 		in.StreamSetting.REALITYSettings = &coreConf.REALITYConfig{
-			Dest:         d,
-			Xver:         xver,
-			Show:         false,
-			ServerNames:  []string{tlsSettings.ServerName},
-			PrivateKey:   tlsSettings.PrivateKey,
-			MinClientVer: minClientVer,
-			MaxClientVer: realityConfig.MaxClientVer,
-			MaxTimeDiff:  uint64(mtd.Microseconds()),
-			ShortIds:     []string{tlsSettings.ShortId},
-			Mldsa65Seed:  tlsSettings.Mldsa65Seed,
+			Dest:                  d,
+			Xver:                  xver,
+			Show:                  false,
+			ServerNames:           []string{tlsSettings.ServerName},
+			PrivateKey:            tlsSettings.PrivateKey,
+			MinClientVer:          minClientVer,
+			MaxClientVer:          realityConfig.MaxClientVer,
+			MaxTimeDiff:           uint64(mtd.Microseconds()),
+			ShortIds:              []string{tlsSettings.ShortId},
+			Mldsa65Seed:           tlsSettings.Mldsa65Seed,
+			LimitFallbackUpload:   realityFallbackLimit(option.LimitFallbackUpload),
+			LimitFallbackDownload: realityFallbackLimit(option.LimitFallbackDownload),
 		}
 	default:
 		break
 	}
 	in.Tag = tag
 	return in.Build()
+}
+
+func realityFallbackLimit(limit *conf.RealityFallbackLimit) coreConf.LimitFallback {
+	if limit == nil {
+		return coreConf.LimitFallback{}
+	}
+	return coreConf.LimitFallback(*limit)
 }
 
 func buildInboundTLSConfig(option *conf.Options, nodeInfo *panel.NodeInfo) (*coreConf.TLSConfig, error) {

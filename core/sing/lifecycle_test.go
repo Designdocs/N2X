@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,5 +280,18 @@ func TestAddNodeRejectsBadSettingsWithoutLeakingState(t *testing.T) {
 	}
 	if got := core.reportMinTraffic(tag); got != 0 {
 		t.Fatalf("a failed AddNode left a reporting threshold: %d", got)
+	}
+}
+
+func TestAddNodeRejectsRealityFallbackLimit(t *testing.T) {
+	server := newLifecycleCore(t)
+	for _, opts := range []*conf.Options{
+		{LimitFallbackUpload: &conf.RealityFallbackLimit{}},
+		{LimitFallbackDownload: &conf.RealityFallbackLimit{BytesPerSec: 2048}},
+	} {
+		err := server.AddNode("invalid", &panel.NodeInfo{Type: "vless", Security: panel.Reality}, opts)
+		if err == nil || !strings.Contains(err.Error(), "sing-box does not support REALITY fallback rate limits") {
+			t.Fatalf("expected unsupported sing-box fallback limit error, got %v", err)
+		}
 	}
 }

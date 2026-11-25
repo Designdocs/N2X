@@ -40,7 +40,6 @@ import (
 // The public Vision client uses uintptr TLS field access and needs a non-race
 // wire test; the N2X/Core race suites remain enabled separately.
 func TestXrayVLESSRealityVisionPublicClient(t *testing.T) {
-	initLimiterOnce.Do(limiter.Init)
 	decoy := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
 	decoy.EnableHTTP2 = true
 	decoy.TLS = &tls.Config{MinVersion: tls.VersionTLS13, CurvePreferences: []tls.CurveID{tls.X25519}}
@@ -79,38 +78,8 @@ func TestXrayVLESSRealityVisionPublicClient(t *testing.T) {
 			name += "/invalid-short-id"
 		}
 		t.Run(name, func(t *testing.T) {
-			outbounds := filepath.Join(t.TempDir(), "outbound.json")
-			// A loopback echo target is permitted explicitly for this isolated fixture.
-			if err := os.WriteFile(outbounds, []byte(`[{"protocol":"freedom","tag":"direct","settings":{"finalRules":[{"action":"allow"}]}}]`), 0600); err != nil {
-				t.Fatal(err)
-			}
-			cfg := conf.NewXrayConfig()
-			cfg.LogConfig.Level = "debug"
-			cfg.OutboundConfigPath = outbounds
-			instance, err := New(&conf.CoreConfig{XrayConfig: cfg})
-			if err != nil {
-				t.Fatal(err)
-			}
-			server := instance.(*Xray)
-			if err := server.Start(); err != nil {
-				t.Fatal(err)
-			}
-			defer server.Close()
-			nodePort := freeLoopbackPort(t)
-			tag := "xray-reality-wire-" + flow
-			info := &panel.NodeInfo{Type: "vless", Security: panel.Reality, Common: &panel.CommonNode{ServerPort: nodePort}, VAllss: &panel.VAllssNode{Network: "tcp", Flow: flow, Tls: panel.Reality, TlsSettings: panel.TlsSettings{ServerName: "n2x.test", Dest: host, ServerPort: port, PrivateKey: base64.RawURLEncoding.EncodeToString(key.Bytes()), ShortId: "0123456789abcdef"}}}
 			options := &conf.Options{ListenIP: "127.0.0.1", XrayOptions: conf.NewXrayOptions()}
-			if err := server.AddNode(tag, info, options); err != nil {
-				t.Fatal(err)
-			}
-			users := []panel.UserInfo{{Id: 1, Uuid: singMuxTestPassword}}
-			limiter.AddLimiter(tag, &conf.LimitConfig{}, users, nil)
-			defer limiter.DeleteLimiter(tag)
-			if _, err := server.AddUsers(&vCore.AddUsersParams{Tag: tag, Users: users, NodeInfo: info}); err != nil {
-				t.Fatal(err)
-			}
-			address := net.JoinHostPort("127.0.0.1", strconv.Itoa(nodePort))
-			waitForListener(t, address)
+			address := startRealityNode(t, host, port, base64.RawURLEncoding.EncodeToString(key.Bytes()), flow, options)
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			target := startTCPEcho(t)
@@ -200,6 +169,43 @@ func TestXrayVLESSRealityVisionPublicClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+func startRealityNode(t *testing.T, host, port, privateKey, flow string, options *conf.Options) string {
+	t.Helper()
+	initLimiterOnce.Do(limiter.Init)
+	outbounds := filepath.Join(t.TempDir(), "outbound.json")
+	// A loopback echo target is permitted explicitly for this isolated fixture.
+	if err := os.WriteFile(outbounds, []byte(`[{"protocol":"freedom","tag":"direct","settings":{"finalRules":[{"action":"allow"}]}}]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := conf.NewXrayConfig()
+	cfg.LogConfig.Level = "debug"
+	cfg.OutboundConfigPath = outbounds
+	instance, err := New(&conf.CoreConfig{XrayConfig: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := instance.(*Xray)
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { server.Close() })
+	nodePort := freeLoopbackPort(t)
+	tag := "xray-reality-wire-" + flow
+	info := &panel.NodeInfo{Type: "vless", Security: panel.Reality, Common: &panel.CommonNode{ServerPort: nodePort}, VAllss: &panel.VAllssNode{Network: "tcp", Flow: flow, Tls: panel.Reality, TlsSettings: panel.TlsSettings{ServerName: "n2x.test", Dest: host, ServerPort: port, PrivateKey: privateKey, ShortId: "0123456789abcdef"}}}
+	if err := server.AddNode(tag, info, options); err != nil {
+		t.Fatal(err)
+	}
+	users := []panel.UserInfo{{Id: 1, Uuid: singMuxTestPassword}}
+	limiter.AddLimiter(tag, &conf.LimitConfig{}, users, nil)
+	t.Cleanup(func() { limiter.DeleteLimiter(tag) })
+	if _, err := server.AddUsers(&vCore.AddUsersParams{Tag: tag, Users: users, NodeInfo: info}); err != nil {
+		t.Fatal(err)
+	}
+	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(nodePort))
+	waitForListener(t, address)
+	return address
 }
 
 // Use the upstream Xray client implementation as well as the independent sing
