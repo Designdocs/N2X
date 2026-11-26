@@ -8,6 +8,7 @@ import (
 )
 
 type XrayConfig struct {
+	WSScanGuard        WSScanGuardConfig     `json:"-"`
 	LogConfig          *XrayLogConfig        `json:"Log"`
 	AssetPath          string                `json:"AssetPath"`
 	DnsConfigPath      string                `json:"DnsConfigPath"`

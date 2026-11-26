@@ -8,7 +8,13 @@ import (
 	"github.com/Designdocs/N2X/common/json5"
 )
 
+type WSScanGuardConfig struct {
+	Enabled  bool `json:"Enabled"`
+	LogMaxMB int  `json:"LogMaxMB"`
+}
+
 type Conf struct {
+	WSScanGuard      WSScanGuardConfig      `json:"WSScanGuard"`
 	LogConfig        LogConfig              `json:"Log"`
 	CoresConfig      []CoreConfig           `json:"Cores"`
 	NodeConfig       []NodeConfig           `json:"Nodes"`
@@ -23,6 +29,7 @@ type Conf struct {
 
 func New() *Conf {
 	return &Conf{
+		WSScanGuard:      WSScanGuardConfig{LogMaxMB: 10},
 		MemoryConfig:     MemoryConfig{SoftLimitPercent: 70, RestartPercent: 90},
 		ScheduledRestart: ScheduledRestartConfig{IntervalDays: 3, StartTime: "03:00", EndTime: "05:00"},
 		LogConfig: LogConfig{

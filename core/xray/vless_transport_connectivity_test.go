@@ -21,16 +21,22 @@ func TestXrayVLESSTransportsHTTPSAndAccounting(t *testing.T) {
 	for _, tc := range []struct{ name, network, flow, key, settings string }{
 		{"TCP-TLS", "tcp", "", "", "{}"},
 		{"TCP-TLS-Vision", "tcp", "xtls-rprx-vision", "", "{}"},
-		{"WS-TLS", "ws", "", "wsSettings", `{"path":"/wire-test"}`},
+		{"WS-TLS", "ws", "", "wsSettings", `{"host":"scan-test.example","path":"/wire-test"}`},
 		{"gRPC-TLS", "grpc", "", "grpcSettings", `{"serviceName":"wire-test"}`},
 		{"gRPC-multi-TLS", "grpc", "", "grpcSettings", `{"serviceName":"wire-test","multiMode":true}`},
-		{"HTTPUpgrade-TLS", "httpupgrade", "", "httpupgradeSettings", `{"path":"/wire-test"}`},
-		{"XHTTP-packet-up-TLS", "xhttp", "", "xhttpSettings", `{"path":"/wire-test","mode":"packet-up"}`},
-		{"XHTTP-stream-one-TLS", "xhttp", "", "xhttpSettings", `{"path":"/wire-test","mode":"stream-one"}`},
+		{"HTTPUpgrade-TLS", "httpupgrade", "", "httpupgradeSettings", `{"host":"scan-test.example","path":"/wire-test"}`},
+		{"XHTTP-packet-up-TLS", "xhttp", "", "xhttpSettings", `{"host":"scan-test.example","path":"/wire-test","mode":"packet-up"}`},
+		{"XHTTP-stream-one-TLS", "xhttp", "", "xhttpSettings", `{"host":"scan-test.example","path":"/wire-test","mode":"stream-one"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newProtocolFixture(t, &panel.NodeInfo{Type: "vless", Security: panel.Tls, VAllss: &panel.VAllssNode{Tls: panel.Tls, Network: tc.network, Flow: tc.flow, NetworkSettings: json.RawMessage(tc.settings)}})
-			host, p, err := net.SplitHostPort(f.address)
+			guard := tc.network == "ws" || tc.network == "xhttp" || tc.network == "httpupgrade"
+			t.Setenv("N2X_WS_SCAN_STATE_DIR", t.TempDir())
+			f := newProtocolFixtureWithGuard(t, &panel.NodeInfo{Type: "vless", Security: panel.Tls, VAllss: &panel.VAllssNode{Tls: panel.Tls, Network: tc.network, Flow: tc.flow, NetworkSettings: json.RawMessage(tc.settings)}}, guard)
+			entry := f.address
+			if guard {
+				entry = exercisePlainRelay(t, f)
+			}
+			host, p, err := net.SplitHostPort(entry)
 			if err != nil {
 				t.Fatal(err)
 			}

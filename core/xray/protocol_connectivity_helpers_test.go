@@ -24,6 +24,7 @@ import (
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
 	vCore "github.com/Designdocs/N2X/core"
+	"github.com/Designdocs/N2X/decoy"
 	"github.com/Designdocs/N2X/limiter"
 )
 
@@ -38,6 +39,10 @@ type protocolFixture struct {
 }
 
 func newProtocolFixture(t *testing.T, info *panel.NodeInfo) *protocolFixture {
+	t.Helper()
+	return newProtocolFixtureWithGuard(t, info, false)
+}
+func newProtocolFixtureWithGuard(t *testing.T, info *panel.NodeInfo, enabled bool) *protocolFixture {
 	t.Helper()
 	initLimiterOnce.Do(limiter.Init)
 	f := &protocolFixture{info: info, tag: "protocol-" + t.Name(), payload: bytes.Repeat([]byte("verified-protocol-https"), 16384), users: []panel.UserInfo{{Id: 101, Uuid: singMuxTestPassword}, {Id: 102, Uuid: "22222222-2222-2222-2222-222222222222"}}}
@@ -68,6 +73,7 @@ func newProtocolFixture(t *testing.T, info *panel.NodeInfo) *protocolFixture {
 		t.Fatal(err)
 	}
 	cfg := conf.NewXrayConfig()
+	cfg.WSScanGuard = conf.WSScanGuardConfig{Enabled: enabled, LogMaxMB: 10}
 	if os.Getenv("N2X_PROTOCOL_TEST_DEBUG") == "1" {
 		cfg.LogConfig.Level = "debug"
 	}
@@ -103,6 +109,12 @@ func newProtocolFixture(t *testing.T, info *panel.NodeInfo) *protocolFixture {
 		}
 	}
 	options := &conf.Options{ListenIP: "127.0.0.1", XrayOptions: conf.NewXrayOptions(), CertConfig: &conf.CertConfig{CertMode: "file", CertFile: certFile, KeyFile: keyFile}}
+	if enabled && info.VAllss.Network != "httpupgrade" {
+		fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+		t.Cleanup(fallback.Close)
+		t.Setenv(decoy.ListenAddressEnvironment, fallback.Listener.Addr().String())
+		options.XrayOptions.DecoyFallback = true
+	}
 	if err = f.core.AddNode(f.tag, info, options); err != nil {
 		t.Fatal(err)
 	}

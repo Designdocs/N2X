@@ -6,9 +6,10 @@ package conf
 // as plain strings here and translated inside core/sing.
 
 type SingConfig struct {
-	LogConfig    SingLogConfig `json:"Log"`
-	NtpConfig    SingNtpConfig `json:"NTP"`
-	OriginalPath string        `json:"OriginalPath"`
+	WSScanGuard  WSScanGuardConfig `json:"-"`
+	LogConfig    SingLogConfig     `json:"Log"`
+	NtpConfig    SingNtpConfig     `json:"NTP"`
+	OriginalPath string            `json:"OriginalPath"`
 }
 
 type SingLogConfig struct {

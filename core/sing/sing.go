@@ -28,6 +28,7 @@ func init() {
 // inbounds, panel users become inbound users, and every routed connection is
 // wrapped by the hook server for rate limiting and traffic accounting.
 type Sing struct {
+	scanConfig conf.WSScanGuardConfig
 	box        *box.Box
 	ctx        context.Context
 	hookServer *HookServer
@@ -111,6 +112,7 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 	hs := newHookServer()
 	b.Router().AppendTracker(hs)
 	s := &Sing{
+		scanConfig: c.SingConfig.WSScanGuard,
 		ctx:        b.Router().GetCtx(),
 		box:        b,
 		hookServer: hs,

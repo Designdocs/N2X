@@ -148,7 +148,7 @@ func getCore(c *conf.XrayConfig) *core.Instance {
 		serial.ToTypedMessage(&stats.Config{}),
 		serial.ToTypedMessage(&proxyman.InboundConfig{}),
 	}
-	ctx := context.Background()
+	ctx := withWSScanGuard(context.Background(), c.WSScanGuard)
 	var manager *outboundManager
 	if c.OutboundConfigPath == "" {
 		app = append(app, serial.ToTypedMessage(&proxyman.OutboundConfig{}))

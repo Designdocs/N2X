@@ -49,6 +49,9 @@ const (
 func (v *validator) checkConf(c *Conf) {
 	v.checkLog(c.LogConfig)
 	v.checkMemory(c.MemoryConfig)
+	if c.WSScanGuard.LogMaxMB < 1 || c.WSScanGuard.LogMaxMB > 4096 {
+		v.add("WSScanGuard.LogMaxMB", "must be 1..4096 MiB")
+	}
 	v.checkScheduledRestart(c.ScheduledRestart)
 	names := v.checkCores(c.CoresConfig)
 	v.checkNodes(c.NodeConfig, names)

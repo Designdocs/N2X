@@ -317,7 +317,18 @@ func (p *Conf) decode(data []byte) error {
 		// Fall back to the raw values; nodes resolve their own placeholders.
 		resolved = data
 	}
-	return jsonv2.Unmarshal(resolved, p)
+	if err := jsonv2.Unmarshal(resolved, p); err != nil {
+		return err
+	}
+	for _, core := range p.CoresConfig {
+		if core.XrayConfig != nil {
+			core.XrayConfig.WSScanGuard = p.WSScanGuard
+		}
+		if core.SingConfig != nil {
+			core.SingConfig.WSScanGuard = p.WSScanGuard
+		}
+	}
+	return nil
 }
 
 func lineColumn(raw []byte, offset int64) (int, int) {

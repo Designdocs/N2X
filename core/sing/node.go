@@ -3,6 +3,8 @@ package sing
 import (
 	"errors"
 	"fmt"
+	"github.com/Designdocs/N2X/common/scanguard"
+	"github.com/sagernet/sing-box/adapter"
 	"os"
 
 	"encoding/json"
@@ -124,8 +126,15 @@ func (b *Sing) addChainedInbounds(tag string, inbounds []option.Inbound) error {
 }
 
 func (b *Sing) createInbound(tag string, in option.Inbound) error {
+	ctx := b.ctx
+	switch in.Type {
+	case "vmess", "vless", "trojan", "naive":
+		if filter := scanguard.Filter(tag, b.scanConfig); filter != nil {
+			ctx = adapter.WithPathFilter(ctx, filter)
+		}
+	}
 	err := b.box.Inbound().Create(
-		b.ctx,
+		ctx,
 		b.router,
 		b.logFactory.NewLogger(F.ToString("inbound/", in.Type, "[", tag, "]")),
 		tag,

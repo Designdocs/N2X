@@ -31,7 +31,7 @@ func snapshotWatchState(c *Conf, dnsPath string) (watchState, error) {
 	for i, node := range c.NodeConfig {
 		nodes[i] = []any{node.ApiConfig, node.Options}
 	}
-	raw, err := json.Marshal([]any{c.LogConfig, c.MemoryConfig, c.ScheduledRestart, cores, nodes})
+	raw, err := json.Marshal([]any{c.LogConfig, c.MemoryConfig, c.WSScanGuard, c.ScheduledRestart, cores, nodes})
 	if err != nil {
 		return watchState{}, err
 	}

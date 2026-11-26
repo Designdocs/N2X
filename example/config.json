@@ -3,6 +3,10 @@
     "Level": "info",
     "Output": ""
   },
+  "WSScanGuard": {
+    "Enabled": false,
+    "LogMaxMB": 10
+  },
   "Memory": {
     "SoftLimitPercent": 70,
     "RestartPercent": 90
