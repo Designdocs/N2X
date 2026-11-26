@@ -129,7 +129,7 @@ func (b *Sing) addChainedInbounds(tag string, inbounds []option.Inbound) error {
 
 func (b *Sing) createInbound(tag string, in option.Inbound) error {
 	ctx := b.ctx
-	if b.scanConfig.RelayCAFile != "" || (b.scanConfig.Enabled && len(b.scanConfig.DirectOnlyNodes) > 0) {
+	if scanguard.HasRelayCA(b.scanConfig) || (b.scanConfig.Enabled && len(b.scanConfig.DirectOnlyNodes) > 0) {
 		ctx = adapter.WithInboundListenerWrapper(ctx, func(l net.Listener) (net.Listener, error) {
 			return scanguard.WrapVisitorListener(tag, b.scanConfig, l)
 		})

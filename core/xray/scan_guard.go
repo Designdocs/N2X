@@ -12,7 +12,7 @@ import (
 var wrapScanListener = scanguard.WrapVisitorListener
 
 func withWSScanGuard(ctx context.Context, cfg conf.WSScanGuardConfig) context.Context {
-	if cfg.RelayCAFile != "" || (cfg.Enabled && len(cfg.DirectOnlyNodes) > 0) {
+	if scanguard.HasRelayCA(cfg) || (cfg.Enabled && len(cfg.DirectOnlyNodes) > 0) {
 		wrap := wrapScanListener
 		ctx = internet.WithInboundListenerWrapper(ctx, func(tag string, l net.Listener) (net.Listener, error) {
 			return wrap(tag, cfg, l)

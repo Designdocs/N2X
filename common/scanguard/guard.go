@@ -42,7 +42,7 @@ func requestFilter(tag string, cfg conf.WSScanGuardConfig, classify func(*http.R
 			label = label[:256] + "…"
 		}
 		var source, action string
-		if cfg.RelayCAFile != "" || len(cfg.DirectOnlyNodes) > 0 {
+		if HasRelayCA(cfg) || len(cfg.DirectOnlyNodes) > 0 {
 			if v, ok := visitorFor(tag, r); ok {
 				source = v.ip.String()
 				banned, err := v.observe(r.URL.Path, time.Now())

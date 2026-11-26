@@ -23,7 +23,7 @@
 
 适用于 DDNS Agent **直接接收访客**的单跳 TCP 转发规则。维持原有中转端口和落地端口。如 Agent 前面还有其他 TCP 代理，使用普通转发和扫描日志。
 
-1. 从 DDNS Master 的管理员接口 `GET /api/v1/n2x-relay-ca` 获取本部署的公开 CA 证书。首次获取时 Master 会生成并保存密钥，默认目录为 Master 工作目录下的 `data/n2x-relay`。将 `master-public.pem` 复制到落地机的 `/etc/N2X/ddns-master-public.pem`。一台落地机的所有节点共用该文件。
+1. 确认 DDNS Master 管理员接口 `GET /api/v1/n2x-relay-ca` 导出的公开 CA。正式版内置 CA 的 SHA-256 指纹为 `CA:26:CF:C9:E5:10:D9:97:5A:5A:19:31:DD:28:16:DD:D7:1A:77:01:71:40:73:83:72:BD:DF:6D:5C:A8:AB:1B`。使用此 Master 时，按下例填写 `builtin`。已填写反馈证书和私钥两个路径的落地可省略 `RelayCAFile`，常规更新会保留内置 CA。使用其他 Master 时，将其公开 CA 保存到落地机，在 `RelayCAFile` 填写该文件的路径。一台落地上的所有节点共用这项设置。
 2. 在落地机的 `/etc/N2X/config.json` 顶层设置下列配置，执行 `N2X check`，然后执行 `N2X restart` 使 TCP 监听器加载证书。
 3. 在 DDNS Master 的转发规则「高级与过滤」勾选「N2X 访客 IP 认证」并保存。规则使用单跳直转 TCP；接收和发送 PROXY Protocol 均选「关闭」。Agent 会自动领取并续期凭据。回退时先关闭转发规则的认证，再移除落地的 CA 配置。
 
@@ -32,12 +32,12 @@
   "WSScanGuard": {
     "Enabled": true,
     "LogMaxMB": 10,
-    "RelayCAFile": "/etc/N2X/ddns-master-public.pem"
+    "RelayCAFile": "builtin"
   }
 }
 ```
 
-菜单 25 的开关控制扫描拦截和封禁。保留 `RelayCAFile` 时，关闭开关后已启用认证转发的用户仍可连接。默认未配置 CA，封禁关闭。
+菜单 25 的开关控制扫描拦截和封禁。保留上述中转认证设置时，关闭扫描防护后，认证转发的用户仍可连接。仅开启基础防护时，中转认证默认关闭。
 
 同一节点、同一经过认证的访客，在每轮 5 分钟内命中至少三个不同的敏感路径或错误 WS 握手路径，两轮之间至少 10 分钟没有新的命中，前一次有效证据在 24 小时内，才会永久封禁该访客后续经过认证的新连接。日志中的 `visitor` 是已验证的访客地址，`action: node-ban` 是封禁记录。封禁保存在日志目录下的 `bans/`，重启后仍生效。菜单 25 中的「查看已封禁 IP」列出节点、访客 IP 和封禁时间。
 

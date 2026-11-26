@@ -5,14 +5,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/netip"
-	"os"
 	"slices"
 	"sync"
 	"time"
@@ -36,25 +34,15 @@ type visitorListener struct {
 
 func WrapVisitorListener(tag string, cfg conf.WSScanGuardConfig, raw net.Listener) (net.Listener, error) {
 	directOnly := cfg.Enabled && slices.Contains(cfg.DirectOnlyNodes, tag)
-	if (cfg.RelayCAFile == "" && !directOnly) || tag == "" {
+	if (!HasRelayCA(cfg) && !directOnly) || tag == "" {
 		return raw, nil
 	}
 	l := &visitorListener{Listener: raw, tag: tag, enforce: cfg.Enabled, directOnly: directOnly, done: make(chan struct{}), ready: make(chan net.Conn)}
-	if cfg.RelayCAFile != "" {
-		data, err := os.ReadFile(cfg.RelayCAFile)
+	if HasRelayCA(cfg) {
+		roots, err := relayRoots(cfg.RelayCAFile)
 		if err != nil {
 			return nil, err
 		}
-		roots := x509.NewCertPool()
-		block, rest := pem.Decode(data)
-		if block == nil || block.Type != "CERTIFICATE" || len(bytes.TrimSpace(rest)) != 0 {
-			return nil, errors.New("expected one DDNS Master public CA certificate")
-		}
-		ca, err := x509.ParseCertificate(block.Bytes)
-		if err != nil || !ca.IsCA || ca.PublicKeyAlgorithm != x509.Ed25519 || ca.CheckSignatureFrom(ca) != nil {
-			return nil, errors.New("invalid DDNS Master public CA")
-		}
-		roots.AddCert(ca)
 		l.roots = roots
 		if cfg.Enabled && cfg.FeedbackCertFile != "" {
 			cert, err := tls.LoadX509KeyPair(cfg.FeedbackCertFile, cfg.FeedbackKeyFile)
