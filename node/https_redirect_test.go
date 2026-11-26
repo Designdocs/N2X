@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Designdocs/N2X/api/panel"
+	"github.com/Designdocs/N2X/common/scanguard"
 	"github.com/Designdocs/N2X/conf"
 )
 
@@ -22,11 +23,18 @@ func TestHTTPSRedirectManagerRedirectsTrustedHost(t *testing.T) {
 	manager := newHTTPSRedirectManager("127.0.0.1:0")
 	t.Cleanup(func() { _ = manager.Close() })
 
-	err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig())
+	t.Setenv("N2X_WS_SCAN_STATE_DIR", t.TempDir())
+	filter := scanguard.SensitiveFilter("artx-test", conf.WSScanGuardConfig{Enabled: true, LogMaxMB: 10})
+	err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig(), filter)
 	if err != nil {
 		t.Fatalf("register HTTPS redirect: %v", err)
 	}
 
+	blocked := redirectRequest(t, manager.Address(), redirectTestHost, redirectTestHost, "/.git/config")
+	blocked.Body.Close()
+	if blocked.StatusCode != 404 || blocked.Header.Get("Location") != "" {
+		t.Fatal("sensitive path redirected")
+	}
 	response := redirectRequest(
 		t,
 		manager.Address(),
@@ -53,7 +61,7 @@ func TestHTTPSRedirectManagerDoesNothingForPublicPort443(t *testing.T) {
 		CertFile: "/missing/cert.pem",
 		KeyFile:  "/missing/key.pem",
 	}
-	if err := manager.Upsert("artx-test", redirectNodeInfo(443), invalidCertConfig); err != nil {
+	if err := manager.Upsert("artx-test", redirectNodeInfo(443), invalidCertConfig, nil); err != nil {
 		t.Fatalf("register public-port-443 node: %v", err)
 	}
 	if address := manager.Address(); address != "" {
@@ -65,7 +73,7 @@ func TestHTTPSRedirectManagerBlocksForExistingPublicPort443Node(t *testing.T) {
 	manager := newHTTPSRedirectManager("127.0.0.1:0")
 	t.Cleanup(func() { _ = manager.Close() })
 
-	if err := manager.Upsert("redirected", redirectNodeInfo(8443), redirectCertConfig()); err != nil {
+	if err := manager.Upsert("redirected", redirectNodeInfo(8443), redirectCertConfig(), nil); err != nil {
 		t.Fatalf("register HTTPS redirect: %v", err)
 	}
 	if manager.Address() == "" {
@@ -89,14 +97,14 @@ func TestHTTPSRedirectManagerStopsWhenNodeChangesToPublicPort443(t *testing.T) {
 	manager := newHTTPSRedirectManager("127.0.0.1:0")
 	t.Cleanup(func() { _ = manager.Close() })
 
-	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig()); err != nil {
+	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig(), nil); err != nil {
 		t.Fatalf("register HTTPS redirect: %v", err)
 	}
 	if manager.Address() == "" {
 		t.Fatal("expected redirect listener to start")
 	}
 
-	if err := manager.Upsert("artx-test", redirectNodeInfo(443), redirectCertConfig()); err != nil {
+	if err := manager.Upsert("artx-test", redirectNodeInfo(443), redirectCertConfig(), nil); err != nil {
 		t.Fatalf("disable HTTPS redirect: %v", err)
 	}
 	if address := manager.Address(); address != "" {
@@ -108,10 +116,10 @@ func TestHTTPSRedirectManagerUpdatesPublicPort(t *testing.T) {
 	manager := newHTTPSRedirectManager("127.0.0.1:0")
 	t.Cleanup(func() { _ = manager.Close() })
 
-	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig()); err != nil {
+	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig(), nil); err != nil {
 		t.Fatalf("register initial HTTPS redirect: %v", err)
 	}
-	if err := manager.Upsert("artx-test", redirectNodeInfo(9443), redirectCertConfig()); err != nil {
+	if err := manager.Upsert("artx-test", redirectNodeInfo(9443), redirectCertConfig(), nil); err != nil {
 		t.Fatalf("update HTTPS redirect: %v", err)
 	}
 
@@ -129,7 +137,7 @@ func TestHTTPSRedirectManagerDoesNotShareArtXListenerPort443(t *testing.T) {
 
 	nodeInfo := redirectNodeInfo(8443)
 	nodeInfo.Common.ServerPort = 443
-	if err := manager.Upsert("artx-test", nodeInfo, redirectCertConfig()); err == nil {
+	if err := manager.Upsert("artx-test", nodeInfo, redirectCertConfig(), nil); err == nil {
 		t.Fatal("redirect unexpectedly shared port 443 with the ArtX listener")
 	}
 	if address := manager.Address(); address != "" {
@@ -141,21 +149,21 @@ func TestHTTPSRedirectManagerStopsForAnyProtocolListenerPort443(t *testing.T) {
 	manager := newHTTPSRedirectManager("127.0.0.1:0")
 	t.Cleanup(func() { _ = manager.Close() })
 
-	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig()); err != nil {
+	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig(), nil); err != nil {
 		t.Fatalf("register HTTPS redirect: %v", err)
 	}
 	if manager.Address() == "" {
 		t.Fatal("expected redirect listener to start")
 	}
 
-	if err := manager.Upsert("vless-443", protocolNodeInfo("vless", 443), nil); err != nil {
+	if err := manager.Upsert("vless-443", protocolNodeInfo("vless", 443), nil, nil); err != nil {
 		t.Fatalf("register cross-protocol port-443 blocker: %v", err)
 	}
 	if address := manager.Address(); address != "" {
 		t.Fatalf("listener address = %q while another protocol owns port 443", address)
 	}
 
-	if err := manager.Upsert("vless-443", protocolNodeInfo("vless", 8443), nil); err != nil {
+	if err := manager.Upsert("vless-443", protocolNodeInfo("vless", 8443), nil, nil); err != nil {
 		t.Fatalf("move cross-protocol listener away from port 443: %v", err)
 	}
 	if manager.Address() == "" {
@@ -167,27 +175,27 @@ func TestHTTPSRedirectManagerRemainsBlockedUntilLastProtocolLeavesPort443(t *tes
 	manager := newHTTPSRedirectManager("127.0.0.1:0")
 	t.Cleanup(func() { _ = manager.Close() })
 
-	if err := manager.Upsert("trojan-443", protocolNodeInfo("trojan", 443), nil); err != nil {
+	if err := manager.Upsert("trojan-443", protocolNodeInfo("trojan", 443), nil, nil); err != nil {
 		t.Fatalf("register first cross-protocol blocker: %v", err)
 	}
-	if err := manager.Upsert("vless-443", protocolNodeInfo("vless", 443), nil); err != nil {
+	if err := manager.Upsert("vless-443", protocolNodeInfo("vless", 443), nil, nil); err != nil {
 		t.Fatalf("register second cross-protocol blocker: %v", err)
 	}
-	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig()); err != nil {
+	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig(), nil); err != nil {
 		t.Fatalf("register pending HTTPS redirect: %v", err)
 	}
 	if address := manager.Address(); address != "" {
 		t.Fatalf("listener address = %q with two port-443 blockers", address)
 	}
 
-	if err := manager.Upsert("trojan-443", protocolNodeInfo("trojan", 8443), nil); err != nil {
+	if err := manager.Upsert("trojan-443", protocolNodeInfo("trojan", 8443), nil, nil); err != nil {
 		t.Fatalf("remove first cross-protocol blocker: %v", err)
 	}
 	if address := manager.Address(); address != "" {
 		t.Fatalf("listener address = %q while one port-443 blocker remains", address)
 	}
 
-	if err := manager.Upsert("vless-443", protocolNodeInfo("vless", 8443), nil); err != nil {
+	if err := manager.Upsert("vless-443", protocolNodeInfo("vless", 8443), nil, nil); err != nil {
 		t.Fatalf("remove final cross-protocol blocker: %v", err)
 	}
 	if manager.Address() == "" {
@@ -199,7 +207,7 @@ func TestHTTPSRedirectManagerRejectsUnknownHost(t *testing.T) {
 	manager := newHTTPSRedirectManager("127.0.0.1:0")
 	t.Cleanup(func() { _ = manager.Close() })
 
-	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig()); err != nil {
+	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig(), nil); err != nil {
 		t.Fatalf("register HTTPS redirect: %v", err)
 	}
 
@@ -218,7 +226,7 @@ func TestHTTPSRedirectManagerRejectsUnknownSNI(t *testing.T) {
 	manager := newHTTPSRedirectManager("127.0.0.1:0")
 	t.Cleanup(func() { _ = manager.Close() })
 
-	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig()); err != nil {
+	if err := manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig(), nil); err != nil {
 		t.Fatalf("register HTTPS redirect: %v", err)
 	}
 
@@ -243,7 +251,7 @@ func TestHTTPSRedirectManagerReportsOccupiedListenAddress(t *testing.T) {
 	manager := newHTTPSRedirectManager(listener.Addr().String())
 	t.Cleanup(func() { _ = manager.Close() })
 
-	if err = manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig()); err == nil {
+	if err = manager.Upsert("artx-test", redirectNodeInfo(8443), redirectCertConfig(), nil); err == nil {
 		t.Fatal("occupied redirect address unexpectedly succeeded")
 	}
 }
@@ -254,7 +262,7 @@ func TestHTTPSRedirectManagerIgnoresIncompletePublicEndpoint(t *testing.T) {
 
 	nodeInfo := redirectNodeInfo(0)
 	nodeInfo.ArtX.PublicHost = ""
-	if err := manager.Upsert("artx-test", nodeInfo, redirectCertConfig()); err != nil {
+	if err := manager.Upsert("artx-test", nodeInfo, redirectCertConfig(), nil); err != nil {
 		t.Fatalf("ignore incomplete endpoint: %v", err)
 	}
 	if address := manager.Address(); address != "" {

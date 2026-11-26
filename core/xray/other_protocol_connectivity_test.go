@@ -36,11 +36,16 @@ func TestXrayOtherCommonProtocolsWithIndependentClients(t *testing.T) {
 			case "shadowsocks":
 				info.Shadowsocks = &panel.ShadowsocksNode{Cipher: "aes-128-gcm"}
 			}
-			f := newProtocolFixture(t, info)
+			t.Setenv("N2X_WS_SCAN_STATE_DIR", t.TempDir())
+			f := newProtocolFixtureWithGuard(t, info, true)
+			entry := startScanTestRelay(t, f)
+			if tc.protocol != "shadowsocks" {
+				checkSensitiveEntry(t, f, entry, tc.tls)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			for i := range 3 {
-				raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", f.address)
+				raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", entry)
 				if err != nil {
 					t.Fatal(err)
 				}

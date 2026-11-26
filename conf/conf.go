@@ -9,8 +9,12 @@ import (
 )
 
 type WSScanGuardConfig struct {
-	Enabled  bool `json:"Enabled"`
-	LogMaxMB int  `json:"LogMaxMB"`
+	FeedbackCertFile string   `json:"FeedbackCertFile,omitempty"`
+	FeedbackKeyFile  string   `json:"FeedbackKeyFile,omitempty"`
+	DirectOnlyNodes  []string `json:"DirectOnlyNodes,omitempty"`
+	RelayCAFile      string   `json:"RelayCAFile,omitempty"`
+	Enabled          bool     `json:"Enabled"`
+	LogMaxMB         int      `json:"LogMaxMB"`
 }
 
 type Conf struct {

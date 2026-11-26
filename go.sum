@@ -94,12 +94,12 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/Designdocs/Xray-core v0.0.0-20261125054450-18230a40fd74 h1:zQ+lXRZY60Vgf3AudJEgUEAKvxOd9cepMn2+iCE3rDQ=
 github.com/Designdocs/Xray-core v0.0.0-20261125054450-18230a40fd74/go.mod h1:cqmShMPKrFGoYRfBwrnaddOo27IlBvJb1II+MNzQi2w=
-github.com/Designdocs/Xray-core v0.0.0-20261126020830-657e9f7f0aaa h1:RS5iHygr+hvWR5HDNnrZ7s5YM07jw/fqHnO0/IcQjLs=
-github.com/Designdocs/Xray-core v0.0.0-20261126020830-657e9f7f0aaa/go.mod h1:cqmShMPKrFGoYRfBwrnaddOo27IlBvJb1II+MNzQi2w=
+github.com/Designdocs/Xray-core v0.0.0-20261126042328-d6a90a707711 h1:3Yf3TSdG9n3V41sj06mDEOcJmq7vDDayGDj9zw9c+d4=
+github.com/Designdocs/Xray-core v0.0.0-20261126042328-d6a90a707711/go.mod h1:cqmShMPKrFGoYRfBwrnaddOo27IlBvJb1II+MNzQi2w=
 github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261115142134-a970e771f45b h1:UXAWP27XZ/QuzSylwIGWyXE1mCU/NZd3o+FSmf/spBc=
 github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261115142134-a970e771f45b/go.mod h1:rwGX9/n2y+Hotk+4AF0kNFGelIQIUq6EUVo5UsuyO2s=
-github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261126020839-30c58a50df0b h1:YjgDNbFVNL+Tn1npF2bzZ9q5cmAVc+5+vndsL+D6+/4=
-github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261126020839-30c58a50df0b/go.mod h1:rwGX9/n2y+Hotk+4AF0kNFGelIQIUq6EUVo5UsuyO2s=
+github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261126042328-cf2c30479498 h1:zC7mbs/7f/5E3zSdVPgsMoXMn3oFM0tVNr+JR06hteM=
+github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261126042328-cf2c30479498/go.mod h1:rwGX9/n2y+Hotk+4AF0kNFGelIQIUq6EUVo5UsuyO2s=
 github.com/HdrHistogram/hdrhistogram-go v1.1.0/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/HdrHistogram/hdrhistogram-go v1.1.2/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=

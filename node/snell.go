@@ -8,6 +8,7 @@ import (
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/common/file"
+	"github.com/Designdocs/N2X/common/scanguard"
 )
 
 // Keep the previous listener until the replacement node and roster are active.
@@ -65,7 +66,7 @@ func (c *Controller) prepareSnellWebsite(next *panel.NodeInfo) (*snellWebsiteCha
 	// Probe the new TLS origin before deleting the active listener. Its certificate
 	// must cover the same SNI that the panel gives to clients.
 	var err error
-	change.lease, err = c.websites.acquire(origin, c.localCertConfig())
+	change.lease, err = c.websites.acquire(origin, c.localCertConfig(), scanguard.SensitiveFilter(c.tag, c.WSScanGuard))
 	if err != nil {
 		return nil, err
 	}

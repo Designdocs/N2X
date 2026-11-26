@@ -54,6 +54,8 @@ func runRealityHandshakes(t *testing.T, protocols []string, vision bool) {
 	for _, protocol := range protocols {
 		t.Run(protocol, func(t *testing.T) {
 			core := newLifecycleCore(t)
+			t.Setenv("N2X_WS_SCAN_STATE_DIR", t.TempDir())
+			core.scanConfig = conf.WSScanGuardConfig{Enabled: true, LogMaxMB: 10}
 			tag := "reality-migration-" + protocol
 			user := lifecycleUsers[0]
 			limiter.AddLimiter(tag, &conf.LimitConfig{}, []panel.UserInfo{user}, nil)

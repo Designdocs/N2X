@@ -19,7 +19,7 @@ import (
 
 // All probes and the authenticated client use this one L4 entry and backend.
 // The relay only copies bytes in both directions.
-func exercisePlainRelay(t *testing.T, f *protocolFixture) string {
+func startScanTestRelay(t *testing.T, f *protocolFixture) string {
 	t.Helper()
 	front, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -44,7 +44,12 @@ func exercisePlainRelay(t *testing.T, f *protocolFixture) string {
 			}()
 		}
 	}()
-	entry := front.Addr().String()
+	return front.Addr().String()
+}
+
+func exercisePlainRelay(t *testing.T, f *protocolFixture) string {
+	t.Helper()
+	entry := startScanTestRelay(t, f)
 	tc := &tls.Config{RootCAs: f.roots, ServerName: "127.0.0.1"}
 	tr := &http.Transport{TLSClientConfig: tc}
 	defer tr.CloseIdleConnections()
@@ -93,4 +98,24 @@ func exercisePlainRelay(t *testing.T, f *protocolFixture) string {
 	}
 	t.Log("plain TCP relay: sensitive request and wrong WS handshake each returned 404 and produced one interception record")
 	return entry
+}
+
+func checkSensitiveEntry(t *testing.T, f *protocolFixture, entry string, secure bool) {
+	t.Helper()
+	scheme := "http"
+	if secure {
+		scheme = "https"
+	}
+	tr := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: f.roots}}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+	resp, err := c.Get(scheme + "://" + entry + "/.git/config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	data, err := os.ReadFile(filepath.Join(os.Getenv("N2X_WS_SCAN_STATE_DIR"), "intercepts.jsonl"))
+	if resp.StatusCode != 404 || err != nil || !strings.Contains(string(data), "/.git/config") {
+		t.Fatalf("sensitive request: %d %s %v", resp.StatusCode, data, err)
+	}
 }

@@ -320,6 +320,9 @@ func (p *Conf) decode(data []byte) error {
 	if err := jsonv2.Unmarshal(resolved, p); err != nil {
 		return err
 	}
+	for i := range p.NodeConfig {
+		p.NodeConfig[i].Options.WSScanGuard = p.WSScanGuard
+	}
 	for _, core := range p.CoresConfig {
 		if core.XrayConfig != nil {
 			core.XrayConfig.WSScanGuard = p.WSScanGuard

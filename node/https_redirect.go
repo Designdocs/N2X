@@ -13,6 +13,7 @@ import (
 
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/common/netutil"
+	"github.com/Designdocs/N2X/common/scanguard"
 	"github.com/Designdocs/N2X/conf"
 	log "github.com/sirupsen/logrus"
 )
@@ -20,6 +21,7 @@ import (
 const defaultHTTPSRedirectListenAddress = ":443"
 
 type httpsRedirectEntry struct {
+	reject      func(*http.Request) bool
 	host        string
 	port        int
 	certificate *tls.Certificate
@@ -48,7 +50,7 @@ func (c *Controller) refreshHTTPSRedirect(nodeInfo *panel.NodeInfo) {
 	if err := c.httpsRedirectManager.Upsert(
 		c.tag,
 		nodeInfo,
-		c.localCertConfig(),
+		c.localCertConfig(), scanguard.SensitiveFilter(c.tag, c.WSScanGuard),
 	); err != nil {
 		log.WithFields(log.Fields{
 			"tag": c.tag,
@@ -81,7 +83,7 @@ func (manager *httpsRedirectManager) Prepare(tag string, nodeInfo *panel.NodeInf
 func (manager *httpsRedirectManager) Upsert(
 	tag string,
 	nodeInfo *panel.NodeInfo,
-	certConfig *conf.CertConfig,
+	certConfig *conf.CertConfig, reject func(*http.Request) bool,
 ) error {
 	if blocksHTTPSRedirect(nodeInfo) {
 		manager.Prepare(tag, nodeInfo)
@@ -119,7 +121,7 @@ func (manager *httpsRedirectManager) Upsert(
 	manager.entries[tag] = httpsRedirectEntry{
 		host:        host,
 		port:        nodeInfo.ArtX.PublicPort,
-		certificate: &certificate,
+		certificate: &certificate, reject: reject,
 	}
 	if len(manager.blockers) != 0 || manager.server != nil {
 		return nil
@@ -254,6 +256,10 @@ func (manager *httpsRedirectManager) ServeHTTP(
 		return
 	}
 
+	if entry.reject != nil && entry.reject(request) {
+		response.WriteHeader(http.StatusNotFound)
+		return
+	}
 	location := "https://" + net.JoinHostPort(entry.host, strconv.Itoa(entry.port)) + request.URL.RequestURI()
 	response.Header().Set("Location", location)
 	response.WriteHeader(http.StatusMovedPermanently)

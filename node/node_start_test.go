@@ -241,6 +241,8 @@ func TestSnellWebsiteFallbackKeepsActiveNodeIfOriginIsInvalid(t *testing.T) {
 }
 
 func TestSnellDirectFallbackCertificateLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("N2X_WS_SCAN_STATE_DIR", dir)
 	limiter.Init()
 	cfg := validDNSCertConfig(t)
 	orders := stubCertIssuance(t, nil, nil)
@@ -278,7 +280,7 @@ func TestSnellDirectFallbackCertificateLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	controller := NewController(&startStubCore{}, client, &conf.Options{CertConfig: cfg}, nil)
+	controller := NewController(&startStubCore{}, client, &conf.Options{CertConfig: cfg, WSScanGuard: conf.WSScanGuardConfig{Enabled: true, LogMaxMB: 10}}, nil)
 	controller.websites.roots = roots
 	if err := controller.Start(); err != nil {
 		t.Fatal(err)
@@ -298,6 +300,17 @@ func TestSnellDirectFallbackCertificateLifecycle(t *testing.T) {
 			DisableKeepAlives: true,
 			TLSClientConfig:   &tls.Config{RootCAs: roots, ServerName: origin.ServerName},
 		}}
+		if origin == controller.websiteOrigin {
+			blocked, err := client.Get("https://" + origin.Address() + "/.git/config")
+			if err != nil {
+				t.Fatal(err)
+			}
+			blocked.Body.Close()
+			data, err := os.ReadFile(filepath.Join(dir, "intercepts.jsonl"))
+			if blocked.StatusCode != 404 || err != nil || !strings.Contains(string(data), "/.git/config") {
+				t.Fatalf("missing Snell website rejection: %d %v", blocked.StatusCode, err)
+			}
+		}
 		resp, err := client.Get("https://" + origin.Address() + "/")
 		if err != nil {
 			t.Fatal(err)
@@ -312,7 +325,7 @@ func TestSnellDirectFallbackCertificateLifecycle(t *testing.T) {
 	readPage(original)
 	// A second node on this port must survive the first node's port change.
 	second := panel.SnellWebsiteFallback{ServerName: "second.example.com", ServerPort: first}
-	shared, err := controller.websites.acquire(second, cfg)
+	shared, err := controller.websites.acquire(second, cfg, nil)
 	if err != nil || shared == nil {
 		t.Fatalf("share: %v", err)
 	}

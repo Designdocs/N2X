@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/Designdocs/N2X/common/scanguard"
 	"github.com/sagernet/sing-box/adapter"
+	"io"
+	"net"
 	"os"
 
 	"encoding/json"
@@ -127,8 +129,22 @@ func (b *Sing) addChainedInbounds(tag string, inbounds []option.Inbound) error {
 
 func (b *Sing) createInbound(tag string, in option.Inbound) error {
 	ctx := b.ctx
+	if b.scanConfig.RelayCAFile != "" || (b.scanConfig.Enabled && len(b.scanConfig.DirectOnlyNodes) > 0) {
+		ctx = adapter.WithInboundListenerWrapper(ctx, func(l net.Listener) (net.Listener, error) {
+			return scanguard.WrapVisitorListener(tag, b.scanConfig, l)
+		})
+	}
+	if b.scanConfig.Enabled && (in.Type == "anytls" || in.Type == "trojan" || in.Type == "vless" || in.Type == "vmess") {
+		ctx = adapter.WithRejectedStreamFilter(ctx, func(conn net.Conn, prefix []byte, rest io.Reader) bool {
+			return scanguard.RejectedStream(tag, b.scanConfig, conn, prefix, rest)
+		})
+	}
 	switch in.Type {
-	case "vmess", "vless", "trojan", "naive":
+	case "hysteria2", "naive":
+		if filter := scanguard.SensitiveFilter(tag, b.scanConfig); filter != nil {
+			ctx = adapter.WithPathFilter(ctx, filter)
+		}
+	case "vmess", "vless", "trojan":
 		if filter := scanguard.Filter(tag, b.scanConfig); filter != nil {
 			ctx = adapter.WithPathFilter(ctx, filter)
 		}

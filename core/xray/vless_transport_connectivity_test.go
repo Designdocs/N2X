@@ -31,10 +31,13 @@ func TestXrayVLESSTransportsHTTPSAndAccounting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			guard := tc.network == "ws" || tc.network == "xhttp" || tc.network == "httpupgrade"
 			t.Setenv("N2X_WS_SCAN_STATE_DIR", t.TempDir())
-			f := newProtocolFixtureWithGuard(t, &panel.NodeInfo{Type: "vless", Security: panel.Tls, VAllss: &panel.VAllssNode{Tls: panel.Tls, Network: tc.network, Flow: tc.flow, NetworkSettings: json.RawMessage(tc.settings)}}, guard)
+			f := newProtocolFixtureWithGuard(t, &panel.NodeInfo{Type: "vless", Security: panel.Tls, VAllss: &panel.VAllssNode{Tls: panel.Tls, Network: tc.network, Flow: tc.flow, NetworkSettings: json.RawMessage(tc.settings)}}, guard || tc.network == "tcp")
 			entry := f.address
 			if guard {
 				entry = exercisePlainRelay(t, f)
+			} else if tc.network == "tcp" {
+				entry = startScanTestRelay(t, f)
+				checkSensitiveEntry(t, f, entry, true)
 			}
 			host, p, err := net.SplitHostPort(entry)
 			if err != nil {

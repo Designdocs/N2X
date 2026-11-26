@@ -49,6 +49,9 @@ const (
 func (v *validator) checkConf(c *Conf) {
 	v.checkLog(c.LogConfig)
 	v.checkMemory(c.MemoryConfig)
+	if (c.WSScanGuard.FeedbackCertFile == "") != (c.WSScanGuard.FeedbackKeyFile == "") {
+		v.add("WSScanGuard.FeedbackCertFile", "configure both FeedbackCertFile and FeedbackKeyFile")
+	}
 	if c.WSScanGuard.LogMaxMB < 1 || c.WSScanGuard.LogMaxMB > 4096 {
 		v.add("WSScanGuard.LogMaxMB", "must be 1..4096 MiB")
 	}

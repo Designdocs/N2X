@@ -11,8 +11,48 @@
 }
 ```
 
-开启后，节点先按自身配置匹配代理路径。对于落到错误入口的请求，访问 Git 元数据、环境配置文件、WordPress 后台、phpMyAdmin 或 Actuator 敏感端点，以及向错误路径发起 WebSocket 握手，均直接返回 HTTP 404。普通网页请求继续使用该节点原有的回落行为。
+基础防护检查发给节点自身的请求。访问 `/.git/config`、`/.env`、WordPress 后台、phpMyAdmin 或 Actuator 敏感端点时，入口返回 HTTP 404 并记录规则。AnyTLS、VLESS、VMess 和 Trojan 的原生 TCP 入口可识别未通过协议握手的 HTTP/1 请求。Hysteria 2 的网站回落、ArtX 的本机网站入口、Snell 内置 HTTPS 网站和 Naive 的本机 HTTP 请求也使用敏感路径规则。
 
-适用于 Xray 的 WS、XHTTP 和 HTTPUpgrade 错误路径，以及 sing-box 的 WS、HTTP、HTTPUpgrade、轻量 gRPC 错误路径和 Naive 的本机网页请求。
+配置了 HTTP 传输路径的节点优先处理正确入口，对错误路径上的 WebSocket 握手额外返回 404。普通网页继续使用节点配置的网站回落。用户认证后访问其他网站的请求通过原有隧道传输。
+
+路径日志需要由 N2X 读到请求。TLS 握手失败、仅支持加密报文的端口和由外部网站终止 TLS 的回落，分别由握手、协议认证或外部网站处理。
 
 日志记录 UTC 时间、节点、请求路径和命中规则。日志目录默认为 `/var/lib/N2X/ws-scan`，可用 `N2X_WS_SCAN_STATE_DIR` 修改。当前文件 `intercepts.jsonl` 与上一份 `intercepts.jsonl.1` 合计默认最多 10 MiB。
+
+## 通过 DDNS Master 按节点封禁访客
+
+适用于 DDNS Agent **直接接收访客**的单跳 TCP 转发规则。维持原有中转端口和落地端口。如 Agent 前面还有其他 TCP 代理，使用普通转发和扫描日志。
+
+1. 从 DDNS Master 的管理员接口 `GET /api/v1/n2x-relay-ca` 获取本部署的公开 CA 证书。首次获取时 Master 会生成并保存密钥，默认目录为 Master 工作目录下的 `data/n2x-relay`。将 `master-public.pem` 复制到落地机的 `/etc/N2X/ddns-master-public.pem`。一台落地机的所有节点共用该文件。
+2. 在落地机的 `/etc/N2X/config.json` 顶层设置下列配置，执行 `N2X check`，然后执行 `N2X restart` 使 TCP 监听器加载证书。
+3. 在 DDNS Master 的转发规则「高级与过滤」勾选「N2X 访客 IP 认证」并保存。规则使用单跳直转 TCP；接收和发送 PROXY Protocol 均选「关闭」。Agent 会自动领取并续期凭据。回退时先关闭转发规则的认证，再移除落地的 CA 配置。
+
+```json
+{
+  "WSScanGuard": {
+    "Enabled": true,
+    "LogMaxMB": 10,
+    "RelayCAFile": "/etc/N2X/ddns-master-public.pem"
+  }
+}
+```
+
+菜单 25 的开关控制扫描拦截和封禁。保留 `RelayCAFile` 时，关闭开关后已启用认证转发的用户仍可连接。默认未配置 CA，封禁关闭。
+
+同一节点、同一经过认证的访客，在每轮 5 分钟内命中至少三个不同的敏感路径或错误 WS 握手路径，两轮之间至少 10 分钟没有新的命中，前一次有效证据在 24 小时内，才会永久封禁该访客后续经过认证的新连接。日志中的 `visitor` 是已验证的访客地址，`action: node-ban` 是封禁记录。封禁保存在日志目录下的 `bans/`，重启后仍生效。菜单 25 中的「查看已封禁 IP」列出节点、访客 IP 和封禁时间。
+
+默认情况下，普通 TCP 来源只执行请求级防护。已认证中转报告的访客与中转对端相同时，同样只做请求级防护。认证失败的中转握手会终止。中转拨号的目标地址和端口须与落地监听器实际接收的本地地址和端口一致；经目标 NAT 转换而无法核对时只记录请求。UDP 入口继续使用各自原有的处理方式。
+
+## 在中转端执行封禁
+
+落地在已有转发连接内通知直接接收访客的 DDNS Agent。落地机使用同一套反馈证书服务多个节点。Agent 校验证书链、证书域名和本连接的访客 IP，再将记录写入本机。启用步骤如下。
+
+1. 在已配置认证转发的落地机上，将现有 TLS 证书链和私钥路径分别填入 `WSScanGuard.FeedbackCertFile` 和 `WSScanGuard.FeedbackKeyFile`，保持 `Enabled` 开启。证书需受 Agent 系统信任。执行 `N2X check` 和 `N2X restart` 加载文件；更换反馈证书后重新加载监听器。
+2. 在 DDNS Master 的单跳 TCP 规则里启用「N2X 访客 IP 认证」，再勾选「在中转端执行节点封禁」。默认用转发目标的主机名核验证书。目标填写 IP、证书签给域名时，在「落地证书域名（可选）」填入受信证书覆盖的具体域名，然后保存。
+3. 落地菜单 25 可查看扫描路径、时间和访客封禁。Agent 日志记录已接受或忽略的封禁通知。取消「在中转端执行节点封禁」并保存，Agent 即停止使用中转封禁记录，可继续传递认证访客 IP。
+
+Agent 在拨号前检查该规则版本、目标主机、解析地址、目标端口和访客 IP。多目标规则会继续尝试其他可用目标。封禁仅作用于新连接，重启后仍有效。记录位于 Agent 隧道身份文件旁的 `.n2x-bans` 目录。当相同 IP 和端口改为服务另一个节点时，在 DDNS Master 同时更新规则版本。规则或地址变更后，由当前落地再次确认仍有效的封禁。具有同一公网出口 IP 的终端共用该 IP 的封禁结果。
+
+## 只接收直连的落地入口
+
+从拦截日志复制节点的完整 `node` 值，加入 `WSScanGuard.DirectOnlyNodes` 数组，开启 `Enabled` 后重启 N2X。列表默认为空。仅将网络拓扑确认只接收访客直连的入口加入列表。仍接收普通 TCP 转发的入口应留在列表外，避免把共享中转地址当作访客。直连使用与认证中转相同的两轮扫描规则，封禁限于该节点。

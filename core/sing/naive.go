@@ -10,8 +10,8 @@ import (
 	"github.com/Designdocs/N2X/api/panel"
 	"github.com/Designdocs/N2X/conf"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common/auth"
-	F "github.com/sagernet/sing/common/format"
 )
 
 // naiveState owns the NaiveProxy nodes.
@@ -159,14 +159,7 @@ func (b *Sing) rebuildNaiveLocked(tag string, node *naiveNode) error {
 	if err != nil {
 		return err
 	}
-	err = b.box.Inbound().Create(
-		b.ctx,
-		b.router,
-		b.logFactory.NewLogger(F.ToString("inbound/naive[", tag, "]")),
-		tag,
-		"naive",
-		options,
-	)
+	err = b.createInbound(tag, option.Inbound{Type: "naive", Tag: tag, Options: options})
 	if err != nil {
 		return fmt.Errorf("create naive inbound: %w", err)
 	}

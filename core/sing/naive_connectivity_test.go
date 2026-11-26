@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -59,6 +60,8 @@ func (r *naiveWireReader) Read(p []byte) (int, error) {
 
 func TestSingNaiveRealTLSBrowserAndPaddedHTTP2(t *testing.T) {
 	core := newLifecycleCore(t)
+	t.Setenv("N2X_WS_SCAN_STATE_DIR", t.TempDir())
+	core.scanConfig = conf.WSScanGuardConfig{Enabled: true, LogMaxMB: 10}
 	tag := "naive-real-wire"
 	users := append([]panel.UserInfo(nil), lifecycleUsers...)
 	limiter.AddLimiter(tag, &conf.LimitConfig{}, users, nil)
@@ -80,6 +83,18 @@ func TestSingNaiveRealTLSBrowserAndPaddedHTTP2(t *testing.T) {
 		t.Fatal("invalid fixture certificate")
 	}
 	address := fmt.Sprintf("127.0.0.1:%d", info.Common.ServerPort)
+	tr := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "n2x.test"}}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+	resp, err := c.Get("https://" + address + "/.git/config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	logData, err := os.ReadFile(filepath.Join(os.Getenv("N2X_WS_SCAN_STATE_DIR"), "intercepts.jsonl"))
+	if resp.StatusCode != 404 || err != nil || !bytes.Contains(logData, []byte("/.git/config")) {
+		t.Fatalf("missing website rejection: %d %v", resp.StatusCode, err)
+	}
 	target := startEchoServer(t)
 	auth := func(user string) string { return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+user)) }
 	browserH1 := func(t *testing.T, user string, want int) {

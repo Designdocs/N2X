@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"syscall"
@@ -34,11 +35,12 @@ type snellWebsitePort struct {
 }
 
 type snellWebsiteLease struct {
+	reject func(*http.Request) bool
 	owner  *snellWebsites
 	origin panel.SnellWebsiteFallback
 }
 
-func (w *snellWebsites) acquire(origin panel.SnellWebsiteFallback, cfg *conf.CertConfig) (*snellWebsiteLease, error) {
+func (w *snellWebsites) acquire(origin panel.SnellWebsiteFallback, cfg *conf.CertConfig, reject func(*http.Request) bool) (*snellWebsiteLease, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	addr := origin.Address()
@@ -57,7 +59,7 @@ func (w *snellWebsites) acquire(origin panel.SnellWebsiteFallback, cfg *conf.Cer
 	if cfg != nil && cfg.CertMode != "" && cfg.CertMode != "none" {
 		certFile, keyFile = cfg.CertFile, cfg.KeyFile
 	}
-	lease := &snellWebsiteLease{owner: w, origin: origin}
+	lease := &snellWebsiteLease{owner: w, origin: origin, reject: reject}
 	port.users[lease] = websitecert.New(conf.ManagedCertificateDirectory, certFile, keyFile)
 	return lease, nil
 }
@@ -76,7 +78,22 @@ func (w *snellWebsites) listen(addr string, port *snellWebsitePort) error {
 		}
 		return nil, fmt.Errorf("no website certificate for %q at %s", hello.ServerName, addr)
 	}
-	server, err := decoy.NewServer(decoy.Config{ListenAddress: addr, TLS: &decoy.TLSFiles{GetCertificate: getCertificate}})
+	reject := func(r *http.Request) bool {
+		if r.TLS == nil {
+			return false
+		}
+		var filter func(*http.Request) bool
+		w.mu.Lock()
+		for lease := range port.users {
+			if lease.reject != nil && strings.EqualFold(lease.origin.ServerName, r.TLS.ServerName) {
+				filter = lease.reject
+				break
+			}
+		}
+		w.mu.Unlock()
+		return filter != nil && filter(r)
+	}
+	server, err := decoy.NewServer(decoy.Config{RejectRequest: reject, ListenAddress: addr, TLS: &decoy.TLSFiles{GetCertificate: getCertificate}})
 	if err != nil {
 		return err
 	}

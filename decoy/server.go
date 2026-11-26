@@ -40,6 +40,7 @@ const (
 var embeddedAssets embed.FS
 
 type Config struct {
+	RejectRequest func(*http.Request) bool
 	ListenAddress string
 	// DefaultProfile names the page served when a request does not select one
 	// itself. Empty means consult ProfileEnvironment, then fall back to
@@ -108,7 +109,7 @@ func NewServer(config Config) (*Server, error) {
 		return nil, fmt.Errorf("listen on configured address: %w", err)
 	}
 
-	return newServer(listener, profile, tlsConfig), nil
+	return newServer(listener, profile, tlsConfig, config.RejectRequest), nil
 }
 
 func makeTLSConfig(files *TLSFiles) (*tls.Config, error) {
@@ -135,8 +136,18 @@ func makeTLSConfig(files *TLSFiles) (*tls.Config, error) {
 // browser that picks h2 delivers cleartext HTTP/2 frames here; an HTTP/1.1-only
 // listener would reject the preface and the browser would see a protocol error
 // instead of a page.
-func newServer(listener net.Listener, defaultProfile contentProfile, tlsConfig *tls.Config) *Server {
+func newServer(listener net.Listener, defaultProfile contentProfile, tlsConfig *tls.Config, reject func(*http.Request) bool) *Server {
 	handler := newHandler(defaultProfile)
+	if reject != nil {
+		next := handler
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if reject(r) {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 	if tlsConfig == nil {
 		handler = h2c.NewHandler(handler, &http2.Server{
 			IdleTimeout:      30 * time.Second,

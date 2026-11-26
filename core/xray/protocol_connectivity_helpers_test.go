@@ -44,6 +44,14 @@ func newProtocolFixture(t *testing.T, info *panel.NodeInfo) *protocolFixture {
 }
 func newProtocolFixtureWithGuard(t *testing.T, info *panel.NodeInfo, enabled bool) *protocolFixture {
 	t.Helper()
+	return newProtocolFixtureWithCA(t, info, enabled, "", "127.0.0.1")
+}
+func newProtocolFixtureWithCA(t *testing.T, info *panel.NodeInfo, enabled bool, ca, listen string) *protocolFixture {
+	t.Helper()
+	return newProtocolFixtureWithIngress(t, info, enabled, ca, listen, false)
+}
+func newProtocolFixtureWithIngress(t *testing.T, info *panel.NodeInfo, enabled bool, ca, listen string, directOnly bool) *protocolFixture {
+	t.Helper()
 	initLimiterOnce.Do(limiter.Init)
 	f := &protocolFixture{info: info, tag: "protocol-" + t.Name(), payload: bytes.Repeat([]byte("verified-protocol-https"), 16384), users: []panel.UserInfo{{Id: 101, Uuid: singMuxTestPassword}, {Id: 102, Uuid: "22222222-2222-2222-2222-222222222222"}}}
 	origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(f.payload) }))
@@ -73,7 +81,17 @@ func newProtocolFixtureWithGuard(t *testing.T, info *panel.NodeInfo, enabled boo
 		t.Fatal(err)
 	}
 	cfg := conf.NewXrayConfig()
-	cfg.WSScanGuard = conf.WSScanGuardConfig{Enabled: enabled, LogMaxMB: 10}
+	cfg.WSScanGuard = conf.WSScanGuardConfig{Enabled: enabled, LogMaxMB: 10, RelayCAFile: ca}
+	if directOnly {
+		cfg.WSScanGuard.DirectOnlyNodes = []string{f.tag}
+	}
+	if ca != "" {
+		cfg.WSScanGuard.FeedbackCertFile = certFile
+		cfg.WSScanGuard.FeedbackKeyFile = keyFile
+		if err := os.WriteFile(filepath.Join(filepath.Dir(ca), "fixture-trust.pem"), f.certPEM, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if os.Getenv("N2X_PROTOCOL_TEST_DEBUG") == "1" {
 		cfg.LogConfig.Level = "debug"
 	}
@@ -89,7 +107,7 @@ func newProtocolFixtureWithGuard(t *testing.T, info *panel.NodeInfo, enabled boo
 	t.Cleanup(func() { f.core.Close() })
 	port := freeLoopbackPort(t)
 	info.Common = &panel.CommonNode{ServerPort: port}
-	f.address = net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	f.address = net.JoinHostPort(listen, strconv.Itoa(port))
 	if info.Security == panel.Reality {
 		key, err := ecdh.X25519().GenerateKey(rand.Reader)
 		if err != nil {
@@ -108,8 +126,8 @@ func newProtocolFixtureWithGuard(t *testing.T, info *panel.NodeInfo, enabled boo
 			info.VAllss.TlsSettings = settings
 		}
 	}
-	options := &conf.Options{ListenIP: "127.0.0.1", XrayOptions: conf.NewXrayOptions(), CertConfig: &conf.CertConfig{CertMode: "file", CertFile: certFile, KeyFile: keyFile}}
-	if enabled && info.VAllss.Network != "httpupgrade" {
+	options := &conf.Options{ListenIP: listen, XrayOptions: conf.NewXrayOptions(), CertConfig: &conf.CertConfig{CertMode: "file", CertFile: certFile, KeyFile: keyFile}}
+	if enabled && info.VAllss != nil && info.VAllss.Network != "httpupgrade" {
 		fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
 		t.Cleanup(fallback.Close)
 		t.Setenv(decoy.ListenAddressEnvironment, fallback.Listener.Addr().String())

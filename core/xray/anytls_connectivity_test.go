@@ -8,12 +8,16 @@ import (
 	"fmt"
 	"github.com/Designdocs/N2X/api/panel"
 	vCore "github.com/Designdocs/N2X/core"
+	"github.com/gorilla/websocket"
 	boxTLS "github.com/sagernet/sing-box/common/tls"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	M "github.com/sagernet/sing/common/metadata"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -27,11 +31,30 @@ type anyTLSWireClient interface {
 func TestXrayAnyTLSRealClientHTTPSAndReconnect(t *testing.T) {
 	for _, security := range []int{panel.Tls, panel.Reality} {
 		t.Run(fmt.Sprintf("security=%d", security), func(t *testing.T) {
-			f := newProtocolFixture(t, &panel.NodeInfo{Type: "anytls", Security: security, AnyTls: &panel.AnyTlsNode{Tls: security}})
+			dir := t.TempDir()
+			t.Setenv("N2X_WS_SCAN_STATE_DIR", dir)
+			f := newProtocolFixtureWithGuard(t, &panel.NodeInfo{Type: "anytls", Security: security, AnyTls: &panel.AnyTlsNode{Tls: security}}, true)
+			entry := startScanTestRelay(t, f)
+			if security == panel.Tls {
+				checkSensitiveEntry(t, f, entry, true)
+				// AnyTLS has no WS path. An unrelated upgrade must not enter the audit.
+				d := websocket.Dialer{TLSClientConfig: &tls.Config{RootCAs: f.roots}, HandshakeTimeout: 3 * time.Second}
+				ws, response, err := d.Dial("wss://"+entry+"/ws", nil)
+				if ws != nil {
+					ws.Close()
+				}
+				if response != nil {
+					response.Body.Close()
+				}
+				if err == nil || (response != nil && response.StatusCode == 404) {
+					t.Fatal("AnyTLS applied the WS path rule")
+				}
+
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 			defer cancel()
 			dialTLS := func(ctx context.Context) (net.Conn, error) {
-				raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", f.address)
+				raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", entry)
 				if err != nil {
 					return nil, err
 				}
@@ -64,6 +87,29 @@ func TestXrayAnyTLSRealClientHTTPSAndReconnect(t *testing.T) {
 				return c
 			}
 			client := newClient(f.users[0].Uuid)
+			// A request for the same path sent through an authenticated tunnel is user data.
+			echoAddress := startTCPEcho(t)
+			tunnel, err := client.CreateProxy(ctx, M.ParseSocksaddr(echoAddress))
+			if err != nil {
+				t.Fatal(err)
+			}
+			tunnel.SetDeadline(time.Now().Add(5 * time.Second))
+			payload := "GET /.git/config HTTP/1.1\r\nHost: " + echoAddress + "\r\n\r\n"
+			if _, err = io.WriteString(tunnel, payload); err != nil {
+				t.Fatal(err)
+			}
+			got := make([]byte, len(payload))
+			if _, err = io.ReadFull(tunnel, got); err != nil || string(got) != payload {
+				t.Fatalf("tunnel payload changed: %v", err)
+			}
+			tunnel.Close()
+			if security == panel.Tls {
+				data, err := os.ReadFile(filepath.Join(dir, "intercepts.jsonl"))
+				if err != nil || strings.Count(string(data), "\n") != 1 {
+					t.Fatalf("unexpected tunnel audit: %v %s", err, data)
+				}
+			}
+
 			transfer := func(c anyTLSWireClient) error {
 				conn, err := c.CreateProxy(ctx, M.ParseSocksaddr(f.target))
 				if err != nil {
