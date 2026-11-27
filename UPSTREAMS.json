@@ -6,8 +6,8 @@
       "module": "github.com/xtls/xray-core",
       "replacement": "github.com/Designdocs/Xray-core",
       "strategy": "replacement",
-      "ref": "v0.0.0-20261126042328-d6a90a707711",
-      "source_commit": "d6a90a707711a01b9279fb4e5ff9269baa0b7d42",
+      "ref": "v0.0.0-20261127004602-bb1a1d7728e6",
+      "source_commit": "bb1a1d7728e60bd7706e32724eb0f76e9d870e68",
       "upstream": "https://github.com/Designdocs/Xray-core",
       "official_upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.11.9",
@@ -92,10 +92,10 @@
       "upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.11.9",
       "stable_commit": "676eaf66f8f05d4d558ee7a74b4736623d3feeb9",
-      "fork_commit": "657e9f7f0aaa41371a341e5bbfda49477a7d8d03",
+      "fork_commit": "bb1a1d7728e60bd7706e32724eb0f76e9d870e68",
       "local_path": "../../Xray-core",
-      "action": "Merged official v26.11.9 into the existing N2X fork. Updated the pinned REALITY compatibility copy to 4bb46b2afd8b, retaining legacy X25519 authentication, explicit MPTCP opt-in, AnyTLS session reuse and per-listener fallback.",
-      "previous_fork_commit": "fed35a71c367af0d1d107e8bb3a2a7e741f09d2f"
+      "action": "Use one allocation for the header and payload of each ArtX downlink DATA frame.",
+      "previous_fork_commit": "d6a90a707711a01b9279fb4e5ff9269baa0b7d42"
     },
     "sing_box": {
       "upstream": "https://github.com/SagerNet/sing-box",
