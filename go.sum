@@ -94,8 +94,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/Designdocs/Xray-core v0.0.0-20261125054450-18230a40fd74 h1:zQ+lXRZY60Vgf3AudJEgUEAKvxOd9cepMn2+iCE3rDQ=
 github.com/Designdocs/Xray-core v0.0.0-20261125054450-18230a40fd74/go.mod h1:cqmShMPKrFGoYRfBwrnaddOo27IlBvJb1II+MNzQi2w=
-github.com/Designdocs/Xray-core v0.0.0-20261127004602-bb1a1d7728e6 h1:dvSqUMVHE9dcIq3Dj49U/0lklGYPG5wi17rtJq8xA1E=
-github.com/Designdocs/Xray-core v0.0.0-20261127004602-bb1a1d7728e6/go.mod h1:cqmShMPKrFGoYRfBwrnaddOo27IlBvJb1II+MNzQi2w=
+github.com/Designdocs/Xray-core v0.0.0-20261127014041-2534105469eb h1:z75G7eg+GWLiM5SNPzuODseeFNCoWbpj0LV/AH0ze1o=
+github.com/Designdocs/Xray-core v0.0.0-20261127014041-2534105469eb/go.mod h1:cqmShMPKrFGoYRfBwrnaddOo27IlBvJb1II+MNzQi2w=
 github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261115142134-a970e771f45b h1:UXAWP27XZ/QuzSylwIGWyXE1mCU/NZd3o+FSmf/spBc=
 github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261115142134-a970e771f45b/go.mod h1:rwGX9/n2y+Hotk+4AF0kNFGelIQIUq6EUVo5UsuyO2s=
 github.com/Designdocs/sing-box_mod v1.13.0-alpha.5.0.20261126042328-cf2c30479498 h1:zC7mbs/7f/5E3zSdVPgsMoXMn3oFM0tVNr+JR06hteM=
