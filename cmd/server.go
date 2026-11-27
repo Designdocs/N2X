@@ -110,9 +110,10 @@ func randomValue() string {
 }
 
 var (
-	config string
-	watch  bool
-	envF   string
+	config       string
+	watch        bool
+	envF         string
+	preparedPath string
 )
 
 var serverCommand = cobra.Command{
@@ -135,6 +136,7 @@ func init() {
 	serverCommand.PersistentFlags().
 		StringVarP(&envF, "env-file", "e",
 			"", "env file path")
+	serverCommand.Flags().StringVar(&preparedPath, "prepared-startup", "", "consume the private node data from prepare-upgrade")
 	command.AddCommand(&serverCommand)
 }
 
@@ -225,6 +227,10 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 		publishReport(&report, startupReportTitle, "未启动任何核心和节点，进程退出", checkHint(config))
 		return errors.New("invalid config file")
 	}
+	prepared, err := readUpgradeData(c, preparedPath, true)
+	if err != nil {
+		return fmt.Errorf("read upgrade data: %w", err)
+	}
 	report.addWarnings(c.Warnings)
 	switch c.LogConfig.Level {
 	case "debug":
@@ -269,7 +275,8 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 	log.Info("Core ", vc.Type(), " started")
 	nodes := node.New()
 	defer nodes.Close()
-	failures, err := nodes.Start(c.NodeConfig, vc)
+	failures, err := nodes.StartPrepared(c.NodeConfig, vc, prepared)
+	prepared = nil
 	if err != nil {
 		log.WithField("err", err).Error("Run nodes failed")
 		report.add(categoryConfig, "", err.Error())
@@ -277,6 +284,11 @@ func serverHandle(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("run nodes: %w", err)
 	}
 	report.addNodeFailures(c.NodeConfig, failures)
+	if preparedPath != "" && len(failures) == 0 {
+		if err := os.WriteFile(preparedPath+".started", []byte(fmt.Sprint(os.Getpid())), 0600); err != nil {
+			log.WithError(err).Error("Cannot acknowledge prepared startup")
+		}
+	}
 	var xdns string
 	if watch {
 		var dnsErr error

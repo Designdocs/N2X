@@ -44,6 +44,13 @@ func New() *Node {
 // error is reserved for a node config no panel client can be built from, in
 // which case nothing was started.
 func (n *Node) Start(nodes []conf.NodeConfig, core vCore.Core) ([]StartFailure, error) {
+	return n.StartPrepared(nodes, core, nil)
+}
+
+func (n *Node) StartPrepared(nodes []conf.NodeConfig, core vCore.Core, data []panel.PreparedNode) ([]StartFailure, error) {
+	if data != nil && len(nodes) != len(data) {
+		return nil, fmt.Errorf("prepared node count differs from configuration")
+	}
 	clients := make([]*panel.Client, len(nodes))
 	for i := range nodes {
 		p, err := panel.New(&nodes[i].ApiConfig)
@@ -69,8 +76,14 @@ func (n *Node) Start(nodes []conf.NodeConfig, core vCore.Core) ([]StartFailure, 
 			nodes[i].ApiConfig.NodeType,
 			nodes[i].ApiConfig.NodeID)
 		client, options := clients[i], &nodes[i].Options
+		var prepared *panel.PreparedNode
+		if data != nil {
+			prepared = &data[i]
+		}
 		start := func() error {
-			return n.startController(ctx, core, client, options)
+			first := prepared
+			prepared = nil
+			return n.startController(ctx, core, client, options, first)
 		}
 		if err := start(); err != nil {
 			failures = append(failures, StartFailure{Index: i, Stage: startStageOf(err), Err: err})
@@ -93,10 +106,11 @@ func (n *Node) startController(
 	core vCore.Core,
 	client *panel.Client,
 	options *conf.Options,
+	prepared *panel.PreparedNode,
 ) error {
 	controller := NewController(core, client, options, n.httpsRedirectManager)
 	controller.websites = &n.websites
-	if err := controller.Start(); err != nil {
+	if err := controller.start(prepared); err != nil {
 		// Start can fail after registering the limiter, hooks or the core
 		// node; roll those back so the next attempt starts clean.
 		if closeErr := controller.Close(); closeErr != nil {

@@ -589,6 +589,10 @@ func hysteriaVersion(body []byte) int {
 }
 
 func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
+	return c.fetchNodeInfo(nil)
+}
+
+func (c *Client) fetchNodeInfo(save *PreparedNode) (node *NodeInfo, err error) {
 	const path = "/api/v1/server/UniProxy/config"
 	c.etagMu.Lock()
 	currentEtag := c.nodeEtag
@@ -619,6 +623,16 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	} else {
 		return nil, fmt.Errorf("received nil response")
 	}
+	body := r.Body()
+	etag := r.Header().Get("ETag")
+	if save != nil {
+		save.Config = body
+		save.ConfigETag = etag
+	}
+	return c.decodeNodeInfo(body, etag, currentHash, cacheVersion, retryVersion)
+}
+
+func (c *Client) decodeNodeInfo(body []byte, etag, currentHash string, cacheVersion, retryVersion uint64) (node *NodeInfo, err error) {
 	node = &NodeInfo{
 		Id:   c.NodeId,
 		Type: c.NodeType,
@@ -632,7 +646,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	switch c.NodeType {
 	case "vmess", "vless":
 		rsp := &VAllssNode{}
-		err = json.Unmarshal(r.Body(), rsp)
+		err = json.Unmarshal(body, rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode v2ray params error: %s", err)
 		}
@@ -653,7 +667,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.Security = node.VAllss.Tls
 	case "shadowsocks":
 		rsp := &ShadowsocksNode{}
-		err = json.Unmarshal(r.Body(), rsp)
+		err = json.Unmarshal(body, rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode shadowsocks params error: %s", err)
 		}
@@ -662,7 +676,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.Security = None
 	case "trojan":
 		rsp := &TrojanNode{}
-		err = json.Unmarshal(r.Body(), rsp)
+		err = json.Unmarshal(body, rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode trojan params error: %s", err)
 		}
@@ -675,7 +689,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.Security = securityFromTLS(rsp.Tls)
 	case "anytls":
 		rsp := &AnyTlsNode{}
-		err = json.Unmarshal(r.Body(), rsp)
+		err = json.Unmarshal(body, rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode anytls params error: %s", err)
 		}
@@ -688,7 +702,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.Security = securityFromTLS(rsp.Tls)
 	case "artx":
 		rsp := &ArtXNode{}
-		err = json.Unmarshal(r.Body(), rsp)
+		err = json.Unmarshal(body, rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode artx params error: %s", err)
 		}
@@ -698,7 +712,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.Security = Tls
 	case "tuic":
 		rsp := &TuicNode{}
-		err = json.Unmarshal(r.Body(), rsp)
+		err = json.Unmarshal(body, rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode tuic params error: %s", err)
 		}
@@ -721,7 +735,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		// different wire protocols served by different inbounds, so the
 		// version decides which one to build and node.Type is rewritten to
 		// match — the core selector reads it to route the node.
-		version := hysteriaVersion(r.Body())
+		version := hysteriaVersion(body)
 		if version == 0 {
 			// A panel that models the generation as its own node type sends
 			// no version; fall back to what the operator configured.
@@ -732,7 +746,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		}
 		if version >= 2 {
 			rsp := &Hysteria2Node{}
-			err = json.Unmarshal(r.Body(), rsp)
+			err = json.Unmarshal(body, rsp)
 			if err != nil {
 				return nil, fmt.Errorf("decode hysteria2 params error: %s", err)
 			}
@@ -745,7 +759,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 			node.Type = "hysteria2"
 		} else {
 			rsp := &HysteriaNode{}
-			err = json.Unmarshal(r.Body(), rsp)
+			err = json.Unmarshal(body, rsp)
 			if err != nil {
 				return nil, fmt.Errorf("decode hysteria params error: %s", err)
 			}
@@ -760,7 +774,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.Security = Tls
 	case "shadowtls":
 		rsp := &ShadowTLSNode{}
-		err = json.Unmarshal(r.Body(), rsp)
+		err = json.Unmarshal(body, rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode shadowtls params error: %s", err)
 		}
@@ -772,7 +786,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.Security = None
 	case "naive":
 		rsp := &NaiveNode{}
-		err = json.Unmarshal(r.Body(), rsp)
+		err = json.Unmarshal(body, rsp)
 		if err != nil {
 			return nil, fmt.Errorf("decode naive params error: %s", err)
 		}
@@ -785,7 +799,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		node.Security = Tls
 	case "snell":
 		rsp := &SnellNode{}
-		if err = json.Unmarshal(r.Body(), rsp); err != nil {
+		if err = json.Unmarshal(body, rsp); err != nil {
 			return nil, fmt.Errorf("decode snell params error: %w", err)
 		}
 		if rsp.Version != SnellVersion {
@@ -910,7 +924,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	if currentHash == newConfigHash {
 		c.etagMu.Lock()
 		if c.nodeCacheVersion == cacheVersion {
-			c.nodeEtag = r.Header().Get("ETag")
+			c.nodeEtag = etag
 		}
 		c.etagMu.Unlock()
 		return nil, nil
@@ -926,7 +940,7 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		c.nodeConfigHash = newConfigHash
 	}
 	if c.nodeCacheVersion == cacheVersion {
-		c.nodeEtag = r.Header().Get("ETag")
+		c.nodeEtag = etag
 	}
 	c.etagMu.Unlock()
 

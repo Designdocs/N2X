@@ -81,33 +81,47 @@ func NewController(
 
 // Start implement the Start() function of the service interface
 func (c *Controller) Start() error {
-	// First fetch Node Info
+	return c.start(nil)
+}
+
+func (c *Controller) start(prepared *panel.PreparedNode) error {
+	var node *panel.NodeInfo
 	var err error
-	node, err := c.apiClient.GetNodeInfo()
-	if err != nil {
-		return startError(StagePanel, "get node info error: %w", err)
-	}
-	// Update user
-	c.userList, err = c.apiClient.GetUserList()
-	if err != nil {
-		return startError(StagePanel, "get user list error: %w", err)
-	}
 	rosterApplied := false
 	defer func() {
 		if !rosterApplied {
 			c.apiClient.InvalidateUserListCache()
+			c.apiClient.InvalidateNodeInfoCache()
 		}
 	}()
-	// Managed Snell stays in multi-user mode with an empty roster, so it can
-	// start syncing immediately while rejecting proxy requests.
+	if prepared != nil {
+		node, err = c.apiClient.RestorePrepared(prepared)
+		if err != nil {
+			return startError(StagePanel, "restore prepared node: %w", err)
+		}
+		c.userList = prepared.Users
+		c.aliveMap = cloneAliveMap(prepared.Devices.Alive)
+	} else {
+		node, err = c.apiClient.GetNodeInfo()
+		if err != nil {
+			return startError(StagePanel, "get node info error: %w", err)
+		}
+		if node == nil {
+			return startError(StagePanel, "missing initial node configuration")
+		}
+		c.userList, err = c.apiClient.GetUserList()
+		if err != nil {
+			return startError(StagePanel, "get user list error: %w", err)
+		}
+		c.aliveMap, err = c.apiClient.GetUserAlive()
+		if err != nil {
+			return startError(StagePanel, "failed to get user alive list: %w", err)
+		}
+		c.aliveMap = cloneAliveMap(c.aliveMap)
+	}
 	if len(c.userList) == 0 && node.Type != "snell" {
 		return startError(StagePanel, "add users error: not have any user")
 	}
-	c.aliveMap, err = c.apiClient.GetUserAlive()
-	if err != nil {
-		return startError(StagePanel, "failed to get user alive list: %w", err)
-	}
-	c.aliveMap = cloneAliveMap(c.aliveMap)
 	if len(c.Options.Name) == 0 {
 		c.tag = c.buildNodeTag(node)
 	} else {
@@ -128,6 +142,9 @@ func (c *Controller) Start() error {
 	}
 	c.apiClient.SetAliveUpdateHook(c.setAliveMap)
 	c.apiClient.SetKickedUpdateHook(c.setKickedMap)
+	if prepared != nil {
+		c.setKickedMap(prepared.Devices.Kicked)
+	}
 	if node.Security == panel.Tls {
 		err = c.requestCert(node)
 		if err != nil {

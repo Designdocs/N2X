@@ -45,6 +45,9 @@ func (c *Client) GetUserList() ([]UserInfo, error) {
 		SetHeader("X-Response-Format", "msgpack").
 		SetDoNotParseResponse(true).
 		Get(path)
+	if err != nil {
+		return nil, c.checkResponse(r, path, err)
+	}
 	if r == nil || r.RawResponse == nil {
 		return nil, fmt.Errorf("received nil response or raw response")
 	}
@@ -102,30 +105,27 @@ func (c *Client) InvalidateUserListCache() {
 
 // GetUserAlive will fetch the alive_ip count for users
 func (c *Client) GetUserAlive() (map[int]int, error) {
-	const path = "/api/v1/server/UniProxy/alivelist"
-	r, err := c.client.R().
-		ForceContentType("application/json").
-		Get(path)
-	if err != nil || r == nil || r.StatusCode() >= 399 {
-		return c.cachedAliveMap(), nil
+	data, err := c.fetchAlive()
+	if err == nil {
+		c.applyAliveMap(data.Alive)
+		c.applyKickedMap(data.Kicked)
 	}
-	if r == nil || r.RawResponse == nil {
-		fmt.Printf("received nil response or raw response")
-		return c.cachedAliveMap(), nil
-	}
-	defer r.RawResponse.Body.Close()
-	aliveMap := &AliveMap{}
-	if err := json.Unmarshal(r.Body(), aliveMap); err != nil {
-		fmt.Printf("unmarshal user alive list error: %s", err)
-		return c.cachedAliveMap(), nil
-	}
-	if aliveMap.Alive == nil {
-		aliveMap.Alive = make(map[int]int)
-	}
-	c.applyAliveMap(aliveMap.Alive)
-	c.applyKickedMap(aliveMap.Kicked)
-
 	return c.cachedAliveMap(), nil
+}
+
+// Runtime polling retains its last device counts on failure. Preparing an
+// upgrade needs the actual response, including an explicitly empty alive map.
+func (c *Client) fetchAlive() (*AliveMap, error) {
+	const path = "/api/v1/server/UniProxy/alivelist"
+	r, err := c.client.R().ForceContentType("application/json").Get(path)
+	if err = c.checkResponse(r, path, err); err != nil {
+		return nil, err
+	}
+	var data AliveMap
+	if err = json.Unmarshal(r.Body(), &data); err != nil {
+		return nil, fmt.Errorf("decode alive list: %w", err)
+	}
+	return &data, nil
 }
 
 type UserTraffic struct {
