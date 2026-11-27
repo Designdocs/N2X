@@ -6,8 +6,8 @@
       "module": "github.com/xtls/xray-core",
       "replacement": "github.com/Designdocs/Xray-core",
       "strategy": "replacement",
-      "ref": "v0.0.0-20261127014041-2534105469eb",
-      "source_commit": "2534105469ebc8eaffdd51fe63832f569946991e",
+      "ref": "v0.0.0-20261127015324-1ef0c3bcbb09",
+      "source_commit": "1ef0c3bcbb09465997433a80a16bfde7976ee944",
       "upstream": "https://github.com/Designdocs/Xray-core",
       "official_upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.11.9",
@@ -92,10 +92,10 @@
       "upstream": "https://github.com/XTLS/Xray-core",
       "stable_tag": "v26.11.9",
       "stable_commit": "676eaf66f8f05d4d558ee7a74b4736623d3feeb9",
-      "fork_commit": "2534105469ebc8eaffdd51fe63832f569946991e",
+      "fork_commit": "1ef0c3bcbb09465997433a80a16bfde7976ee944",
       "local_path": "../../Xray-core",
-      "action": "Retain ArtX wire compatibility while batching TCP window updates and reducing TCP upload and Native UDP receive allocations.",
-      "previous_fork_commit": "bb1a1d7728e60bd7706e32724eb0f76e9d870e68"
+      "action": "Propagate a clean ArtX single-stream upload EOF to the direct TCP target and continue delivering its response.",
+      "previous_fork_commit": "2534105469ebc8eaffdd51fe63832f569946991e"
     },
     "sing_box": {
       "upstream": "https://github.com/SagerNet/sing-box",
