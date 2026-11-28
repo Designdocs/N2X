@@ -12,9 +12,10 @@ import (
 )
 
 type DomainQuery struct {
-	ID  string
-	UID int
-	Day time.Time
+	ID   string
+	UID  int
+	Day  time.Time
+	Live bool
 }
 type DomainControl struct {
 	Paused atomic.Bool
@@ -54,13 +55,14 @@ func (d *DomainControl) offer(header string) {
 		return
 	}
 	fields := strings.Split(header, ",")
-	if len(fields) != 3 || len(fields[0]) != 36 {
+	live := len(fields) == 4 && fields[3] == "live"
+	if (!live && len(fields) != 3) || len(fields[0]) != 36 {
 		return
 	}
 	uid, err := strconv.Atoi(fields[1])
 	day, e := time.Parse(time.DateOnly, fields[2])
 	if err == nil && e == nil && uid > 0 {
-		d.query.Store(&DomainQuery{fields[0], uid, day})
+		d.query.Store(&DomainQuery{ID: fields[0], UID: uid, Day: day, Live: live})
 	}
 }
 func (c *Client) AnswerDomainQuery() error {
@@ -72,6 +74,10 @@ func (c *Client) AnswerDomainQuery() error {
 	if q == nil {
 		return nil
 	}
+	readPage := func(after *string) (domainusage.Page, error) { return store.QueryPage(q.UID, q.Day, after) }
+	if q.Live {
+		readPage = store.LivePages(q.UID, time.Now())
+	}
 	var after *string
 	var version string
 	attempt := strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -79,7 +85,7 @@ func (c *Client) AnswerDomainQuery() error {
 		if store.Context().Err() != nil || c.Domains.Store.Load() != store {
 			return nil
 		}
-		page, err := store.QueryPage(q.UID, q.Day, after)
+		page, err := readPage(after)
 		if err != nil {
 			return err
 		}

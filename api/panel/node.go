@@ -606,6 +606,7 @@ func (c *Client) fetchNodeInfo(save *PreparedNode) (node *NodeInfo, err error) {
 		SetHeader("If-None-Match", currentEtag).
 		SetHeader("X-N2X-Reality-Host", "1").
 		SetHeader("X-N2X-Domain-Usage", c.Domains.Header()).
+		SetHeader("X-N2X-Domain-Live", "1").
 		ForceContentType("application/json").
 		Get(path)
 

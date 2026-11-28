@@ -210,3 +210,50 @@ func TestConcurrentInstancesSharePhysicalFileLimit(t *testing.T) {
 		t.Fatal("directory budget", total, limit, err)
 	}
 }
+
+func TestLivePagesIncludeUnflushedUserCountersOnce(t *testing.T) {
+	now := time.Now().UTC()
+	s, err := Open(filepath.Join(t.TempDir(), "usage.db"), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Pause()
+	f, release := s.Track(4, "a.example")
+	defer release()
+	f.Bytes.Add(5)
+	if err := s.Flush(now); err != nil {
+		t.Fatal(err)
+	}
+	f.Bytes.Add(7)
+	rate := 3.0
+	s.StartBilling(now)(&rate)
+	f.Bytes.Add(11)
+	for i := 0; i < PageSize; i++ {
+		_, stop := s.Track(4, fmt.Sprintf("b-%03d.example", i))
+		stop()
+	}
+	other, stop := s.Track(9, "other.example")
+	other.Bytes.Add(30)
+	stop()
+	read := s.LivePages(4, now)
+	page, err := read(nil)
+	if err != nil || !page.More || len(page.Rows) != PageSize || page.Rows[0] != (Row{Host: "a.example", Raw: 23, Weighted: 53, Connections: 1}) {
+		t.Fatal(page.Rows[0], err)
+	}
+	after := page.Rows[len(page.Rows)-1].Host
+	last, err := read(&after)
+	if err != nil || last.More || len(last.Rows) != 1 || last.Rows[0].Host != "b-299.example" {
+		t.Fatal(last, err)
+	}
+	hourly, _, err := s.Query(4, now)
+	if err != nil || len(hourly) != 1 || hourly[0].Raw != 5 {
+		t.Fatal(hourly, err)
+	}
+	if err := s.Flush(now); err != nil {
+		t.Fatal(err)
+	}
+	afterFlush, err := s.LivePages(4, now)(nil)
+	if err != nil || afterFlush.Rows[0] != page.Rows[0] {
+		t.Fatal(afterFlush.Rows[0], err)
+	}
+}

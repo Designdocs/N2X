@@ -129,3 +129,51 @@ func TestDomainUsagePauseCancelsPagedReport(t *testing.T) {
 		t.Fatal("report continued after pause")
 	}
 }
+
+func TestDomainUsageLiveQueryBeforeFirstHour(t *testing.T) {
+	now := time.Now()
+	store, err := domainusage.Open(filepath.Join(t.TempDir(), "usage.db"), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Pause()
+	f, stop := store.Track(42, "fresh.example")
+	f.Bytes.Add(110)
+	stop()
+	var result struct {
+		Rows  []domainusage.Row
+		Until int64
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/server/UniProxy/config":
+			if r.Header.Get("X-N2X-Domain-Live") != "1" {
+				t.Error("missing live capability")
+			}
+			w.Header().Set("X-N2X-Domain-Query", "c745d13e-b044-4418-a3b7-de0d918f769f,42,"+now.UTC().Format(time.DateOnly)+",live")
+			w.WriteHeader(http.StatusNotModified)
+		case "/api/v1/server/UniProxy/domainUsage":
+			if e := json.NewDecoder(r.Body).Decode(&result); e != nil {
+				t.Error(e)
+			}
+			w.Write([]byte("{}"))
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	c, err := New(&conf.ApiConfig{APIHost: server.URL, NodeID: 1, NodeType: "vmess", Key: "local-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Domains.Store.Store(store)
+	if _, err := c.GetNodeInfo(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.AnswerDomainQuery(); err != nil {
+		t.Fatal(err)
+	}
+	if result.Until < now.Unix() || len(result.Rows) != 1 || result.Rows[0] != (domainusage.Row{Host: "fresh.example", Raw: 110, Weighted: 220, Connections: 1}) {
+		t.Fatal(result)
+	}
+}

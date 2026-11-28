@@ -313,8 +313,78 @@ type Page struct {
 }
 
 func (s *Store) QueryPage(uid int, day time.Time, after *string) (Page, error) {
+	return s.queryPage(uid, day, after, nil)
+}
+
+// LivePages includes pending counters for one user without resetting counters or
+// writing an extra hourly batch. Freeze them alongside the first disk page so
+// an hourly flush cannot move those bytes to disk between the two reads.
+func (s *Store) LivePages(uid int, now time.Time) func(*string) (Page, error) {
+	var rows []Row
+	return func(after *string) (Page, error) {
+		if after == nil {
+			s.ioMu.Lock()
+			defer s.ioMu.Unlock()
+			rows = s.liveRows(uid, now)
+		}
+		page, err := s.queryPage(uid, now, after, rows)
+		page.Until = now.Unix()
+		return page, err
+	}
+}
+
+func (s *Store) liveRows(uid int, now time.Time) []Row {
+	// A pending billing response can still supply the rate for its interval.
+	s.billingMu.Lock()
+	s.mu.Lock()
+	totals := make(map[string]Row)
+	add := func(host string, delta Row) {
+		r := totals[host]
+		r.Host = host
+		r.add(delta)
+		totals[host] = r
+	}
+	cutoff := now.UTC().AddDate(0, 0, -29).Format(time.DateOnly)
+	for date, batch := range s.pending {
+		if date < cutoff || date > now.UTC().Format(time.DateOnly) {
+			continue
+		}
+		for k, r := range batch {
+			if k.UID == uid {
+				add(k.Host, r)
+			}
+		}
+	}
+	s.flowsMu.Lock()
+	for k, flow := range s.flows {
+		if k.UID == uid {
+			raw := flow.Bytes.Load()
+			if raw != 0 || flow.starts != 0 {
+				add(k.Host, Row{Raw: raw, Weighted: float64(raw) * s.rate, Connections: flow.starts})
+			}
+		}
+	}
+	s.flowsMu.Unlock()
+	s.mu.Unlock()
+	s.billingMu.Unlock()
+	rows := make([]Row, 0, len(totals))
+	for _, row := range totals {
+		rows = append(rows, row)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Host < rows[j].Host })
+	return rows
+}
+
+func (s *Store) queryPage(uid int, day time.Time, after *string, live []Row) (Page, error) {
 	var page Page
 	totals := make(map[string]Row)
+	start := 0
+	if after != nil {
+		start = sort.Search(len(live), func(i int) bool { return live[i].Host > *after })
+	}
+	for _, r := range live[start:min(len(live), start+PageSize+1)] {
+		totals[r.Host] = r
+	}
 	version := sha256.New()
 	unlock, err := s.files.lock(false)
 	if err != nil {
