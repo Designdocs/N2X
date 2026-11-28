@@ -66,29 +66,36 @@ type storedFile struct {
 }
 
 func (f files) inventory() ([]storedFile, int64, error) {
-	dir := filepath.Dir(f.path)
+	return quotaInventory(filepath.Dir(f.path), strings.TrimSuffix(filepath.Base(f.path), ".db"))
+}
+
+// quotaInventory measures the apparent size of regular files, as used by the write quota.
+func quotaInventory(dir, legacyName string) ([]storedFile, int64, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, 0, err
 	}
 	var list []storedFile
 	var total int64
-	for _, e := range entries {
-		if !e.Type().IsRegular() {
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
 			continue
 		}
-		info, err := e.Info()
+		info, err := entry.Info()
+		if os.IsNotExist(err) {
+			continue
+		} // concurrent expiry during a menu read
 		if err != nil {
 			return nil, 0, err
 		}
 		total += info.Size()
-		name := e.Name()
+		name := entry.Name()
 		if !strings.HasSuffix(name, ".db") {
 			continue
 		}
 		stem := strings.TrimSuffix(name, ".db")
 		id, day, dated := strings.Cut(stem, ".")
-		if !instanceName.MatchString(id) && id != strings.TrimSuffix(filepath.Base(f.path), ".db") {
+		if !instanceName.MatchString(id) && id != legacyName {
 			continue
 		}
 		if dated {

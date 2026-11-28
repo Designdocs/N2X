@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/Designdocs/N2X/common/domainusage"
@@ -17,7 +19,7 @@ const domainCheckPeriod = 5 * time.Second
 type domainMonitor struct {
 	owner                         *Controller
 	path, disabledFile            string
-	previous                      string
+	state                         atomic.Value // string, read by the local menu
 	low                           bool
 	retryAt, maintainAt, nextHour time.Time
 	free                          func(string) (int64, error)
@@ -35,7 +37,7 @@ func (c *Controller) startDomainUsage() {
 	c.domainDone = make(chan struct{})
 	go func() {
 		defer close(c.domainDone)
-		listener, err := domainusage.ListenLocal(m.path, c.apiClient.APIHost, c.apiClient.NodeId, c.apiClient.Domains.Store.Load)
+		listener, err := domainusage.ListenLocalWithStatus(m.path, c.apiClient.APIHost, c.apiClient.NodeId, c.apiClient.Domains.Store.Load, m.status)
 		if err != nil {
 			log.WithError(err).Warn("Open local domain usage query socket")
 		} else {
@@ -72,6 +74,12 @@ func (c *Controller) closeDomainUsage() {
 		<-c.domainDone
 	}
 }
+func (m *domainMonitor) status() string {
+	if state, ok := m.state.Load().(string); ok {
+		return state
+	}
+	return "waiting"
+}
 func (m *domainMonitor) suspend(state string, err error) {
 	d := &m.owner.apiClient.Domains
 	d.Paused.Store(true)
@@ -81,14 +89,13 @@ func (m *domainMonitor) suspend(state string, err error) {
 	}
 	d.ClearQuery()
 	m.nextHour = time.Time{}
-	if state != m.previous {
+	if m.state.Swap(state) != state {
 		entry := log.WithField("tag", m.owner.tag).WithField("reason", state)
 		if err != nil {
 			entry.WithError(err).Warn("Domain statistics paused")
 		} else {
 			entry.Info("Domain statistics disabled")
 		}
-		m.previous = state
 	}
 }
 func (m *domainMonitor) tick(now time.Time) {
@@ -98,14 +105,18 @@ func (m *domainMonitor) tick(now time.Time) {
 			log.WithError(err).Warn("Maintain domain usage directory")
 		}
 	}
-	if _, err := os.Lstat(m.disabledFile); !os.IsNotExist(err) {
+	if _, err := os.Lstat(m.disabledFile); err == nil {
 		m.suspend("manual", err)
 		m.retryAt = time.Time{}
+		return
+	} else if !os.IsNotExist(err) {
+		m.failure(now, err)
 		return
 	}
 	d := &m.owner.apiClient.Domains
 	rate := d.Rate()
 	if rate == nil {
+		m.state.Store("waiting")
 		return
 	}
 	if now.Before(m.retryAt) {
@@ -138,10 +149,9 @@ func (m *domainMonitor) tick(now time.Time) {
 		d.Store.Store(s)
 		m.owner.limiter.DomainUsage.Store(s)
 		m.nextHour = now.UTC().Truncate(time.Hour).Add(time.Hour)
-		if m.previous != "" {
+		if previous := m.state.Swap("active"); previous != nil && previous != "waiting" {
 			log.WithField("tag", m.owner.tag).Info("Domain statistics resumed")
 		}
-		m.previous = ""
 		return
 	}
 	if s.MemoryFull() {
@@ -166,6 +176,8 @@ func (m *domainMonitor) failure(now time.Time, err error) {
 	state := "storage error"
 	m.retryAt = now.Add(time.Minute)
 	switch {
+	case errors.Is(err, syscall.ENOSPC):
+		state = "storage full"
 	case errors.Is(err, domainusage.ErrDiskLimit):
 		state = "daily capacity"
 		m.retryAt = now.UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)

@@ -28,10 +28,12 @@ func Directory() string {
 }
 
 type localQuery struct {
-	UID int
-	Day string
+	Status bool `json:",omitempty"`
+	UID    int
+	Day    string
 }
 type localReply struct {
+	State        string `json:",omitempty"`
 	Panel, Group string
 	Node         int
 	Rows         []Row
@@ -43,6 +45,10 @@ type localReply struct {
 // The local CLI reaches the same counters as a panel query, including this hour.
 // Restrict access to the owner of the filesystem socket.
 func ListenLocal(path, panel string, node int, current func() *Store) (net.Listener, error) {
+	return ListenLocalWithStatus(path, panel, node, current, nil)
+}
+
+func ListenLocalWithStatus(path, panel string, node int, current func() *Store, status func() string) (net.Listener, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
@@ -85,19 +91,27 @@ func ListenLocal(path, panel string, node int, current func() *Store) (net.Liste
 				return
 			}
 			conn.SetDeadline(time.Now().Add(time.Minute))
-			serveLocal(conn, path, label, group, node, current)
+			serveLocal(conn, path, label, group, node, current, status)
 			conn.Close()
 		}
 	}()
 	return l, nil
 }
 
-func serveLocal(c net.Conn, path, panel, group string, node int, current func() *Store) {
+func serveLocal(c net.Conn, path, panel, group string, node int, current func() *Store, status func() string) {
 	enc := json.NewEncoder(c)
 	fail := func(e error) { _ = enc.Encode(localReply{Error: e.Error()}) }
 	var q localQuery
 	if err := json.NewDecoder(io.LimitReader(c, 1024)).Decode(&q); err != nil {
 		fail(err)
+		return
+	}
+	if q.Status {
+		var state string
+		if status != nil {
+			state = status()
+		}
+		_ = enc.Encode(localReply{Panel: panel, Node: node, State: state})
 		return
 	}
 	now := time.Now().UTC()
@@ -166,27 +180,12 @@ func LocalResults(dir string, uid int, day string) ([]LocalResult, error) {
 			return nil, errors.New("请选择近 30 天内的 UTC 日期")
 		}
 	}
-	entries, err := os.ReadDir(dir)
+	groups := map[string]*LocalResult{}
+	err := visitLocal(dir, 2*time.Second, func(c net.Conn) error {
+		return collectLocal(c, localQuery{UID: uid, Day: day}, groups)
+	})
 	if err != nil {
 		return nil, err
-	}
-	groups := map[string]*LocalResult{}
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), "query-") || entry.Type()&os.ModeSocket == 0 {
-			continue
-		}
-		c, err := net.DialTimeout("unix", filepath.Join(dir, entry.Name()), 2*time.Second)
-		if errors.Is(err, syscall.ECONNREFUSED) || os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		err = collectLocal(c, localQuery{uid, day}, groups)
-		c.Close()
-		if err != nil {
-			return nil, err
-		}
 	}
 	if len(groups) == 0 {
 		return nil, errors.New("未找到运行中的域名查询服务")
@@ -199,6 +198,31 @@ func LocalResults(dir string, uid int, day string) ([]LocalResult, error) {
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].Panel < results[j].Panel })
 	return results, nil
+}
+
+func visitLocal(dir string, timeout time.Duration, visit func(net.Conn) error) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "query-") || entry.Type()&os.ModeSocket == 0 {
+			continue
+		}
+		c, err := net.DialTimeout("unix", filepath.Join(dir, entry.Name()), timeout)
+		if errors.Is(err, syscall.ECONNREFUSED) || os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		err = visit(c)
+		c.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func collectLocal(c net.Conn, q localQuery, groups map[string]*LocalResult) error {

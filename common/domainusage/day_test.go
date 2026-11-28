@@ -54,11 +54,11 @@ func TestDaySnapshotSeparatesUTCAndPreservesPendingCounters(t *testing.T) {
 	server, client := net.Pipe()
 	go func() {
 		defer server.Close()
-		serveLocal(server, store.files.path, "example.org", "panel", 1, func() *Store { return store })
+		serveLocal(server, store.files.path, "example.org", "panel", 1, func() *Store { return store }, nil)
 	}()
 	defer client.Close()
 	groups := map[string]*LocalResult{}
-	if err = collectLocal(client, localQuery{7, yesterday.Format(time.DateOnly)}, groups); err != nil {
+	if err = collectLocal(client, localQuery{UID: 7, Day: yesterday.Format(time.DateOnly)}, groups); err != nil {
 		t.Fatal(err)
 	}
 	if groups["panel"].Rows["old.test"].Raw != 16 {
