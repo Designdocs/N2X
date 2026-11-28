@@ -89,13 +89,34 @@ func printDomains(w io.Writer, data map[string]domainusage.Row) {
 		add(&total, r)
 	}
 	line("合计", total)
-	var columns int
-	var color bool
+	columns, color := domainTerminal(w)
+	writeDomainTable(w, table, columns, color)
+}
+
+func domainTerminal(w io.Writer) (columns int, color bool) {
 	if file, ok := w.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
 		columns, _, _ = term.GetSize(int(file.Fd()))
 		color = os.Getenv("TERM") != "dumb" && os.Getenv("NO_COLOR") == ""
 	}
-	writeDomainTable(w, table, columns, color)
+	return
+}
+
+type domainColor string
+
+const (
+	domainCyan    domainColor = "\x1b[36m"
+	domainGreen   domainColor = "\x1b[32m"
+	domainYellow  domainColor = "\x1b[33m"
+	domainRed     domainColor = "\x1b[31m"
+	domainMagenta domainColor = "\x1b[35m"
+	domainTotal   domainColor = "\x1b[1;33m"
+)
+
+func (c domainColor) paint(text string, enabled bool) string {
+	if !enabled || c == "" || text == "" {
+		return text
+	}
+	return string(c) + text + "\x1b[0m"
 }
 
 // Match the panel's 1024-based GB conversion, including for sub-megabyte rows.
@@ -163,6 +184,13 @@ func writeDomainTable(w io.Writer, rows [][4]string, terminalWidth int, color bo
 		}
 	}
 	for index, row := range rows {
+		var colors [4]domainColor
+		if index == 0 || index == len(rows)-1 {
+			colors = [4]domainColor{domainCyan, domainCyan, domainMagenta, domainGreen}
+			if index != 0 {
+				colors[0] = domainTotal
+			}
+		}
 		for row != ([4]string{}) {
 			var parts [4]string
 			last := 0
@@ -174,16 +202,12 @@ func writeDomainTable(w io.Writer, rows [][4]string, terminalWidth int, color bo
 			}
 			var line strings.Builder
 			for i, part := range parts[:last+1] {
-				line.WriteString(part)
+				line.WriteString(colors[i].paint(part, color))
 				if i < last {
 					line.WriteString(strings.Repeat(" ", widths[i]-domainCellWidth(part)+gap))
 				}
 			}
-			if index == 0 && color {
-				fmt.Fprintf(w, "\x1b[36m%s\x1b[0m\n", line.String())
-			} else {
-				fmt.Fprintln(w, line.String())
-			}
+			fmt.Fprintln(w, line.String())
 		}
 	}
 }

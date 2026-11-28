@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -57,6 +58,8 @@ func TestDomainUsageGBTable(t *testing.T) {
 	}
 }
 
+var domainANSI = regexp.MustCompile(`\x1b\[[0-9;]+m`)
+
 func TestDomainUsageNarrowTerminal(t *testing.T) {
 	host := strings.Repeat("longdomain.", 8) + "com"
 	rows := [][4]string{{"域名", "汇聚", "默认", "连接数"}, {host, "0.138858 GB", "0.069429 GB", "1248"}, {"合计", "0.138858 GB", "0.069429 GB", "1248"}}
@@ -66,13 +69,25 @@ func TestDomainUsageNarrowTerminal(t *testing.T) {
 		if strings.Count(out.String(), "\x1b[36m") == 0 || !strings.HasPrefix(out.String(), "\x1b[36m") {
 			t.Fatal("missing header color")
 		}
+		var plain bytes.Buffer
+		writeDomainTable(&plain, rows, cols, false)
+		if domainANSI.ReplaceAllString(out.String(), "") != plain.String() {
+			t.Fatalf("color changed table layout at %d columns", cols)
+		}
+		if cols == 80 {
+			for _, cell := range []string{"\x1b[1;33m合计", "\x1b[36m0.138858 GB", "\x1b[35m0.069429 GB", "\x1b[32m1248"} {
+				if !strings.Contains(out.String(), cell+"\x1b[0m") {
+					t.Fatalf("missing total cell %q", cell)
+				}
+			}
+		}
 		// Strip ANSI and whitespace. Wrapping must keep every hostname character.
 		var allHost strings.Builder
 		for _, line := range strings.Split(out.String(), "\n") {
 			if strings.Contains(line, "\x1b") && strings.Contains(line, "long") {
 				t.Fatal("colored data", line)
 			}
-			s := strings.NewReplacer("\x1b[36m", "", "\x1b[0m", "").Replace(line)
+			s := domainANSI.ReplaceAllString(line, "")
 			if domainCellWidth(s) > cols {
 				t.Fatalf("line exceeds %d cells: %q", cols, s)
 			}
@@ -85,6 +100,33 @@ func TestDomainUsageNarrowTerminal(t *testing.T) {
 		}
 		if allHost.String() != host {
 			t.Fatalf("hostname lost in %d columns: %s", cols, allHost.String())
+		}
+	}
+}
+
+func TestDomainStatusColors(t *testing.T) {
+	for _, tc := range []struct {
+		used, free int64
+		state      string
+		want       []string
+	}{
+		{72 << 10, 2 << 30, "active", []string{"\x1b[36m72 KiB", "\x1b[32m2 GiB", "\x1b[32m采集中"}},
+		{domainusage.MaxDiskBytes, domainusage.MinFreeBytes, "disk space", []string{"\x1b[31m128 MiB", "\x1b[31m1 GiB", "\x1b[31m自动暂停"}},
+		{-1, domainusage.ResumeFreeBytes - 1, "manual", []string{"\x1b[33m未知", "磁盘可用：\x1b[33m", "\x1b[33m手动关闭"}},
+		{0, domainusage.ResumeFreeBytes, "waiting", []string{"磁盘可用：\x1b[32m", "\x1b[33m等待节点就绪"}},
+		{0, -1, "", []string{"磁盘可用：\x1b[33m未知", "\x1b[33m状态暂不可用"}},
+	} {
+		var plain, colored bytes.Buffer
+		states := []domainusage.InstanceState{{State: tc.state}}
+		writeDomainStatus(&plain, tc.used, tc.free, states, false)
+		writeDomainStatus(&colored, tc.used, tc.free, states, true)
+		if domainANSI.ReplaceAllString(colored.String(), "") != plain.String() {
+			t.Fatal(colored.String())
+		}
+		for _, value := range tc.want {
+			if !strings.Contains(colored.String(), value) {
+				t.Errorf("missing %q in %q", value, colored.String())
+			}
 		}
 	}
 }
