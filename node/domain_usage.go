@@ -24,10 +24,7 @@ type domainMonitor struct {
 }
 
 func (c *Controller) startDomainUsage() {
-	dir := os.Getenv("N2X_DOMAIN_USAGE_DIR")
-	if dir == "" {
-		dir = "/var/lib/N2X/domain-usage"
-	}
+	dir := domainusage.Directory()
 	configDir := os.Getenv("N2X_CONFIG_DIR")
 	if configDir == "" {
 		configDir = "/etc/N2X"
@@ -38,6 +35,12 @@ func (c *Controller) startDomainUsage() {
 	c.domainDone = make(chan struct{})
 	go func() {
 		defer close(c.domainDone)
+		listener, err := domainusage.ListenLocal(m.path, c.apiClient.APIHost, c.apiClient.NodeId, c.apiClient.Domains.Store.Load)
+		if err != nil {
+			log.WithError(err).Warn("Open local domain usage query socket")
+		} else {
+			defer listener.Close()
+		}
 		m.tick(time.Now())
 		for {
 			now := time.Now()

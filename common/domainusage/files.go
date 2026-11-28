@@ -261,11 +261,6 @@ func (f files) read(path string, days []string, uid int, after *string, limit in
 	}
 	err = db.View(func(tx *bolt.Tx) error {
 		fmt.Fprintf(version, "%s:%d:%d;", filepath.Base(path), info.ModTime().UnixNano(), tx.ID())
-		if meta := tx.Bucket([]byte("meta")); meta != nil {
-			if v := meta.Get([]byte("until")); len(v) == 8 {
-				*until = max(*until, int64(binary.BigEndian.Uint64(v)))
-			}
-		}
 		prefix := binary.BigEndian.AppendUint64(nil, uint64(uid))
 		start := prefix
 		if after != nil {
@@ -275,6 +270,11 @@ func (f files) read(path string, days []string, uid int, after *string, limit in
 			b := tx.Bucket([]byte(day))
 			if b == nil {
 				continue
+			}
+			if meta := tx.Bucket([]byte("meta")); meta != nil {
+				if v := meta.Get([]byte("until")); len(v) == 8 {
+					*until = max(*until, int64(binary.BigEndian.Uint64(v)))
+				}
 			}
 			c := b.Cursor()
 			k, v := c.Seek(start)

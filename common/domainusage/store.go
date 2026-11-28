@@ -313,27 +313,53 @@ type Page struct {
 }
 
 func (s *Store) QueryPage(uid int, day time.Time, after *string) (Page, error) {
-	return s.queryPage(uid, day, after, nil)
+	return s.queryPage(uid, day, 30, after, nil)
 }
 
 // LivePages includes pending counters for one user without resetting counters or
 // writing an extra hourly batch. Freeze them alongside the first disk page so
 // an hourly flush cannot move those bytes to disk between the two reads.
 func (s *Store) LivePages(uid int, now time.Time) func(*string) (Page, error) {
+	return s.windowPages(uid, now, now, 30)
+}
+
+// DayPages reads just the selected UTC bucket. Until == 0 means that no
+// retained bucket or in-memory sample can vouch for the requested day.
+func (s *Store) DayPages(uid int, day, now time.Time) func(*string) (Page, error) {
+	return s.windowPages(uid, day, now, 1)
+}
+
+func ValidDay(day, now time.Time) bool {
+	today := now.UTC().Truncate(24 * time.Hour)
+	return !day.Before(today.AddDate(0, 0, -29)) && !day.After(today)
+}
+
+func (s *Store) windowPages(uid int, day, now time.Time, days int) func(*string) (Page, error) {
+	first := day.UTC().AddDate(0, 0, 1-days).Format(time.DateOnly)
+	last := day.UTC().Format(time.DateOnly)
+	today := now.UTC().Format(time.DateOnly)
 	var rows []Row
+	var pending bool
 	return func(after *string) (Page, error) {
 		if after == nil {
 			s.ioMu.Lock()
 			defer s.ioMu.Unlock()
-			rows = s.liveRows(uid, now)
+			rows, pending = s.liveRows(uid, first, last, last == today)
 		}
-		page, err := s.queryPage(uid, now, after, rows)
-		page.Until = now.Unix()
+		page, err := s.queryPage(uid, day, days, after, rows)
+		if last == today {
+			page.Until = now.Unix()
+		} else if days == 1 {
+			end := day.UTC().Truncate(24 * time.Hour).Add(24 * time.Hour).Unix()
+			if pending || page.Until > end {
+				page.Until = end
+			}
+		}
 		return page, err
 	}
 }
 
-func (s *Store) liveRows(uid int, now time.Time) []Row {
+func (s *Store) liveRows(uid int, first, last string, current bool) ([]Row, bool) {
 	// A pending billing response can still supply the rate for its interval.
 	s.billingMu.Lock()
 	s.mu.Lock()
@@ -344,27 +370,30 @@ func (s *Store) liveRows(uid int, now time.Time) []Row {
 		r.add(delta)
 		totals[host] = r
 	}
-	cutoff := now.UTC().AddDate(0, 0, -29).Format(time.DateOnly)
+	var pending bool
 	for date, batch := range s.pending {
-		if date < cutoff || date > now.UTC().Format(time.DateOnly) {
+		if date < first || date > last {
 			continue
 		}
+		pending = true
 		for k, r := range batch {
 			if k.UID == uid {
 				add(k.Host, r)
 			}
 		}
 	}
-	s.flowsMu.Lock()
-	for k, flow := range s.flows {
-		if k.UID == uid {
-			raw := flow.Bytes.Load()
-			if raw != 0 || flow.starts != 0 {
-				add(k.Host, Row{Raw: raw, Weighted: float64(raw) * s.rate, Connections: flow.starts})
+	if current {
+		s.flowsMu.Lock()
+		for k, flow := range s.flows {
+			if k.UID == uid {
+				raw := flow.Bytes.Load()
+				if raw != 0 || flow.starts != 0 {
+					add(k.Host, Row{Raw: raw, Weighted: float64(raw) * s.rate, Connections: flow.starts})
+				}
 			}
 		}
+		s.flowsMu.Unlock()
 	}
-	s.flowsMu.Unlock()
 	s.mu.Unlock()
 	s.billingMu.Unlock()
 	rows := make([]Row, 0, len(totals))
@@ -372,10 +401,10 @@ func (s *Store) liveRows(uid int, now time.Time) []Row {
 		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Host < rows[j].Host })
-	return rows
+	return rows, pending
 }
 
-func (s *Store) queryPage(uid int, day time.Time, after *string, live []Row) (Page, error) {
+func (s *Store) queryPage(uid int, day time.Time, numDays int, after *string, live []Row) (Page, error) {
 	var page Page
 	totals := make(map[string]Row)
 	start := 0
@@ -392,7 +421,7 @@ func (s *Store) queryPage(uid int, day time.Time, after *string, live []Row) (Pa
 	}
 	defer unlock()
 	var days []string
-	for i := 0; i < 30; i++ {
+	for i := 0; i < numDays; i++ {
 		if err := s.ctx.Err(); err != nil {
 			return page, err
 		}

@@ -12,10 +12,11 @@ import (
 )
 
 type DomainQuery struct {
-	ID   string
-	UID  int
-	Day  time.Time
-	Live bool
+	ID        string
+	UID       int
+	Day       time.Time
+	Live      bool
+	SingleDay bool
 }
 type DomainControl struct {
 	Paused atomic.Bool
@@ -56,13 +57,14 @@ func (d *DomainControl) offer(header string) {
 	}
 	fields := strings.Split(header, ",")
 	live := len(fields) == 4 && fields[3] == "live"
-	if (!live && len(fields) != 3) || len(fields[0]) != 36 {
+	single := len(fields) == 4 && fields[3] == "day"
+	if (!single && !live && len(fields) != 3) || len(fields[0]) != 36 {
 		return
 	}
 	uid, err := strconv.Atoi(fields[1])
 	day, e := time.Parse(time.DateOnly, fields[2])
-	if err == nil && e == nil && uid > 0 {
-		d.query.Store(&DomainQuery{ID: fields[0], UID: uid, Day: day, Live: live})
+	if err == nil && e == nil && uid > 0 && (!single || domainusage.ValidDay(day, time.Now())) {
+		d.query.Store(&DomainQuery{ID: fields[0], UID: uid, Day: day, Live: live, SingleDay: single})
 	}
 }
 func (c *Client) AnswerDomainQuery() error {
@@ -75,7 +77,9 @@ func (c *Client) AnswerDomainQuery() error {
 		return nil
 	}
 	readPage := func(after *string) (domainusage.Page, error) { return store.QueryPage(q.UID, q.Day, after) }
-	if q.Live {
+	if q.SingleDay {
+		readPage = store.DayPages(q.UID, q.Day, time.Now())
+	} else if q.Live {
 		readPage = store.LivePages(q.UID, time.Now())
 	}
 	var after *string

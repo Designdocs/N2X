@@ -177,3 +177,66 @@ func TestDomainUsageLiveQueryBeforeFirstHour(t *testing.T) {
 		t.Fatal(result)
 	}
 }
+
+func TestDomainDayReportWire(t *testing.T) {
+	now := time.Now().UTC()
+	day := now.Truncate(24*time.Hour).AddDate(0, 0, -1)
+	s, err := domainusage.Open(filepath.Join(t.TempDir(), "usage.db"), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Pause()
+	f, release := s.Track(42, "historical.test")
+	f.Bytes.Add(17)
+	release()
+	if err = s.Flush(day.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	f, release = s.Track(42, "current.test")
+	f.Bytes.Add(100)
+	release()
+	requested := day
+	var got struct {
+		Rows  []domainusage.Row
+		Until int64
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/server/UniProxy/config":
+			if r.Header.Get("X-N2X-Domain-Day") != "1" {
+				t.Error("missing daily capability")
+			}
+			w.Header().Set("X-N2X-Domain-Query", "c745d13e-b044-4418-a3b7-de0d918f769f,42,"+requested.Format(time.DateOnly)+",day")
+			w.WriteHeader(http.StatusNotModified)
+		case "/api/v1/server/UniProxy/domainUsage":
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Error(err)
+			}
+			w.Write([]byte("{}"))
+		default:
+			t.Error(r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+	c, err := New(&conf.ApiConfig{APIHost: ts.URL, NodeID: 1, NodeType: "vmess", Key: "local-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Domains.Store.Store(s)
+	for _, delta := range []int{0, -1} {
+		requested = day.AddDate(0, 0, delta)
+		if _, err = c.GetNodeInfo(); err != nil {
+			t.Fatal(err)
+		}
+		if err = c.AnswerDomainQuery(); err != nil {
+			t.Fatal(err)
+		}
+		if delta == 0 && (got.Until == 0 || len(got.Rows) != 1 || got.Rows[0].Host != "historical.test" || got.Rows[0].Raw != 17 || got.Rows[0].Weighted != 51) {
+			t.Fatal(got)
+		}
+		if delta < 0 && (got.Until != 0 || len(got.Rows) != 0) {
+			t.Fatal(got)
+		}
+	}
+}
