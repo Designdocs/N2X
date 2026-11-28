@@ -34,6 +34,18 @@ import (
 
 var errSniffingTimeout = errors.New("timeout on sniffing")
 
+type domainCounterKey struct{}
+
+func domainContext(ctx context.Context) context.Context {
+	inbound := session.InboundFromContext(ctx)
+	if inbound != nil && inbound.User != nil {
+		if l, err := limiter.GetLimiter(inbound.Tag); err == nil && l.DomainUsage.Load() != nil {
+			return context.WithValue(ctx, domainCounterKey{}, new(counter.DomainCounter))
+		}
+	}
+	return ctx
+}
+
 type cachedReader struct {
 	sync.Mutex
 	reader buf.TimeoutReader
@@ -233,9 +245,10 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 			inboundLink.Writer = rate.NewRateLimitWriter(inboundLink.Writer, w, ctx)
 			outboundLink.Writer = rate.NewRateLimitWriter(outboundLink.Writer, w, ctx)
 		}
+		domain, _ := ctx.Value(domainCounterKey{}).(*counter.DomainCounter)
 		ts := d.trafficCounterFor(sessionInbound.Tag).GetCounter(user.Email)
-		upcounter := &counter.XrayTrafficCounter{V: &ts.UpCounter}
-		downcounter := &counter.XrayTrafficCounter{V: &ts.DownCounter}
+		upcounter := &counter.XrayTrafficCounter{V: &ts.UpCounter, Domain: domain}
+		downcounter := &counter.XrayTrafficCounter{V: &ts.DownCounter, Domain: domain}
 		inboundLink.Writer = &dispatcher.SizeStatWriter{
 			Counter: upcounter,
 			Writer:  inboundLink.Writer,
@@ -297,6 +310,7 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 		ctx = session.ContextWithOutbounds(ctx, outbounds)
 	}
 	ob := outbounds[len(outbounds)-1]
+	ctx = domainContext(ctx)
 	ob.OriginalTarget = destination
 	ob.Target = destination
 	content := session.ContentFromContext(ctx)
@@ -359,6 +373,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 		ctx = session.ContextWithOutbounds(ctx, outbounds)
 	}
 	ob := outbounds[len(outbounds)-1]
+	ctx = domainContext(ctx)
 	ob.OriginalTarget = destination
 	ob.Target = destination
 	content := session.ContentFromContext(ctx)
@@ -413,11 +428,12 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 			sessionInbound.CanSpliceCopy = 3
 			outbound.Writer = rate.NewRateLimitWriter(outbound.Writer, w, ctx)
 		}
+		domain, _ := ctx.Value(domainCounterKey{}).(*counter.DomainCounter)
 		ts := d.trafficCounterFor(sessionInbound.Tag).GetCounter(user.Email)
-		downcounter := &counter.XrayTrafficCounter{V: &ts.DownCounter}
+		downcounter := &counter.XrayTrafficCounter{V: &ts.DownCounter, Domain: domain}
 		outbound.Reader = &CounterReader{
 			Reader:  &buf.TimeoutWrapperReader{Reader: outbound.Reader},
-			Counter: &ts.UpCounter,
+			Counter: &ts.UpCounter, Domain: domain,
 			Limiter: w,
 			Context: ctx,
 		}
@@ -629,6 +645,16 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 		log.Record(accessMessage)
 	}
 
+	if domain, _ := ctx.Value(domainCounterKey{}).(*counter.DomainCounter); domain != nil && l != nil && sessionInbound != nil && sessionInbound.User != nil {
+		host := ""
+		if destination.Address.Family().IsDomain() {
+			host = destination.Address.Domain()
+		}
+		if f, release := l.TrackDomain(sessionInbound.User.Email, host); f != nil {
+			domain.Bind(f)
+			defer release()
+		}
+	}
 	handler.Dispatch(ctx, link)
 }
 

@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"errors"
+	"github.com/Designdocs/N2X/common/domainusage"
 	"net/netip"
 	"regexp"
 	"strings"
@@ -24,6 +25,7 @@ func Init() {
 }
 
 type Limiter struct {
+	DomainUsage   atomic.Pointer[domainusage.Store]
 	DomainRules   []*regexp.Regexp
 	ProtocolRules []string
 	SpeedLimit    int
@@ -57,6 +59,7 @@ type Limiter struct {
 }
 
 type UserLimitInfo struct {
+	DomainUserID       int
 	UID                int
 	SpeedLimit         int
 	DeviceLimit        int
@@ -82,6 +85,7 @@ func AddLimiter(tag string, l *conf.LimitConfig, users []panel.UserInfo, aliveLi
 		uuidmap[users[i].Uuid] = users[i].Id
 		userLimit := &UserLimitInfo{}
 		userLimit.UID = users[i].Id
+		userLimit.DomainUserID = users[i].DomainUserID
 		userLimit.DynamicSpeedExempt = users[i].DynamicSpeedExempt
 		if users[i].SpeedLimit != 0 {
 			userLimit.SpeedLimit = users[i].SpeedLimit
@@ -166,6 +170,7 @@ func (l *Limiter) UpdateUser(tag string, added []panel.UserInfo, deleted []panel
 		wasExempt := userLimit.DynamicSpeedExempt
 		userLimit.SpeedLimit = added[i].SpeedLimit
 		userLimit.DeviceLimit = added[i].DeviceLimit
+		userLimit.DomainUserID = added[i].DomainUserID
 		userLimit.DynamicSpeedExempt = added[i].DynamicSpeedExempt
 		if p, moved := movedPenalties[userLimit.UID]; moved && !userLimit.DynamicSpeedExempt {
 			l.dynamic.penalties[tagUUID] = p

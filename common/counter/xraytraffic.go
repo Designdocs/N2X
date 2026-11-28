@@ -9,7 +9,8 @@ import (
 var _ fstats.Counter = (*XrayTrafficCounter)(nil)
 
 type XrayTrafficCounter struct {
-	V *atomic.Int64
+	V      *atomic.Int64
+	Domain *DomainCounter
 }
 
 func (c *XrayTrafficCounter) Value() int64 {
@@ -21,5 +22,6 @@ func (c *XrayTrafficCounter) Set(newValue int64) int64 {
 }
 
 func (c *XrayTrafficCounter) Add(delta int64) int64 {
+	c.Domain.Add(delta)
 	return c.V.Add(delta)
 }

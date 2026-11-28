@@ -4,12 +4,22 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
+
+	"github.com/Designdocs/N2X/common/domainusage"
 
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
 	M "github.com/sagernet/sing/common/metadata"
 	"github.com/sagernet/sing/common/network"
 )
+
+func domainCount(account *atomic.Int64, target *domainusage.Flow) network.CountFunc {
+	if target == nil {
+		return func(n int64) { account.Add(n) }
+	}
+	return func(n int64) { account.Add(n); target.Bytes.Add(n) }
+}
 
 // ConnCounter accounts the bytes flowing through a sing-box connection.
 //
@@ -18,24 +28,21 @@ import (
 // reporting path in api/panel expects.
 type ConnCounter struct {
 	network.ExtendedConn
-	storage   *TrafficStorage
 	readFunc  network.CountFunc
 	writeFunc network.CountFunc
 	onClose   func()
 	closeOnce sync.Once
 }
 
-func NewConnCounter(conn net.Conn, s *TrafficStorage, onClose func()) net.Conn {
+func NewConnCounter(conn net.Conn, s *TrafficStorage, onClose func(), domains ...*domainusage.Flow) net.Conn {
+	var target *domainusage.Flow
+	if len(domains) > 0 {
+		target = domains[0]
+	}
 	return &ConnCounter{
 		ExtendedConn: bufio.NewExtendedConn(conn),
-		storage:      s,
 		onClose:      onClose,
-		readFunc: func(n int64) {
-			s.UpCounter.Add(n)
-		},
-		writeFunc: func(n int64) {
-			s.DownCounter.Add(n)
-		},
+		readFunc:     domainCount(&s.UpCounter, target), writeFunc: domainCount(&s.DownCounter, target),
 	}
 }
 
@@ -51,7 +58,7 @@ func (c *ConnCounter) Close() error {
 func (c *ConnCounter) Read(b []byte) (n int, err error) {
 	n, err = c.ExtendedConn.Read(b)
 	if n > 0 {
-		c.storage.UpCounter.Add(int64(n))
+		c.readFunc(int64(n))
 	}
 	return
 }
@@ -59,7 +66,7 @@ func (c *ConnCounter) Read(b []byte) (n int, err error) {
 func (c *ConnCounter) Write(b []byte) (n int, err error) {
 	n, err = c.ExtendedConn.Write(b)
 	if n > 0 {
-		c.storage.DownCounter.Add(int64(n))
+		c.writeFunc(int64(n))
 	}
 	return
 }
@@ -70,7 +77,7 @@ func (c *ConnCounter) ReadBuffer(buffer *buf.Buffer) error {
 		return err
 	}
 	if buffer.Len() > 0 {
-		c.storage.UpCounter.Add(int64(buffer.Len()))
+		c.readFunc(int64(buffer.Len()))
 	}
 	return nil
 }
@@ -82,7 +89,7 @@ func (c *ConnCounter) WriteBuffer(buffer *buf.Buffer) error {
 		return err
 	}
 	if dataLen > 0 {
-		c.storage.DownCounter.Add(dataLen)
+		c.writeFunc(dataLen)
 	}
 	return nil
 }
@@ -108,24 +115,21 @@ func (c *ConnCounter) Upstream() any {
 // through it.
 type PacketConnCounter struct {
 	network.PacketConn
-	storage   *TrafficStorage
 	readFunc  network.CountFunc
 	writeFunc network.CountFunc
 	onClose   func()
 	closeOnce sync.Once
 }
 
-func NewPacketConnCounter(conn network.PacketConn, s *TrafficStorage, onClose func()) network.PacketConn {
+func NewPacketConnCounter(conn network.PacketConn, s *TrafficStorage, onClose func(), domains ...*domainusage.Flow) network.PacketConn {
+	var target *domainusage.Flow
+	if len(domains) > 0 {
+		target = domains[0]
+	}
 	return &PacketConnCounter{
 		PacketConn: conn,
-		storage:    s,
 		onClose:    onClose,
-		readFunc: func(n int64) {
-			s.UpCounter.Add(n)
-		},
-		writeFunc: func(n int64) {
-			s.DownCounter.Add(n)
-		},
+		readFunc:   domainCount(&s.UpCounter, target), writeFunc: domainCount(&s.DownCounter, target),
 	}
 }
 
@@ -144,7 +148,7 @@ func (p *PacketConnCounter) ReadPacket(buff *buf.Buffer) (destination M.Socksadd
 		return
 	}
 	if buff.Len() > 0 {
-		p.storage.UpCounter.Add(int64(buff.Len()))
+		p.readFunc(int64(buff.Len()))
 	}
 	return
 }
@@ -156,7 +160,7 @@ func (p *PacketConnCounter) WritePacket(buff *buf.Buffer, destination M.Socksadd
 		return
 	}
 	if n > 0 {
-		p.storage.DownCounter.Add(int64(n))
+		p.writeFunc(int64(n))
 	}
 	return
 }

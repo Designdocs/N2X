@@ -125,6 +125,18 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	}
 	// get node info
 	newN, err := c.apiClient.GetNodeInfo()
+	if err == nil {
+		if c.apiClient.Domains.HasQuery() && c.domainAnswerRunning.CompareAndSwap(false, true) {
+			c.domainAnswerDone.Add(1)
+			go func() {
+				defer c.domainAnswerDone.Done()
+				defer c.domainAnswerRunning.Store(false)
+				if e := c.apiClient.AnswerDomainQuery(); e != nil {
+					log.WithError(e).Warn("Answer domain query")
+				}
+			}()
+		}
+	}
 	if err == nil && newN != nil {
 		_, err = newN.LocalCertConfig(c.Options)
 	}

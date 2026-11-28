@@ -21,6 +21,7 @@ import (
 // Panel is the interface for different panel's api.
 
 type Client struct {
+	Domains                DomainControl
 	client                 *resty.Client
 	APIHost                string
 	APISendIP              string

@@ -16,6 +16,9 @@ import (
 )
 
 type Controller struct {
+	domainStop, domainDone    chan struct{}
+	domainAnswerRunning       atomic.Bool
+	domainAnswerDone          sync.WaitGroup
 	websites                  *snellWebsites
 	websiteLease              *snellWebsiteLease
 	websiteOrigin             panel.SnellWebsiteFallback
@@ -180,6 +183,7 @@ func (c *Controller) start(prepared *panel.PreparedNode) error {
 	// window from the default rate instead of the user's plan.
 	c.publishArtXUserRates()
 	c.refreshHTTPSRedirect(node)
+	c.startDomainUsage()
 	c.startTasks(node)
 	return nil
 }
@@ -195,6 +199,7 @@ func (c *Controller) Close() error {
 	}
 	c.monitorMu.Lock()
 	defer c.monitorMu.Unlock()
+	defer func() { c.closeDomainUsage(); c.domainAnswerDone.Wait() }()
 	if active := c.limiterRef.Swap(nil); active != nil {
 		active.StopDynamicSampling()
 	}

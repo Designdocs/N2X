@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/Designdocs/N2X/common/counter"
+	"github.com/Designdocs/N2X/common/domainusage"
 	"github.com/Designdocs/N2X/common/format"
 	"github.com/Designdocs/N2X/common/rate"
 	"github.com/Designdocs/N2X/limiter"
@@ -50,14 +51,14 @@ func (h *HookServer) ModeList() []string {
 // checkAccess resolves the owning node, applies its limits and routing rules,
 // and reports whether the connection may proceed. The returned bucket is the
 // user's shared speed controller for both streams and datagrams.
-func (h *HookServer) checkAccess(ctx context.Context, m *adapter.InboundContext, isTCP bool) (nodeTag string, bucket *rate.Controller, onClose func(), ok bool) {
+func (h *HookServer) checkAccess(ctx context.Context, m *adapter.InboundContext, isTCP bool) (nodeTag string, bucket *rate.Controller, flow *domainusage.Flow, onClose func(), ok bool) {
 	nodeTag = h.resolveTag(m.Inbound)
 	l, err := limiter.GetLimiter(nodeTag)
 	if err != nil {
 		// No limiter registered for the node: let the traffic through rather
 		// than dropping every connection on a transient registration gap.
 		log.Warn("get limiter for ", nodeTag, " error: ", err)
-		return nodeTag, nil, nil, true
+		return nodeTag, nil, nil, nil, true
 	}
 
 	taguuid := format.UserTag(nodeTag, m.User)
@@ -65,27 +66,35 @@ func (h *HookServer) checkAccess(ctx context.Context, m *adapter.InboundContext,
 	bucket, reject := l.CheckLimit(taguuid, ip, isTCP, isTCP)
 	if reject {
 		log.Error("[", nodeTag, "] Limited ", m.User, " by ip or conn")
-		return nodeTag, nil, nil, false
+		return nodeTag, nil, nil, nil, false
 	}
 
 	if destination := m.Destination.AddrString(); l.CheckDomainRule(destination) {
 		log.Error("User ", m.User, " access domain ", destination, " reject by rule")
-		return nodeTag, nil, nil, false
+		return nodeTag, nil, nil, nil, false
 	}
 	if len(m.Protocol) != 0 && l.CheckProtocolRule(m.Protocol) {
 		log.Error("User ", m.User, " access protocol ", m.Protocol, " reject by rule")
-		return nodeTag, nil, nil, false
+		return nodeTag, nil, nil, nil, false
 	}
-	release := l.TrackConnection(taguuid, ip)
+	releaseOnline := l.TrackConnection(taguuid, ip)
+	host := m.Destination.Fqdn
+	if host == "" {
+		host = m.Domain
+	}
+	flow, releaseDomain := l.TrackDomain(taguuid, host)
+	release := func() {
+		releaseOnline()
+		if releaseDomain != nil {
+			releaseDomain()
+		}
+	}
 	stop := context.AfterFunc(ctx, release)
-	return nodeTag, bucket, func() {
-		stop()
-		release()
-	}, true
+	return nodeTag, bucket, flow, func() { stop(); release() }, true
 }
 
 func (h *HookServer) RoutedConnection(ctx context.Context, conn net.Conn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) net.Conn {
-	nodeTag, bucket, onClose, ok := h.checkAccess(ctx, &m, true)
+	nodeTag, bucket, flow, onClose, ok := h.checkAccess(ctx, &m, true)
 	if !ok {
 		conn.Close()
 		return conn
@@ -93,12 +102,12 @@ func (h *HookServer) RoutedConnection(ctx context.Context, conn net.Conn, m adap
 	if bucket != nil {
 		conn = rate.NewConnRateLimiter(conn, bucket, ctx)
 	}
-	return counter.NewConnCounter(conn, h.storageFor(nodeTag, m.User), onClose)
+	return counter.NewConnCounter(conn, h.storageFor(nodeTag, m.User), onClose, flow)
 }
 
 func (h *HookServer) RoutedPacketConnection(ctx context.Context, conn N.PacketConn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) N.PacketConn {
 	// TCP and UDP share the same user's controller, including both directions.
-	nodeTag, bucket, onClose, ok := h.checkAccess(ctx, &m, false)
+	nodeTag, bucket, flow, onClose, ok := h.checkAccess(ctx, &m, false)
 	if !ok {
 		conn.Close()
 		return conn
@@ -106,7 +115,7 @@ func (h *HookServer) RoutedPacketConnection(ctx context.Context, conn N.PacketCo
 	if bucket != nil {
 		conn = rate.NewPacketConnRateLimiter(conn, bucket, ctx)
 	}
-	return counter.NewPacketConnCounter(conn, h.storageFor(nodeTag, m.User), onClose)
+	return counter.NewPacketConnCounter(conn, h.storageFor(nodeTag, m.User), onClose, flow)
 }
 
 // storageFor returns the per-user traffic storage for a node, creating the

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"encoding/json/v2"
 
@@ -16,6 +17,7 @@ type OnlineUser struct {
 }
 
 type UserInfo struct {
+	DomainUserID       int    `json:"domain_usage_user_id,omitempty" msgpack:"domain_usage_user_id,omitempty"`
 	Id                 int    `json:"id" msgpack:"id"`
 	Uuid               string `json:"uuid" msgpack:"uuid"`
 	SpeedLimit         int    `json:"speed_limit" msgpack:"speed_limit"`
@@ -43,6 +45,7 @@ func (c *Client) GetUserList() ([]UserInfo, error) {
 	r, err := c.client.R().
 		SetHeader("If-None-Match", currentEtag).
 		SetHeader("X-Response-Format", "msgpack").
+		SetHeader("X-N2X-Domain-Usage", "1").
 		SetDoNotParseResponse(true).
 		Get(path)
 	if err != nil {
@@ -140,15 +143,22 @@ func (c *Client) ReportUserTraffic(userTraffic []UserTraffic) error {
 	for i := range userTraffic {
 		data[userTraffic[i].UID] = []int64{userTraffic[i].Upload, userTraffic[i].Download}
 	}
+	var appliedRate *float64
+	if store := c.Domains.Store.Load(); store != nil {
+		finish := store.StartBilling(time.Now())
+		defer func() { finish(appliedRate) }()
+	}
 	const path = "/api/v1/server/UniProxy/push"
 	r, err := c.client.R().
 		SetBody(data).
+		SetHeader("X-N2X-Domain-Usage", c.Domains.Header()).
 		ForceContentType("application/json").
 		Post(path)
 	err = c.checkResponse(r, path, err)
 	if err != nil {
 		return err
 	}
+	appliedRate = parseDomainRate(r.Header().Get("X-N2X-Domain-Rate"))
 	return nil
 }
 

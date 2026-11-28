@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"github.com/Designdocs/N2X/common/counter"
 	"sync/atomic"
 	"time"
 
@@ -14,6 +15,7 @@ var _ buf.TimeoutReader = (*CounterReader)(nil)
 type CounterReader struct {
 	Reader  buf.TimeoutReader
 	Counter *atomic.Int64
+	Domain  *counter.DomainCounter
 	Limiter *rate.Controller
 	Context context.Context
 }
@@ -37,6 +39,7 @@ func (c *CounterReader) finishRead(mb buf.MultiBuffer, err error) (buf.MultiBuff
 			}
 			c.Limiter.Account(n)
 		}
+		c.Domain.Add(n)
 		c.Counter.Add(n)
 	}
 	return mb, err

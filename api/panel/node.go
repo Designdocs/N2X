@@ -605,12 +605,15 @@ func (c *Client) fetchNodeInfo(save *PreparedNode) (node *NodeInfo, err error) {
 		R().
 		SetHeader("If-None-Match", currentEtag).
 		SetHeader("X-N2X-Reality-Host", "1").
+		SetHeader("X-N2X-Domain-Usage", c.Domains.Header()).
 		ForceContentType("application/json").
 		Get(path)
 
 	if err = c.checkResponse(r, path, err); err != nil {
 		return nil, err
 	}
+	c.Domains.observe(r.Header().Get("X-N2X-Domain-Rate"))
+	c.Domains.offer(r.Header().Get("X-N2X-Domain-Query"))
 	if r.StatusCode() == 304 {
 		return nil, nil
 	}
